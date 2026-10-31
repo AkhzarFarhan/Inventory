@@ -1,0 +1,342 @@
+package com.lpshardware.inventory.core.nlp
+
+/**
+ * Bilingual (English + Hinglish / Indian Hardware Trade) Domain Ontology for LPS Hardware.
+ * Maps colloquial shop terms, abbreviations, materials, colors/finishes, and nominal sizes
+ * into canonical concepts so duplicate detection and search understand real hardware items
+ * without relying on naive string matching.
+ */
+object HardwareOntology {
+
+    /**
+     * Maps lowercase tokens and multi-word phrases to canonical hardware concept identifiers.
+     */
+    val phraseSynonyms: Map<String, String> = mapOf(
+        "butt hinge" to "CONCEPT_HINGE",
+        "door hinge" to "CONCEPT_HINGE",
+        "parliament hinge" to "CONCEPT_PARLIAMENT_HINGE",
+        "auto hinge" to "CONCEPT_AUTO_HINGE",
+        "hydraulic hinge" to "CONCEPT_AUTO_HINGE",
+        "concealed hinge" to "CONCEPT_AUTO_HINGE",
+        "tower bolt" to "CONCEPT_TOWER_BOLT",
+        "towerbolt" to "CONCEPT_TOWER_BOLT",
+        "sliding bolt" to "CONCEPT_ALDROP",
+        "door aldrop" to "CONCEPT_ALDROP",
+        "mortise lock" to "CONCEPT_MORTISE_LOCK",
+        "handle lock" to "CONCEPT_MORTISE_LOCK",
+        "wood screw" to "CONCEPT_WOOD_SCREW",
+        "drywall screw" to "CONCEPT_DRYWALL_SCREW",
+        "gypsum screw" to "CONCEPT_DRYWALL_SCREW",
+        "black screw" to "CONCEPT_DRYWALL_SCREW",
+        "self tapping" to "CONCEPT_SELF_TAPPING_SCREW",
+        "star screw" to "CONCEPT_SCREW",
+        "wire nail" to "CONCEPT_NAIL",
+        "wall plug" to "CONCEPT_WALL_PLUG",
+        "rawlgut" to "CONCEPT_WALL_PLUG",
+        "rawl plug" to "CONCEPT_WALL_PLUG",
+        "bib cock" to "CONCEPT_BIB_COCK",
+        "bibcock" to "CONCEPT_BIB_COCK",
+        "pillar cock" to "CONCEPT_PILLAR_COCK",
+        "angle valve" to "CONCEPT_ANGLE_VALVE",
+        "angle cock" to "CONCEPT_ANGLE_VALVE",
+        "ball valve" to "CONCEPT_BALL_VALVE",
+        "gate valve" to "CONCEPT_GATE_VALVE",
+        "teflon tape" to "CONCEPT_TEFLON_TAPE",
+        "thread tape" to "CONCEPT_TEFLON_TAPE",
+        "ptfe tape" to "CONCEPT_TEFLON_TAPE",
+        "emery paper" to "CONCEPT_SANDPAPER",
+        "sand paper" to "CONCEPT_SANDPAPER",
+        "water paper" to "CONCEPT_SANDPAPER",
+        "cutting wheel" to "CONCEPT_CUTTING_WHEEL",
+        "cutter blade" to "CONCEPT_CUTTING_WHEEL",
+        "grinding wheel" to "CONCEPT_GRINDING_WHEEL",
+        "drill bit" to "CONCEPT_DRILL_BIT",
+        "telescopic channel" to "CONCEPT_DRAWER_CHANNEL",
+        "drawer channel" to "CONCEPT_DRAWER_CHANNEL",
+        "drawer slide" to "CONCEPT_DRAWER_CHANNEL",
+        "caster wheel" to "CONCEPT_CASTER_WHEEL",
+        "castor wheel" to "CONCEPT_CASTER_WHEEL",
+        "tmt bar" to "CONCEPT_TMT_BAR",
+        "iron rod" to "CONCEPT_TMT_BAR",
+        "combination plier" to "CONCEPT_PLIER",
+        "nose plier" to "CONCEPT_NOSE_PLIER",
+        "measuring tape" to "CONCEPT_MEASURING_TAPE",
+        "inch tape" to "CONCEPT_MEASURING_TAPE",
+        "inchtape" to "CONCEPT_MEASURING_TAPE"
+    )
+
+    val wordSynonyms: Map<String, String> = mapOf(
+        // Hinges & Door Fittings
+        "kabza" to "CONCEPT_HINGE",
+        "kabja" to "CONCEPT_HINGE",
+        "kbza" to "CONCEPT_HINGE",
+        "hinge" to "CONCEPT_HINGE",
+        "hinges" to "CONCEPT_HINGE",
+        "chatkani" to "CONCEPT_TOWER_BOLT",
+        "chitkani" to "CONCEPT_TOWER_BOLT",
+        "kundi" to "CONCEPT_TOWER_BOLT",
+        "kundee" to "CONCEPT_TOWER_BOLT",
+        "latch" to "CONCEPT_TOWER_BOLT",
+        "aldrop" to "CONCEPT_ALDROP",
+        "aldraf" to "CONCEPT_ALDROP",
+        "aldrap" to "CONCEPT_ALDROP",
+        "tala" to "CONCEPT_PADLOCK",
+        "taala" to "CONCEPT_PADLOCK",
+        "padlock" to "CONCEPT_PADLOCK",
+        "lock" to "CONCEPT_LOCK",
+        "locks" to "CONCEPT_LOCK",
+        "handle" to "CONCEPT_HANDLE",
+        "handles" to "CONCEPT_HANDLE",
+        "hatha" to "CONCEPT_HANDLE",
+        "muthiya" to "CONCEPT_HANDLE",
+        "knob" to "CONCEPT_KNOB",
+        "knobs" to "CONCEPT_KNOB",
+        "stopper" to "CONCEPT_DOOR_STOPPER",
+        "closer" to "CONCEPT_DOOR_CLOSER",
+
+        // Fasteners
+        "pech" to "CONCEPT_SCREW",
+        "pach" to "CONCEPT_SCREW",
+        "screw" to "CONCEPT_SCREW",
+        "screws" to "CONCEPT_SCREW",
+        "scrw" to "CONCEPT_SCREW",
+        "kila" to "CONCEPT_NAIL",
+        "keel" to "CONCEPT_NAIL",
+        "kil" to "CONCEPT_NAIL",
+        "nail" to "CONCEPT_NAIL",
+        "nails" to "CONCEPT_NAIL",
+        "nut" to "CONCEPT_NUT",
+        "nuts" to "CONCEPT_NUT",
+        "dibiri" to "CONCEPT_NUT",
+        "dibri" to "CONCEPT_NUT",
+        "bolt" to "CONCEPT_BOLT",
+        "bolts" to "CONCEPT_BOLT",
+        "washer" to "CONCEPT_WASHER",
+        "washers" to "CONCEPT_WASHER",
+        "vashar" to "CONCEPT_WASHER",
+        "warshal" to "CONCEPT_WASHER",
+        "gitti" to "CONCEPT_WALL_PLUG",
+        "gittee" to "CONCEPT_WALL_PLUG",
+        "fastener" to "CONCEPT_ANCHOR_FASTENER",
+        "anchor" to "CONCEPT_ANCHOR_FASTENER",
+
+        // Plumbing & Sanitary
+        "toti" to "CONCEPT_BIB_COCK",
+        "tonti" to "CONCEPT_BIB_COCK",
+        "nal" to "CONCEPT_BIB_COCK",
+        "tap" to "CONCEPT_BIB_COCK",
+        "elbow" to "CONCEPT_ELBOW",
+        "elbo" to "CONCEPT_ELBOW",
+        "bend" to "CONCEPT_ELBOW",
+        "tee" to "CONCEPT_TEE",
+        "socket" to "CONCEPT_SOCKET",
+        "coupler" to "CONCEPT_SOCKET",
+        "coupling" to "CONCEPT_SOCKET",
+        "reducer" to "CONCEPT_REDUCER",
+        "union" to "CONCEPT_UNION",
+        "nipple" to "CONCEPT_NIPPLE",
+        "pipe" to "CONCEPT_PIPE",
+        "pipes" to "CONCEPT_PIPE",
+        "solvent" to "CONCEPT_SOLVENT_CEMENT",
+        "teflon" to "CONCEPT_TEFLON_TAPE",
+
+        // Tools & Consumables
+        "pana" to "CONCEPT_SPANNER",
+        "paana" to "CONCEPT_SPANNER",
+        "spanner" to "CONCEPT_SPANNER",
+        "wrench" to "CONCEPT_SPANNER",
+        "plas" to "CONCEPT_PLIER",
+        "plaas" to "CONCEPT_PLIER",
+        "plier" to "CONCEPT_PLIER",
+        "pliers" to "CONCEPT_PLIER",
+        "pechkas" to "CONCEPT_SCREWDRIVER",
+        "screwdriver" to "CONCEPT_SCREWDRIVER",
+        "tester" to "CONCEPT_TESTER",
+        "hathodi" to "CONCEPT_HAMMER",
+        "hathoda" to "CONCEPT_HAMMER",
+        "hammer" to "CONCEPT_HAMMER",
+        "regmal" to "CONCEPT_SANDPAPER",
+        "regmar" to "CONCEPT_SANDPAPER",
+        "sandpaper" to "CONCEPT_SANDPAPER",
+        "fevicol" to "CONCEPT_ADHESIVE",
+        "fevikol" to "CONCEPT_ADHESIVE",
+        "adhesive" to "CONCEPT_ADHESIVE",
+        "glue" to "CONCEPT_ADHESIVE",
+        "araldite" to "CONCEPT_EPOXY",
+        "mseal" to "CONCEPT_SEALANT",
+        "silicon" to "CONCEPT_SILICONE",
+        "silicone" to "CONCEPT_SILICONE",
+        "sariya" to "CONCEPT_TMT_BAR",
+        "tmt" to "CONCEPT_TMT_BAR",
+        "tar" to "CONCEPT_WIRE",
+        "taar" to "CONCEPT_WIRE",
+        "wire" to "CONCEPT_WIRE",
+        "jali" to "CONCEPT_MESH",
+        "jaali" to "CONCEPT_MESH",
+        "mesh" to "CONCEPT_MESH",
+        "net" to "CONCEPT_MESH",
+        "rassi" to "CONCEPT_ROPE",
+        "rope" to "CONCEPT_ROPE",
+        "brush" to "CONCEPT_BRUSH",
+        "roller" to "CONCEPT_ROLLER",
+        "putty" to "CONCEPT_PUTTY",
+        "primer" to "CONCEPT_PRIMER",
+        "paint" to "CONCEPT_PAINT",
+        "thinner" to "CONCEPT_THINNER",
+        "tarpin" to "CONCEPT_THINNER",
+        "turpentine" to "CONCEPT_THINNER"
+    )
+
+    /**
+     * Canonical Material tokens (extracted as Variant attribute `material`).
+     */
+    val materialAliases: Map<String, String> = mapOf(
+        "ss" to "SS",
+        "s.s" to "SS",
+        "s.s." to "SS",
+        "stainless" to "SS",
+        "ss304" to "SS 304",
+        "304" to "SS 304",
+        "ss202" to "SS 202",
+        "202" to "SS 202",
+        "ms" to "MS (Iron)",
+        "m.s" to "MS (Iron)",
+        "m.s." to "MS (Iron)",
+        "iron" to "MS (Iron)",
+        "loha" to "MS (Iron)",
+        "lohe" to "MS (Iron)",
+        "mild" to "MS (Iron)",
+        "brass" to "Brass",
+        "peetal" to "Brass",
+        "pital" to "Brass",
+        "gi" to "GI",
+        "g.i" to "GI",
+        "g.i." to "GI",
+        "galvanized" to "GI",
+        "aluminium" to "Aluminium",
+        "aluminum" to "Aluminium",
+        "almunium" to "Aluminium",
+        "alu" to "Aluminium",
+        "copper" to "Copper",
+        "tamba" to "Copper",
+        "pvc" to "PVC",
+        "upvc" to "uPVC",
+        "cpvc" to "CPVC",
+        "hdpe" to "HDPE",
+        "nylon" to "Nylon",
+        "plastic" to "Plastic",
+        "zinc" to "Zinc",
+        "zamak" to "Zinc",
+        "wood" to "Wooden",
+        "wooden" to "Wooden",
+        "lakdi" to "Wooden"
+    )
+
+    /**
+     * Canonical Color / Finish tokens (extracted as Variant attribute `colorFinish`).
+     */
+    val colorFinishAliases: Map<String, String> = mapOf(
+        "black" to "Black",
+        "kala" to "Black",
+        "matte" to "Matt",
+        "matt" to "Matt",
+        "white" to "White",
+        "safed" to "White",
+        "ivory" to "Ivory",
+        "cream" to "Ivory",
+        "silver" to "Silver / Chrome",
+        "chrome" to "Silver / Chrome",
+        "cp" to "Silver / Chrome",
+        "satin" to "Satin Nickel",
+        "nickel" to "Satin Nickel",
+        "antique" to "Antique Brass",
+        "ab" to "Antique Brass",
+        "gold" to "Gold",
+        "golden" to "Gold",
+        "rose" to "Rose Gold",
+        "rosegold" to "Rose Gold",
+        "rg" to "Rose Gold",
+        "brown" to "Brown",
+        "bhura" to "Brown",
+        "grey" to "Grey",
+        "gray" to "Grey",
+        "red" to "Red",
+        "lal" to "Red",
+        "blue" to "Blue",
+        "neela" to "Blue",
+        "green" to "Green",
+        "hara" to "Green",
+        "yellow" to "Yellow",
+        "peela" to "Yellow",
+        "wenge" to "Wenge",
+        "teak" to "Teak"
+    )
+
+    /**
+     * Nominal hardware size equivalences (in Indian hardware shops, 1 inch ≈ 25mm nominal).
+     * e.g., "4 inch", "4\"", "100mm", "10cm" -> canonical `"4 inch (100mm)"`.
+     */
+    val nominalSizeEquivalents: Map<String, String> = mapOf(
+        "0.5in" to "1/2 inch (15mm)",
+        "1/2in" to "1/2 inch (15mm)",
+        "half_inch" to "1/2 inch (15mm)",
+        "aadha_inch" to "1/2 inch (15mm)",
+        "12mm" to "1/2 inch (12mm)",
+        "15mm" to "1/2 inch (15mm)",
+
+        "0.75in" to "3/4 inch (20mm)",
+        "3/4in" to "3/4 inch (20mm)",
+        "pauna_inch" to "3/4 inch (20mm)",
+        "19mm" to "3/4 inch (20mm)",
+        "20mm" to "3/4 inch (20mm)",
+
+        "1in" to "1 inch (25mm)",
+        "25mm" to "1 inch (25mm)",
+
+        "1.25in" to "1.25 inch (32mm)",
+        "1_1/4in" to "1.25 inch (32mm)",
+        "sawa_inch" to "1.25 inch (32mm)",
+        "32mm" to "1.25 inch (32mm)",
+
+        "1.5in" to "1.5 inch (38mm)",
+        "1_1/2in" to "1.5 inch (38mm)",
+        "dedh_inch" to "1.5 inch (38mm)",
+        "38mm" to "1.5 inch (38mm)",
+        "40mm" to "1.5 inch (40mm)",
+
+        "2in" to "2 inch (50mm)",
+        "50mm" to "2 inch (50mm)",
+
+        "2.5in" to "2.5 inch (65mm)",
+        "2_1/2in" to "2.5 inch (65mm)",
+        "dhai_inch" to "2.5 inch (65mm)",
+        "65mm" to "2.5 inch (65mm)",
+
+        "3in" to "3 inch (75mm)",
+        "75mm" to "3 inch (75mm)",
+
+        "4in" to "4 inch (100mm)",
+        "100mm" to "4 inch (100mm)",
+        "10cm" to "4 inch (100mm)",
+
+        "5in" to "5 inch (125mm)",
+        "125mm" to "5 inch (125mm)",
+
+        "6in" to "6 inch (150mm)",
+        "150mm" to "6 inch (150mm)",
+
+        "8in" to "8 inch (200mm)",
+        "200mm" to "8 inch (200mm)",
+
+        "10in" to "10 inch (250mm)",
+        "250mm" to "10 inch (250mm)",
+
+        "12in" to "12 inch (300mm)",
+        "300mm" to "12 inch (300mm)"
+    )
+
+    val stopWords: Set<String> = setOf(
+        "for", "with", "and", "of", "the", "in", "on", "to", "a", "an",
+        "ka", "ki", "ke", "wala", "wali", "wale", "type", "heavy", "medium", "light", "size", "pcs", "piece"
+    )
+}

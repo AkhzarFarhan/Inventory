@@ -1,0 +1,162 @@
+name: Build & Publish LPS Hardware Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version Name (e.g. 1.0.1)'
+        required: true
+        default: '1.0.1'
+      release_notes:
+        description: 'Release Notes (optional)'
+        required: false
+        default: 'LPS Hardware Inventory OTA update with speed improvements and bug fixes.'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-cleanup: true
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x ./gradlew
+
+      - name: Determine Version Name & Code
+        id: versioning
+        run: |
+          # Calculate strictly increasing version code based on total git commits
+          VERSION_CODE=$(git rev-list --count HEAD)
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "VERSION_CODE: $VERSION_CODE"
+
+          # Determine version name
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION_NAME="${{ github.event.inputs.version_name }}"
+          elif [[ "${{ github.ref }}" =~ refs/tags/v.* ]]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+          else
+            VERSION_NAME="1.0.${VERSION_CODE}"
+          fi
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "TAG_NAME=v$VERSION_NAME" >> $GITHUB_ENV
+          echo "INVENTORY_TAG=inventory-v$VERSION_NAME" >> $GITHUB_ENV
+          echo "VERSION_NAME: $VERSION_NAME"
+
+      - name: Setup Google Services Configuration
+        run: |
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo "Injecting google-services.json from GitHub Secrets..."
+            echo "${{ secrets.GOOGLE_SERVICES_JSON }}" > app/google-services.json
+          elif [ -f "app/google-services.json" ]; then
+            echo "Using committed app/google-services.json"
+          fi
+
+      - name: Fast Build Debug APK
+        run: |
+          ./gradlew assembleDebug -PversionCode=${{ env.VERSION_CODE }} -PversionName=${{ env.VERSION_NAME }} --parallel --build-cache
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk release-artifacts/LPSHardware.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-artifacts/LPSHardware-${{ env.TAG_NAME }}.apk
+          
+          # Create inventory-version.json metadata for direct in-app parsing
+          cat <<EOF > release-artifacts/inventory-version.json
+          {
+            "versionCode": ${{ env.VERSION_CODE }},
+            "versionName": "${{ env.VERSION_NAME }}",
+            "appName": "LPS Hardware"
+          }
+          EOF
+
+      - name: Check for Public Releases PAT
+        run: |
+          if [ -n "${{ secrets.RELEASES_PAT }}" ]; then
+            echo "HAS_RELEASES_PAT=true" >> $GITHUB_ENV
+            echo "RELEASES_PAT is configured."
+          else
+            echo "HAS_RELEASES_PAT=false" >> $GITHUB_ENV
+            echo "RELEASES_PAT is not set. Will release to Inventory repository only."
+          fi
+
+      - name: Publish GitHub Release (Inventory Repo)
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: "LPS Hardware ${{ env.TAG_NAME }}"
+          body: ${{ github.event.inputs.release_notes || 'Over-The-Air update for LPS Hardware Inventory.' }}
+          files: |
+            release-artifacts/LPSHardware.apk
+            release-artifacts/LPSHardware-${{ env.TAG_NAME }}.apk
+            release-artifacts/inventory-version.json
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          preserve_order: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publish to AkhzarFarhan/ubiverse-releases repository with prerelease: true
+      # CRITICAL: Setting prerelease=true ensures GitHub's /releases/latest endpoint
+      # ignores this release, preventing any interference with Ubiverse's OTA release pipeline!
+      - name: Publish to ubiverse-releases (Tagged Version)
+        if: env.HAS_RELEASES_PAT == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          repository: AkhzarFarhan/ubiverse-releases
+          token: ${{ secrets.RELEASES_PAT }}
+          tag_name: ${{ env.INVENTORY_TAG }}
+          name: "LPS Hardware ${{ env.TAG_NAME }}"
+          body: ${{ github.event.inputs.release_notes || 'Over-The-Air update for LPS Hardware Inventory.' }}
+          files: |
+            release-artifacts/LPSHardware.apk
+            release-artifacts/LPSHardware-${{ env.TAG_NAME }}.apk
+            release-artifacts/inventory-version.json
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+          preserve_order: true
+
+      - name: Update ubiverse-releases (inventory-latest Tag)
+        if: env.HAS_RELEASES_PAT == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          repository: AkhzarFarhan/ubiverse-releases
+          token: ${{ secrets.RELEASES_PAT }}
+          tag_name: inventory-latest
+          name: "LPS Hardware (Latest OTA)"
+          body: ${{ github.event.inputs.release_notes || 'Latest Over-The-Air release for LPS Hardware Inventory.' }}
+          files: |
+            release-artifacts/LPSHardware.apk
+            release-artifacts/inventory-version.json
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+          preserve_order: true
