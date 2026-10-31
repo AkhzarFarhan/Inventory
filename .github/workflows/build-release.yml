@@ -47,6 +47,11 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x ./gradlew
 
+      - name: Clean Invalid Local Properties
+        run: |
+          # Ensure no machine-specific Windows paths exist in gradle.properties
+          sed -i '/org.gradle.java.home/d' gradle.properties || true
+
       - name: Determine Version Name & Code
         id: versioning
         run: |
@@ -75,6 +80,18 @@ jobs:
             echo "${{ secrets.GOOGLE_SERVICES_JSON }}" > app/google-services.json
           elif [ -f "app/google-services.json" ]; then
             echo "Using committed app/google-services.json"
+          fi
+
+      - name: Restore Signing Keystore
+        run: |
+          mkdir -p ~/.android
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "Restoring debug.keystore from GitHub Secrets..."
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > debug.keystore
+            cp debug.keystore ~/.android/debug.keystore
+          elif [ -f "debug.keystore" ]; then
+            echo "Using committed debug.keystore in repository root"
+            cp debug.keystore ~/.android/debug.keystore
           fi
 
       - name: Fast Build Debug APK
