@@ -492,7 +492,9 @@ private fun SaleRecordCard(
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (sale.isReturned) CupertinoColors.LabelMuted else CupertinoColors.LabelPrimary,
-                    textDecoration = if (sale.isReturned) TextDecoration.LineThrough else TextDecoration.None
+                    textDecoration = if (sale.isReturned) TextDecoration.LineThrough else TextDecoration.None,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "${sale.variantSummarySnapshot} • #${sale.receiptNumber}",
@@ -560,12 +562,6 @@ private fun SaleRecordCard(
                     } margin)",
                     containerColor = if (isProfitPositive) CupertinoColors.EmeraldTint else CupertinoColors.DestructiveTint,
                     contentColor = if (isProfitPositive) CupertinoColors.EmeraldGreen else CupertinoColors.DestructiveRed
-                )
-            } else {
-                SemanticPillBadge(
-                    text = "Margin Hidden",
-                    containerColor = CupertinoColors.SecondarySurface,
-                    contentColor = CupertinoColors.LabelMuted
                 )
             }
         }

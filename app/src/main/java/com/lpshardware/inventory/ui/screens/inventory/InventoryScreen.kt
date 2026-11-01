@@ -567,157 +567,192 @@ private fun InventoryItemCard(
             CupertinoColors.AmberWarning.copy(alpha = 0.35f)
         } else {
             CupertinoColors.LightBorder
-        }
+        },
+        contentPadding = PaddingValues(12.dp)
     ) {
-        // Row 1: Alphabetical Letter Badge + Item Name + Category + Stock Status Pill
+        // TOP ROW: Full Item Name (Maximum Width, Multi-line on Low-Res Phones) + Top-Right Actions
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top
         ) {
+            Text(
+                text = itemWithVariants.item.displayName,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = CupertinoColors.LabelPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 6.dp)
+            )
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.weight(1f)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(CupertinoColors.SystemBlueTint),
-                    contentAlignment = Alignment.Center
-                ) {
+                if (variants.size == 1) {
                     Text(
-                        text = itemWithVariants.firstLetterHeader.toString(),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = CupertinoColors.SystemBlue
-                    )
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = itemWithVariants.item.displayName,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CupertinoColors.LabelPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${itemWithVariants.item.category} • ${variants.size} variant${if (variants.size > 1) "s" else ""}",
+                        text = "+ Variant",
                         fontSize = 11.sp,
-                        color = CupertinoColors.LabelMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        fontWeight = FontWeight.Bold,
+                        color = CupertinoColors.SystemBlue,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onAddVariant() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
-            }
 
-            // Stock Badge
-            val stockText = "${IndianCurrencyFormatter.formatQuantity(activeVariant.stockQuantity)} ${activeVariant.unit}"
-            when {
-                activeVariant.isOutOfStock -> SemanticPillBadge(
-                    text = "Out of Stock (0)",
-                    containerColor = CupertinoColors.DestructiveTint,
-                    contentColor = CupertinoColors.DestructiveRed
-                )
-                activeVariant.isLowStock -> SemanticPillBadge(
-                    text = "Low: $stockText",
-                    containerColor = CupertinoColors.AmberTint,
-                    contentColor = CupertinoColors.AmberWarning
-                )
-                else -> SemanticPillBadge(
-                    text = "In Stock: $stockText",
-                    containerColor = CupertinoColors.EmeraldTint,
-                    contentColor = CupertinoColors.EmeraldGreen
-                )
+                IconButton(
+                    onClick = { onEditVariant(activeVariant) },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Item",
+                        tint = CupertinoColors.LabelMuted,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(3.dp))
 
-        // Row 2: Variant Selector Chips (Size · Material · Color/Finish) + "+ Variant" Chip
+        // SUBTITLE ROW: Small In-Stock Label Moved Below (Doesn't hide item name) + Category
+        val stockQty = IndianCurrencyFormatter.formatQuantity(activeVariant.stockQuantity)
+        val (stockLabel, stockColor) = when {
+            activeVariant.isOutOfStock -> "Out of Stock" to CupertinoColors.DestructiveRed
+            activeVariant.isLowStock -> "Low Stock: $stockQty ${activeVariant.unit}" to CupertinoColors.AmberWarning
+            else -> "In Stock: $stockQty ${activeVariant.unit}" to CupertinoColors.EmeraldGreen
+        }
+
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            variants.forEachIndexed { idx, variant ->
-                val isSelected = idx == safeIndex
-                val summary = variant.buildVariantSummary()
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(stockColor)
+            )
+            Text(
+                text = stockLabel,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = stockColor
+            )
+            Text(
+                text = "•",
+                fontSize = 10.sp,
+                color = CupertinoColors.LabelMuted
+            )
+            Text(
+                text = itemWithVariants.item.category,
+                fontSize = 11.sp,
+                color = CupertinoColors.LabelSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
+
+        // VARIANT SELECTOR CHIPS: Only shown when item has multiple variants (clean, uncluttered for single items)
+        if (variants.size > 1) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                variants.forEachIndexed { idx, variant ->
+                    val isSelected = idx == safeIndex
+                    val summary = variant.buildVariantSummary()
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
+                        ),
+                        modifier = Modifier.clickable { selectedVariantIndex = idx }
+                    ) {
+                        Text(
+                            text = summary,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
-                    ),
-                    modifier = Modifier.clickable { selectedVariantIndex = idx }
+                    color = CupertinoColors.SystemBlueTint,
+                    border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.3f)),
+                    modifier = Modifier.clickable { onAddVariant() }
                 ) {
                     Text(
-                        text = summary,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        text = "+ Variant",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CupertinoColors.SystemBlue,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }
-
-            // "+ Variant" chip to add another Size / Color / Material of the same item
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = CupertinoColors.SystemBlueTint,
-                border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.3f)),
-                modifier = Modifier.clickable { onAddVariant() }
-            ) {
+        } else {
+            val singleSummary = activeVariant.buildVariantSummary()
+            if (singleSummary != "Standard") {
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = "+ Variant",
+                    text = singleSummary,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.SystemBlue,
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                    fontWeight = FontWeight.Medium,
+                    color = CupertinoColors.LabelMuted
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Row 3: Selling Price (₹) + Coded Purchase Price Symbol Badge (IMG_20261031_222339.jpg)
+        // PRICE & SECRET CODED CIPHER (Clean & elegant, no bulky nested container)
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(CupertinoColors.SecondarySurface)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
                 Text(
-                    text = "SELLING PRICE",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelMuted
-                )
-                Text(
-                    text = "${IndianCurrencyFormatter.formatPaise(activeVariant.sellingPricePaise)} / ${activeVariant.unit}",
-                    fontSize = 19.sp,
+                    text = IndianCurrencyFormatter.formatPaise(activeVariant.sellingPricePaise),
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = CupertinoColors.LabelPrimary
                 )
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                CodedPurchasePriceBadge(
-                    purchasePricePaise = activeVariant.purchasePricePaise,
-                    isSellerUnlocked = isSellerUnlocked,
-                    glyphSize = 17.dp
+                Text(
+                    text = "/ ${activeVariant.unit}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = CupertinoColors.LabelSecondary,
+                    modifier = Modifier.padding(bottom = 2.dp)
                 )
             }
+
+            CodedPurchasePriceBadge(
+                purchasePricePaise = activeVariant.purchasePricePaise,
+                isSellerUnlocked = isSellerUnlocked,
+                glyphSize = 16.dp
+            )
         }
 
         // Only shown when Seller explicitly unlocks Seller Mode: Unit Margin & Gain %
@@ -732,19 +767,19 @@ private fun InventoryItemCard(
                     quantity = 1.0
                 )
             }
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Unit Margin: ${IndianCurrencyFormatter.formatPaise(profitAnalysis.totalProfitPaise, showPlusSign = true)}",
+                    text = "Margin: ${IndianCurrencyFormatter.formatPaise(profitAnalysis.totalProfitPaise, showPlusSign = true)}",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = CupertinoColors.EmeraldGreen
                 )
                 Text(
-                    text = "Gain: ${IndianCurrencyFormatter.formatPercentage(profitAnalysis.gainMarkupPercent)} • Margin: ${IndianCurrencyFormatter.formatPercentage(profitAnalysis.grossMarginPercent, showPlus = false)}",
+                    text = "+${IndianCurrencyFormatter.formatPercentage(profitAnalysis.gainMarkupPercent)} gain (${IndianCurrencyFormatter.formatPercentage(profitAnalysis.grossMarginPercent, showPlus = false)} margin)",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = CupertinoColors.EmeraldGreen
@@ -754,39 +789,17 @@ private fun InventoryItemCard(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Row 4: Symmetrical Ergonomic Action Buttons (Edit | + Cart | Quick Sell)
+        // PRIMARY COUNTER ACTIONS: Streamlined 2-Button Row (+ Cart | Sell Now)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedButton(
-                onClick = { onEditVariant(activeVariant) },
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, CupertinoColors.Separator),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                modifier = Modifier.weight(0.9f)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit Item",
-                    tint = CupertinoColors.LabelSecondary,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Edit",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = CupertinoColors.LabelPrimary
-                )
-            }
-
-            OutlinedButton(
                 onClick = { onAddToCart(activeVariant) },
                 shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.45f)),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(
@@ -798,7 +811,7 @@ private fun InventoryItemCard(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "+ Cart",
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = CupertinoColors.SystemBlue
                 )
@@ -811,8 +824,8 @@ private fun InventoryItemCard(
                     containerColor = CupertinoColors.SystemBlue,
                     contentColor = Color.White
                 ),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier.weight(1.25f)
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+                modifier = Modifier.weight(1.3f)
             ) {
                 Icon(
                     imageVector = Icons.Default.ShoppingBag,
