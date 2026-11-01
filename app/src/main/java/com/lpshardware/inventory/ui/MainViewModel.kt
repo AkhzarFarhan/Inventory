@@ -219,6 +219,8 @@ class MainViewModel(
 
     fun addVariantToExistingItem(
         itemId: String,
+        newDisplayName: String? = null,
+        newCategory: String? = null,
         sizeLabel: String,
         materialLabel: String,
         colorFinishLabel: String,
@@ -231,6 +233,8 @@ class MainViewModel(
         viewModelScope.launch {
             repository.addVariantToExistingItem(
                 itemId = itemId,
+                newDisplayName = newDisplayName,
+                newCategory = newCategory,
                 sizeLabel = sizeLabel,
                 materialLabel = materialLabel,
                 colorFinishLabel = colorFinishLabel,
@@ -241,6 +245,34 @@ class MainViewModel(
                 lowStockThreshold = lowStockThreshold
             )
         }
+    }
+
+    fun addVariantToExistingItem(
+        item: InventoryItemEntity,
+        newDisplayName: String,
+        newCategory: String,
+        sizeLabel: String,
+        materialLabel: String,
+        colorFinishLabel: String,
+        unit: String,
+        purchasePricePaise: Long,
+        sellingPricePaise: Long,
+        stockQuantity: Double,
+        lowStockThreshold: Double
+    ) {
+        addVariantToExistingItem(
+            itemId = item.id,
+            newDisplayName = newDisplayName,
+            newCategory = newCategory,
+            sizeLabel = sizeLabel,
+            materialLabel = materialLabel,
+            colorFinishLabel = colorFinishLabel,
+            unit = unit,
+            purchasePricePaise = purchasePricePaise,
+            sellingPricePaise = sellingPricePaise,
+            stockQuantity = stockQuantity,
+            lowStockThreshold = lowStockThreshold
+        )
     }
 
     fun updateExistingItemAndVariant(

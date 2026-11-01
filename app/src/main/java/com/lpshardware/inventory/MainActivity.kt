@@ -342,12 +342,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                     onAddNewItemClick = {
                         activeEditorMode = ItemEditorMode.AddNewItem
                     },
-                    onAddVariantClick = { parentItem ->
-                        activeEditorMode = ItemEditorMode.AddVariantToParent(parentItem)
-                    },
-                    onEditItemVariantClick = { item, variant ->
-                        val parentCount = allInventory.firstOrNull { it.item.id == item.id }?.variants?.size ?: 1
-                        activeEditorMode = ItemEditorMode.EditExisting(item, variant, parentCount)
+                    onEditItemClick = { itemWithVariants, variant ->
+                        activeEditorMode = ItemEditorMode.ManageItem(itemWithVariants, variant.id)
                     },
                     onQuickSellClick = { item, variant ->
                         quickSellTarget = item to variant
@@ -377,11 +373,15 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             onSaveVariantToParent = viewModel::addVariantToExistingItem,
             onUpdateExisting = viewModel::updateExistingItemAndVariant,
             onDeleteItemOrVariant = viewModel::deleteItemOrVariant,
-            onSwitchToVariantMode = { matchedParent, _, _, _ ->
-                activeEditorMode = ItemEditorMode.AddVariantToParent(matchedParent)
-            },
-            onSwitchToEditExistingVariant = { item, variant, count ->
-                activeEditorMode = ItemEditorMode.EditExisting(item, variant, count)
+            onSwitchToManageItem = { matchedParent, initialVariantId, isAddingNew, pSize, pMat, pCol ->
+                activeEditorMode = ItemEditorMode.ManageItem(
+                    itemWithVariants = matchedParent,
+                    initialVariantId = initialVariantId,
+                    startInAddVariantMode = isAddingNew,
+                    prefillSize = pSize,
+                    prefillMaterial = pMat,
+                    prefillColor = pCol
+                )
             },
             onDismiss = { activeEditorMode = null }
         )

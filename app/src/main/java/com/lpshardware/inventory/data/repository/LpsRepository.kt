@@ -108,10 +108,13 @@ class LpsRepository(
     }
 
     /**
-     * Adds a new variant (size, material, or color/finish) under an existing parent hardware item.
+     * Adds a new variant (size, material, or color/finish) under an existing parent hardware item,
+     * optionally updating the parent item's display name or category in the same unified operation.
      */
     suspend fun addVariantToExistingItem(
         itemId: String,
+        newDisplayName: String? = null,
+        newCategory: String? = null,
         sizeLabel: String,
         materialLabel: String,
         colorFinishLabel: String,
@@ -122,6 +125,21 @@ class LpsRepository(
         lowStockThreshold: Double
     ): String = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
+        if (!newDisplayName.isNullOrBlank() || !newCategory.isNullOrBlank()) {
+            val existingItem = inventoryDao.getAllRawItems().firstOrNull { it.id == itemId }
+            if (existingItem != null) {
+                val cleanName = newDisplayName?.trim()?.ifEmpty { existingItem.displayName } ?: existingItem.displayName
+                val cleanCategory = newCategory?.trim()?.ifEmpty { existingItem.category } ?: existingItem.category
+                val updatedItem = existingItem.copy(
+                    displayName = cleanName,
+                    sortKey = cleanName.uppercase(),
+                    category = cleanCategory,
+                    updatedAt = now,
+                    syncStatus = SyncState.PENDING_UPLOAD
+                )
+                inventoryDao.upsertItem(updatedItem)
+            }
+        }
         val variantId = UUID.randomUUID().toString()
         val variantEntity = ItemVariantEntity(
             id = variantId,

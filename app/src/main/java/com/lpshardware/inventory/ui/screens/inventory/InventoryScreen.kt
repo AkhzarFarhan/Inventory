@@ -97,8 +97,7 @@ fun InventoryScreen(
     onClearAllSearches: () -> Unit,
     onFilterModeChange: (InventoryFilterMode) -> Unit,
     onAddNewItemClick: () -> Unit,
-    onAddVariantClick: (InventoryItemWithVariants) -> Unit,
-    onEditItemVariantClick: (InventoryItemEntity, ItemVariantEntity) -> Unit,
+    onEditItemClick: (InventoryItemWithVariants, ItemVariantEntity) -> Unit,
     onQuickSellClick: (InventoryItemEntity, ItemVariantEntity) -> Unit,
     onAddToCartClick: (InventoryItemEntity, ItemVariantEntity) -> Unit,
     modifier: Modifier = Modifier
@@ -362,9 +361,8 @@ fun InventoryScreen(
                         InventoryItemCard(
                             itemWithVariants = itemWithVariants,
                             isSellerUnlocked = isSellerUnlocked,
-                            onAddVariant = { onAddVariantClick(itemWithVariants) },
-                            onEditVariant = { variant ->
-                                onEditItemVariantClick(itemWithVariants.item, variant)
+                            onEditItem = { variant ->
+                                onEditItemClick(itemWithVariants, variant)
                             },
                             onQuickSell = { variant ->
                                 if (searchQuery.isNotBlank()) {
@@ -548,8 +546,7 @@ private fun SearchHistoryPanel(
 private fun InventoryItemCard(
     itemWithVariants: InventoryItemWithVariants,
     isSellerUnlocked: Boolean,
-    onAddVariant: () -> Unit,
-    onEditVariant: (ItemVariantEntity) -> Unit,
+    onEditItem: (ItemVariantEntity) -> Unit,
     onQuickSell: (ItemVariantEntity) -> Unit,
     onAddToCart: (ItemVariantEntity) -> Unit
 ) {
@@ -570,7 +567,7 @@ private fun InventoryItemCard(
         },
         contentPadding = PaddingValues(12.dp)
     ) {
-        // TOP ROW: Full Item Name (Maximum Width, Multi-line on Low-Res Phones) + Top-Right Actions
+        // TOP ROW: Full Item Name (Maximum Width, Multi-line on Low-Res Phones) + Top-Right Unified Edit
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -588,34 +585,16 @@ private fun InventoryItemCard(
                     .padding(end = 6.dp)
             )
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            IconButton(
+                onClick = { onEditItem(activeVariant) },
+                modifier = Modifier.size(24.dp)
             ) {
-                if (variants.size == 1) {
-                    Text(
-                        text = "+ Variant",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CupertinoColors.SystemBlue,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onAddVariant() }
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = { onEditVariant(activeVariant) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit Item",
-                        tint = CupertinoColors.LabelMuted,
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit Item & Manage Variants",
+                    tint = CupertinoColors.LabelMuted,
+                    modifier = Modifier.size(15.dp)
+                )
             }
         }
 
@@ -691,21 +670,6 @@ private fun InventoryItemCard(
                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                         )
                     }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = CupertinoColors.SystemBlueTint,
-                    border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.3f)),
-                    modifier = Modifier.clickable { onAddVariant() }
-                ) {
-                    Text(
-                        text = "+ Variant",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CupertinoColors.SystemBlue,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
                 }
             }
         } else {
