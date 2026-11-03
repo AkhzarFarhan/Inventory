@@ -189,6 +189,20 @@ class MainViewModel(
         )
     }
 
+    fun addNewItemWithVariants(
+        displayName: String,
+        category: String,
+        variants: List<LpsRepository.NewVariantSpec>
+    ) {
+        viewModelScope.launch {
+            repository.addNewItemWithVariants(
+                displayName = displayName,
+                category = category,
+                variants = variants
+            )
+        }
+    }
+
     fun addNewItemWithVariant(
         displayName: String,
         category: String,

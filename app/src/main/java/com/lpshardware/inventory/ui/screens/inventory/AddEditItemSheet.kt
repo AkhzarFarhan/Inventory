@@ -35,6 +35,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,13 +60,35 @@ import com.lpshardware.inventory.core.nlp.DuplicateDecisionType
 import com.lpshardware.inventory.data.local.entity.InventoryItemEntity
 import com.lpshardware.inventory.data.local.entity.ItemVariantEntity
 import com.lpshardware.inventory.data.model.InventoryItemWithVariants
+import com.lpshardware.inventory.data.repository.LpsRepository
 import com.lpshardware.inventory.ui.theme.CupertinoCard
 import com.lpshardware.inventory.ui.theme.CupertinoColors
 import com.lpshardware.inventory.ui.theme.CupertinoTextField
+import java.util.UUID
+
+/**
+ * Temporary draft model for in-memory variant composition during brand-new item creation.
+ */
+data class VariantDraft(
+    val id: String = UUID.randomUUID().toString(),
+    var sizeLabel: String = "",
+    var materialLabel: String = "",
+    var colorFinishLabel: String = "",
+    var unit: String = "pcs",
+    var purchasePriceInput: String = "",
+    var sellingPriceInput: String = "",
+    var stockQtyInput: String = "10",
+    var lowStockInput: String = "5"
+) {
+    fun buildSummary(): String {
+        val parts = listOf(sizeLabel, materialLabel, colorFinishLabel).filter { it.isNotBlank() }
+        return if (parts.isEmpty()) "Standard" else parts.joinToString(" · ")
+    }
+}
 
 /**
  * Unified editor modes:
- * - [AddNewItem]: Create a brand new item from scratch.
+ * - [AddNewItem]: Create a brand new item from scratch, with support for multiple distinct variants with their own prices.
  * - [ManageItem]: Unified management for an existing item and all of its variants (edit existing or add new variant).
  */
 sealed class ItemEditorMode {
@@ -83,18 +107,12 @@ sealed class ItemEditorMode {
 @Composable
 fun AddEditItemSheet(
     mode: ItemEditorMode,
+    existingCategories: List<String> = emptyList(),
     onCheckDuplicate: (name: String, size: String, material: String, color: String, excludeItemId: String?) -> DuplicateCheckResult,
-    onSaveNewItem: (
+    onSaveNewItemWithVariants: (
         displayName: String,
         category: String,
-        size: String,
-        material: String,
-        color: String,
-        unit: String,
-        purchasePaise: Long,
-        sellingPaise: Long,
-        stockQty: Double,
-        lowStockAlert: Double
+        variants: List<LpsRepository.NewVariantSpec>
     ) -> Unit,
     onSaveVariantToParent: (
         item: InventoryItemEntity,
@@ -141,6 +159,16 @@ fun AddEditItemSheet(
     val managedItemWithVariants = (mode as? ItemEditorMode.ManageItem)?.itemWithVariants
     val variants = managedItemWithVariants?.variants.orEmpty()
     val initialStartInAdd = (mode as? ItemEditorMode.ManageItem)?.startInAddVariantMode ?: false
+
+    // Draft variants for AddNewItem mode (supports multiple variants with different purchase & sale prices)
+    val draftVariants = remember(mode) {
+        mutableStateListOf(
+            VariantDraft(
+                unit = "pcs"
+            )
+        )
+    }
+    var activeDraftIndex by remember(mode) { mutableIntStateOf(0) }
 
     var isAddingNewVariant by remember(mode) { mutableStateOf(initialStartInAdd) }
 
@@ -246,6 +274,30 @@ fun AddEditItemSheet(
     var showDeleteVariantConfirm by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf("") }
 
+    // Synchronize current inputs into draft when creating brand new item
+    fun saveCurrentIntoDraft(draft: VariantDraft) {
+        draft.sizeLabel = sizeLabel
+        draft.materialLabel = materialLabel
+        draft.colorFinishLabel = colorFinishLabel
+        draft.unit = unit
+        draft.purchasePriceInput = purchasePriceInput
+        draft.sellingPriceInput = sellingPriceInput
+        draft.stockQtyInput = stockQtyInput
+        draft.lowStockInput = lowStockInput
+    }
+
+    fun loadDraft(draft: VariantDraft) {
+        sizeLabel = draft.sizeLabel
+        materialLabel = draft.materialLabel
+        colorFinishLabel = draft.colorFinishLabel
+        unit = draft.unit
+        purchasePriceInput = draft.purchasePriceInput
+        sellingPriceInput = draft.sellingPriceInput
+        stockQtyInput = draft.stockQtyInput
+        lowStockInput = draft.lowStockInput
+        validationError = ""
+    }
+
     fun selectVariant(v: ItemVariantEntity) {
         isAddingNewVariant = false
         selectedVariantId = v.id
@@ -284,7 +336,7 @@ fun AddEditItemSheet(
         }
     }
 
-    val categories = remember {
+    val defaultCategories = remember {
         listOf(
             "Door & Window Fittings",
             "Fasteners & Screws",
@@ -293,6 +345,9 @@ fun AddEditItemSheet(
             "Paints & Adhesives",
             "Electrical & General"
         )
+    }
+    val categories = remember(existingCategories) {
+        (defaultCategories + existingCategories).filter { it.isNotBlank() }.distinct()
     }
     val units = remember { listOf("pcs", "box", "kg", "mtr", "pkt", "set", "pair", "dzn") }
 
@@ -340,7 +395,7 @@ fun AddEditItemSheet(
                 }
             }
 
-            // CARD 1: Item Name & Category
+            // CARD 1: Item Name & User-Writable Category (Requirement #2)
             CupertinoCard(contentPadding = PaddingValues(12.dp)) {
                 CupertinoTextField(
                     value = itemName,
@@ -398,6 +453,22 @@ fun AddEditItemSheet(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
+
+                // Editable User-Writable Category Text Field (Requirement #2)
+                CupertinoTextField(
+                    value = category,
+                    onValueChange = {
+                        category = it
+                        validationError = ""
+                    },
+                    label = "Category (Type custom or select below)",
+                    placeholder = "e.g. Door Fittings, Sanitary, Locks, Nails...",
+                    capitalization = KeyboardCapitalization.Words
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Quick Category Suggestions Chips
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -405,7 +476,7 @@ fun AddEditItemSheet(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     categories.forEach { cat ->
-                        val selected = category == cat
+                        val selected = category.equals(cat, ignoreCase = true)
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = if (selected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
@@ -517,110 +588,230 @@ fun AddEditItemSheet(
                 }
             }
 
-            // UNIFIED VARIANTS SELECTOR: Only in ManageItem mode
-            // Allows seamless switching between editing existing variants and adding a new variant
-            if (mode is ItemEditorMode.ManageItem) {
-                CupertinoCard(contentPadding = PaddingValues(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "VARIANTS (${variants.size})",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.LabelMuted
-                        )
+            // VARIANTS SELECTOR BAR (Requirement #1: Different variants have different prices)
+            // Available both when adding brand-new items (multiple drafts) and managing existing items
+            when (mode) {
+                is ItemEditorMode.AddNewItem -> {
+                    CupertinoCard(contentPadding = PaddingValues(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ITEM VARIANTS (${draftVariants.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CupertinoColors.LabelMuted
+                            )
 
-                        if (!isAddingNewVariant && variants.size > 1 && activeVariant != null) {
-                            TextButton(
-                                onClick = { showDeleteVariantConfirm = true },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "Delete This Variant",
-                                    color = CupertinoColors.DestructiveRed,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                            if (draftVariants.size > 1) {
+                                TextButton(
+                                    onClick = {
+                                        if (draftVariants.size > 1) {
+                                            draftVariants.removeAt(activeDraftIndex)
+                                            activeDraftIndex = activeDraftIndex.coerceIn(0, draftVariants.lastIndex)
+                                            loadDraft(draftVariants[activeDraftIndex])
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Remove Variant",
+                                        color = CupertinoColors.DestructiveRed,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        variants.forEach { v ->
-                            val isSelected = !isAddingNewVariant && v.id == (activeVariant?.id ?: selectedVariantId)
-                            val summary = v.buildVariantSummary()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            draftVariants.forEachIndexed { idx, draft ->
+                                val isSelected = idx == activeDraftIndex
+                                val summary = draft.buildSummary()
+                                val pricePart = if (draft.sellingPriceInput.isNotBlank()) " • ₹${draft.sellingPriceInput}" else ""
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
+                                    ),
+                                    modifier = Modifier.clickable {
+                                        if (idx != activeDraftIndex) {
+                                            saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+                                            activeDraftIndex = idx
+                                            loadDraft(draftVariants[idx])
+                                        }
+                                    }
+                                ) {
+                                    Text(
+                                        text = "$summary$pricePart",
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+
+                            // Unified [+ Add Variant] chip for adding another variant with distinct price
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                                border = BorderStroke(
-                                    width = 1.dp,
-                                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
-                                ),
-                                modifier = Modifier.clickable { selectVariant(v) }
+                                color = CupertinoColors.SystemBlueTint,
+                                border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.4f)),
+                                modifier = Modifier.clickable {
+                                    saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+                                    val nextDraft = VariantDraft(unit = unit.ifBlank { "pcs" })
+                                    draftVariants.add(nextDraft)
+                                    activeDraftIndex = draftVariants.lastIndex
+                                    loadDraft(nextDraft)
+                                }
                             ) {
-                                Text(
-                                    text = summary,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add Variant",
+                                        tint = CupertinoColors.SystemBlue,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "Add Variant",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CupertinoColors.SystemBlue
+                                    )
+                                }
                             }
                         }
 
-                        // Unified [+ Add Variant] pill
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.SystemBlueTint,
-                            border = BorderStroke(
-                                1.dp,
-                                if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.SystemBlue.copy(alpha = 0.4f)
-                            ),
-                            modifier = Modifier.clickable { startAddNewVariant() }
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Add Variant",
-                                    tint = if (isAddingNewVariant) Color.White else CupertinoColors.SystemBlue,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "Add Variant",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isAddingNewVariant) Color.White else CupertinoColors.SystemBlue
-                                )
-                            }
-                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "● Configuring Variant #${activeDraftIndex + 1} (${draftVariants[activeDraftIndex].buildSummary()})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = CupertinoColors.SystemBlue
+                        )
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (isAddingNewVariant) {
-                            "● Adding new variant under \"$itemName\""
-                        } else {
-                            "Editing: ${activeVariant?.buildVariantSummary() ?: "Standard"}"
-                        },
-                        fontSize = 11.sp,
-                        fontWeight = if (isAddingNewVariant) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.LabelSecondary
-                    )
+                is ItemEditorMode.ManageItem -> {
+                    CupertinoCard(contentPadding = PaddingValues(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ITEM VARIANTS (${variants.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CupertinoColors.LabelMuted
+                            )
+
+                            if (!isAddingNewVariant && variants.size > 1 && activeVariant != null) {
+                                TextButton(
+                                    onClick = { showDeleteVariantConfirm = true },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Delete This Variant",
+                                        color = CupertinoColors.DestructiveRed,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            variants.forEach { v ->
+                                val isSelected = !isAddingNewVariant && v.id == (activeVariant?.id ?: selectedVariantId)
+                                val summary = v.buildVariantSummary()
+                                val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
+                                    ),
+                                    modifier = Modifier.clickable { selectVariant(v) }
+                                ) {
+                                    Text(
+                                        text = "$summary • $priceLabel",
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+
+                            // Unified [+ Add Variant] chip
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.SystemBlueTint,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.SystemBlue.copy(alpha = 0.4f)
+                                ),
+                                modifier = Modifier.clickable { startAddNewVariant() }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add Variant",
+                                        tint = if (isAddingNewVariant) Color.White else CupertinoColors.SystemBlue,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "Add Variant",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isAddingNewVariant) Color.White else CupertinoColors.SystemBlue
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (isAddingNewVariant) {
+                                "● Adding new variant under \"$itemName\" (with distinct purchase & selling price)"
+                            } else {
+                                "Editing: ${activeVariant?.buildVariantSummary() ?: "Standard"} • Purchase: ${IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0)} • Sale: ${IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)}"
+                            },
+                            fontSize = 11.sp,
+                            fontWeight = if (isAddingNewVariant) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.LabelSecondary
+                        )
+                    }
                 }
             }
 
@@ -644,7 +835,12 @@ fun AddEditItemSheet(
                 ) {
                     CupertinoTextField(
                         value = sizeLabel,
-                        onValueChange = { sizeLabel = it },
+                        onValueChange = {
+                            sizeLabel = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].sizeLabel = it
+                            }
+                        },
                         label = "Size / Dimension",
                         placeholder = "e.g. 4 inch, 100mm",
                         capitalization = KeyboardCapitalization.None,
@@ -653,7 +849,12 @@ fun AddEditItemSheet(
 
                     CupertinoTextField(
                         value = materialLabel,
-                        onValueChange = { materialLabel = it },
+                        onValueChange = {
+                            materialLabel = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].materialLabel = it
+                            }
+                        },
                         label = "Material",
                         placeholder = "e.g. SS 304, Brass",
                         capitalization = KeyboardCapitalization.Words,
@@ -670,7 +871,12 @@ fun AddEditItemSheet(
                 ) {
                     CupertinoTextField(
                         value = colorFinishLabel,
-                        onValueChange = { colorFinishLabel = it },
+                        onValueChange = {
+                            colorFinishLabel = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].colorFinishLabel = it
+                            }
+                        },
                         label = "Color / Finish",
                         placeholder = "e.g. Matt Black, Chrome",
                         capitalization = KeyboardCapitalization.Words,
@@ -679,7 +885,12 @@ fun AddEditItemSheet(
 
                     CupertinoTextField(
                         value = unit,
-                        onValueChange = { unit = it },
+                        onValueChange = {
+                            unit = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].unit = it
+                            }
+                        },
                         label = "Unit of Measure",
                         placeholder = "e.g. pcs, box, kg",
                         capitalization = KeyboardCapitalization.None,
@@ -702,7 +913,12 @@ fun AddEditItemSheet(
                             shape = RoundedCornerShape(6.dp),
                             color = if (selected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
                             border = BorderStroke(1.dp, if (selected) CupertinoColors.SystemBlue else CupertinoColors.Separator),
-                            modifier = Modifier.clickable { unit = u }
+                            modifier = Modifier.clickable {
+                                unit = u
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].unit = u
+                                }
+                            }
                         ) {
                             Text(
                                 text = u,
@@ -726,6 +942,9 @@ fun AddEditItemSheet(
                         value = purchasePriceInput,
                         onValueChange = {
                             purchasePriceInput = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].purchasePriceInput = it
+                            }
                             validationError = ""
                         },
                         label = "Purchase Price (₹)",
@@ -738,6 +957,9 @@ fun AddEditItemSheet(
                         value = sellingPriceInput,
                         onValueChange = {
                             sellingPriceInput = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].sellingPriceInput = it
+                            }
                             validationError = ""
                         },
                         label = "Selling Price (₹)",
@@ -802,7 +1024,12 @@ fun AddEditItemSheet(
                 ) {
                     CupertinoTextField(
                         value = stockQtyInput,
-                        onValueChange = { stockQtyInput = it },
+                        onValueChange = {
+                            stockQtyInput = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].stockQtyInput = it
+                            }
+                        },
                         label = "Current Stock",
                         placeholder = "10",
                         keyboardType = KeyboardType.Decimal,
@@ -811,7 +1038,12 @@ fun AddEditItemSheet(
 
                     CupertinoTextField(
                         value = lowStockInput,
-                        onValueChange = { lowStockInput = it },
+                        onValueChange = {
+                            lowStockInput = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].lowStockInput = it
+                            }
+                        },
                         label = "Low Stock Alert At",
                         placeholder = "5",
                         keyboardType = KeyboardType.Decimal,
@@ -860,47 +1092,64 @@ fun AddEditItemSheet(
                         keyboardController?.hide()
                         focusManager.clearFocus()
 
-                        val finalPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
-                        val finalSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
-                        val finalStock = stockQtyInput.toDoubleOrNull() ?: 0.0
-                        val finalLowAlert = lowStockInput.toDoubleOrNull() ?: 5.0
-
                         if (itemName.isBlank()) {
                             validationError = "Please enter an item name."
                             return@Button
                         }
-                        if (finalSellingPaise <= 0L) {
-                            validationError = "Please enter a valid selling price (₹)."
-                            return@Button
-                        }
-                        if (mode is ItemEditorMode.AddNewItem &&
-                            duplicateCheckResult?.decision == DuplicateDecisionType.EXACT_DUPLICATE
-                        ) {
-                            validationError = "This exact item & variant already exists! Tap 'Edit Existing' above or change its Size/Material/Color."
-                            return@Button
-                        }
+                        val cleanCategory = category.trim().ifEmpty { "General Hardware" }
 
                         when (mode) {
                             is ItemEditorMode.AddNewItem -> {
-                                onSaveNewItem(
-                                    itemName,
-                                    category,
-                                    sizeLabel,
-                                    materialLabel,
-                                    colorFinishLabel,
-                                    unit,
-                                    finalPurchasePaise,
-                                    finalSellingPaise,
-                                    finalStock,
-                                    finalLowAlert
-                                )
+                                if (duplicateCheckResult?.decision == DuplicateDecisionType.EXACT_DUPLICATE) {
+                                    validationError = "This exact item already exists! Tap 'Edit Existing' above."
+                                    return@Button
+                                }
+
+                                saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+
+                                val specs = mutableListOf<LpsRepository.NewVariantSpec>()
+                                draftVariants.forEachIndexed { index, draft ->
+                                    val finalSelling = IndianCurrencyFormatter.parseRupeesToPaise(draft.sellingPriceInput)
+                                    val finalPurchase = IndianCurrencyFormatter.parseRupeesToPaise(draft.purchasePriceInput)
+                                    if (finalSelling <= 0L) {
+                                        val hint = if (draft.buildSummary() == "Standard") "Variant #${index + 1}" else draft.buildSummary()
+                                        validationError = "Please enter a valid selling price (₹) for $hint."
+                                        activeDraftIndex = index
+                                        loadDraft(draft)
+                                        return@Button
+                                    }
+                                    specs.add(
+                                        LpsRepository.NewVariantSpec(
+                                            sizeLabel = draft.sizeLabel,
+                                            materialLabel = draft.materialLabel,
+                                            colorFinishLabel = draft.colorFinishLabel,
+                                            unit = draft.unit.ifBlank { "pcs" },
+                                            purchasePricePaise = finalPurchase,
+                                            sellingPricePaise = finalSelling,
+                                            stockQuantity = draft.stockQtyInput.toDoubleOrNull() ?: 10.0,
+                                            lowStockThreshold = draft.lowStockInput.toDoubleOrNull() ?: 5.0
+                                        )
+                                    )
+                                }
+
+                                onSaveNewItemWithVariants(itemName, cleanCategory, specs)
                             }
                             is ItemEditorMode.ManageItem -> {
+                                val finalPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
+                                val finalSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
+                                val finalStock = stockQtyInput.toDoubleOrNull() ?: 0.0
+                                val finalLowAlert = lowStockInput.toDoubleOrNull() ?: 5.0
+
+                                if (finalSellingPaise <= 0L) {
+                                    validationError = "Please enter a valid selling price (₹)."
+                                    return@Button
+                                }
+
                                 if (isAddingNewVariant) {
                                     onSaveVariantToParent(
                                         mode.itemWithVariants.item,
                                         itemName,
-                                        category,
+                                        cleanCategory,
                                         sizeLabel,
                                         materialLabel,
                                         colorFinishLabel,
@@ -915,7 +1164,7 @@ fun AddEditItemSheet(
                                     onUpdateExisting(
                                         mode.itemWithVariants.item,
                                         itemName,
-                                        category,
+                                        cleanCategory,
                                         targetVar,
                                         sizeLabel,
                                         materialLabel,
@@ -941,7 +1190,7 @@ fun AddEditItemSheet(
                 ) {
                     Text(
                         text = when {
-                            mode is ItemEditorMode.AddNewItem -> "Save Item"
+                            mode is ItemEditorMode.AddNewItem -> if (draftVariants.size > 1) "Save (${draftVariants.size} Variants)" else "Save Item"
                             mode is ItemEditorMode.ManageItem && isAddingNewVariant -> "+ Add Variant"
                             else -> "Save Changes"
                         },

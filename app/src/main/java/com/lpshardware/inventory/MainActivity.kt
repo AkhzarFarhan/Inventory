@@ -100,7 +100,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
 
     var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
-    var quickSellTarget by remember { mutableStateOf<Pair<InventoryItemEntity, ItemVariantEntity>?>(null) }
+    var quickSellTarget by remember { mutableStateOf<Triple<InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>>?>(null) }
     var showCounterCartSheet by remember { mutableStateOf(false) }
     var prefilledCartBuyerName by remember { mutableStateOf("") }
     var prefilledCartBuyerPhone by remember { mutableStateOf("") }
@@ -345,8 +345,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                     onEditItemClick = { itemWithVariants, variant ->
                         activeEditorMode = ItemEditorMode.ManageItem(itemWithVariants, variant.id)
                     },
-                    onQuickSellClick = { item, variant ->
-                        quickSellTarget = item to variant
+                    onQuickSellClick = { item, variant, variants ->
+                        quickSellTarget = Triple(item, variant, variants)
                     },
                     onAddToCartClick = { item, variant ->
                         viewModel.addOrUpdateCartItem(item, variant, 1.0)
@@ -364,12 +364,17 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         }
     }
 
+    val allExistingCategories = remember(allInventory) {
+        allInventory.map { it.item.category }.filter { it.isNotBlank() }.distinct()
+    }
+
     // Add / Edit Item & Variant Sheet
     activeEditorMode?.let { mode ->
         AddEditItemSheet(
             mode = mode,
+            existingCategories = allExistingCategories,
             onCheckDuplicate = viewModel::checkCandidateDuplicate,
-            onSaveNewItem = viewModel::addNewItemWithVariant,
+            onSaveNewItemWithVariants = viewModel::addNewItemWithVariants,
             onSaveVariantToParent = viewModel::addVariantToExistingItem,
             onUpdateExisting = viewModel::updateExistingItemAndVariant,
             onDeleteItemOrVariant = viewModel::deleteItemOrVariant,
@@ -388,10 +393,11 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     }
 
     // 1-Tap Quick Sell Sheet
-    quickSellTarget?.let { (item, variant) ->
+    quickSellTarget?.let { (item, variant, allVariants) ->
         QuickSellSheet(
             item = item,
             variant = variant,
+            allVariants = allVariants,
             isSellerUnlocked = isSellerUnlocked,
             knownBuyers = knownBuyers,
             onConfirmQuickSell = { lineItem, buyerName, buyerPhone ->

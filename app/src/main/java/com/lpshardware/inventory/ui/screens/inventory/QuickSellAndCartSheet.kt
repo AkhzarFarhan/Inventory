@@ -83,6 +83,7 @@ import com.lpshardware.inventory.ui.theme.HapticHelper
 fun QuickSellSheet(
     item: InventoryItemEntity,
     variant: ItemVariantEntity,
+    allVariants: List<ItemVariantEntity> = emptyList(),
     isSellerUnlocked: Boolean,
     knownBuyers: List<KnownBuyerProfile>,
     onConfirmQuickSell: (CartLineItem, buyerName: String, buyerPhone: String) -> Unit,
@@ -95,18 +96,19 @@ fun QuickSellSheet(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    var qtyInput by remember(variant.id) { mutableStateOf("1") }
-    var sellingPriceInput by remember(variant.id) {
-        mutableStateOf(IndianCurrencyFormatter.paiseToEditableString(variant.sellingPricePaise))
+    var activeVariant by remember(variant.id) { mutableStateOf(variant) }
+    var qtyInput by remember(activeVariant.id) { mutableStateOf("1") }
+    var sellingPriceInput by remember(activeVariant.id) {
+        mutableStateOf(IndianCurrencyFormatter.paiseToEditableString(activeVariant.sellingPricePaise))
     }
     var buyerName by remember { mutableStateOf("") }
     var buyerPhone by remember { mutableStateOf("") }
 
     val parsedQty = (qtyInput.toDoubleOrNull() ?: 1.0).coerceAtLeast(0.01)
     val parsedSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
-    val profitAnalysis = remember(variant.purchasePricePaise, parsedSellingPaise, parsedQty) {
+    val profitAnalysis = remember(activeVariant.purchasePricePaise, parsedSellingPaise, parsedQty) {
         IndianCurrencyFormatter.computeProfitAnalysis(
-            unitPurchasePaise = variant.purchasePricePaise,
+            unitPurchasePaise = activeVariant.purchasePricePaise,
             unitSellingPaise = parsedSellingPaise,
             quantity = parsedQty
         )
@@ -139,10 +141,56 @@ fun QuickSellSheet(
                     fontWeight = FontWeight.Bold,
                     color = CupertinoColors.LabelPrimary
                 )
+
+                if (allVariants.size > 1) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "CHOOSE VARIANT:",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CupertinoColors.LabelMuted
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        allVariants.forEach { v ->
+                            val isSelected = v.id == activeVariant.id
+                            val summary = v.buildVariantSummary()
+                            val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
+                                ),
+                                modifier = Modifier.clickable {
+                                    activeVariant = v
+                                    sellingPriceInput = IndianCurrencyFormatter.paiseToEditableString(v.sellingPricePaise)
+                                }
+                            ) {
+                                Text(
+                                    text = "$summary • $priceLabel",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
                 Text(
-                    text = "${variant.buildVariantSummary()} • Available: ${
-                        IndianCurrencyFormatter.formatQuantity(variant.stockQuantity)
-                    } ${variant.unit}",
+                    text = "${activeVariant.buildVariantSummary()} • Available: ${
+                        IndianCurrencyFormatter.formatQuantity(activeVariant.stockQuantity)
+                    } ${activeVariant.unit}",
                     fontSize = 12.sp,
                     color = CupertinoColors.LabelSecondary
                 )
@@ -160,7 +208,7 @@ fun QuickSellSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CodedPurchasePriceBadge(
-                        purchasePricePaise = variant.purchasePricePaise,
+                        purchasePricePaise = activeVariant.purchasePricePaise,
                         isSellerUnlocked = isSellerUnlocked
                     )
 
@@ -318,13 +366,13 @@ fun QuickSellSheet(
                         focusManager.clearFocus()
                         val lineItem = CartLineItem(
                             itemId = item.id,
-                            variantId = variant.id,
+                            variantId = activeVariant.id,
                             itemName = item.displayName,
-                            variantSummary = variant.buildVariantSummary(),
-                            unit = variant.unit,
-                            availableStock = variant.stockQuantity,
-                            unitPurchasePricePaise = variant.purchasePricePaise,
-                            defaultSellingPricePaise = variant.sellingPricePaise,
+                            variantSummary = activeVariant.buildVariantSummary(),
+                            unit = activeVariant.unit,
+                            availableStock = activeVariant.stockQuantity,
+                            unitPurchasePricePaise = activeVariant.purchasePricePaise,
+                            defaultSellingPricePaise = activeVariant.sellingPricePaise,
                             customSellingPricePaise = parsedSellingPaise,
                             quantity = parsedQty
                         )
@@ -360,13 +408,13 @@ fun QuickSellSheet(
 
                         val lineItem = CartLineItem(
                             itemId = item.id,
-                            variantId = variant.id,
+                            variantId = activeVariant.id,
                             itemName = item.displayName,
-                            variantSummary = variant.buildVariantSummary(),
-                            unit = variant.unit,
-                            availableStock = variant.stockQuantity,
-                            unitPurchasePricePaise = variant.purchasePricePaise,
-                            defaultSellingPricePaise = variant.sellingPricePaise,
+                            variantSummary = activeVariant.buildVariantSummary(),
+                            unit = activeVariant.unit,
+                            availableStock = activeVariant.stockQuantity,
+                            unitPurchasePricePaise = activeVariant.purchasePricePaise,
+                            defaultSellingPricePaise = activeVariant.sellingPricePaise,
                             customSellingPricePaise = parsedSellingPaise,
                             quantity = parsedQty
                         )

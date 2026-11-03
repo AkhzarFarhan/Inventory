@@ -52,6 +52,66 @@ class LpsRepository(
         saleDao.observePendingSaleCount()
     ) { items, variants, sales -> items + variants + sales }
 
+    data class NewVariantSpec(
+        val sizeLabel: String = "",
+        val materialLabel: String = "",
+        val colorFinishLabel: String = "",
+        val unit: String = "pcs",
+        val purchasePricePaise: Long,
+        val sellingPricePaise: Long,
+        val stockQuantity: Double = 10.0,
+        val lowStockThreshold: Double = 5.0
+    )
+
+    /**
+     * Adds a brand-new parent hardware item along with multiple variants (each with its own distinct pricing).
+     */
+    suspend fun addNewItemWithVariants(
+        displayName: String,
+        category: String,
+        variants: List<NewVariantSpec>
+    ): String = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val cleanName = displayName.trim()
+        val itemId = UUID.randomUUID().toString()
+
+        val itemEntity = InventoryItemEntity(
+            id = itemId,
+            displayName = cleanName,
+            sortKey = cleanName.uppercase(),
+            category = category.trim().ifEmpty { "General Hardware" },
+            createdAt = now,
+            updatedAt = now,
+            isDeleted = false,
+            syncStatus = SyncState.PENDING_UPLOAD
+        )
+
+        val variantEntities = variants.map { spec ->
+            ItemVariantEntity(
+                id = UUID.randomUUID().toString(),
+                itemId = itemId,
+                sizeLabel = SmartItemMatcher.normalizeSizeString(spec.sizeLabel),
+                materialLabel = SmartItemMatcher.normalizeMaterialString(spec.materialLabel),
+                colorFinishLabel = SmartItemMatcher.normalizeColorString(spec.colorFinishLabel),
+                unit = spec.unit.trim().ifEmpty { "pcs" },
+                purchasePricePaise = spec.purchasePricePaise,
+                sellingPricePaise = spec.sellingPricePaise,
+                stockQuantity = spec.stockQuantity,
+                lowStockThreshold = spec.lowStockThreshold,
+                updatedAt = now,
+                isDeleted = false,
+                syncStatus = SyncState.PENDING_UPLOAD
+            )
+        }
+
+        database.withTransaction {
+            inventoryDao.upsertItem(itemEntity)
+            inventoryDao.upsertVariants(variantEntities)
+        }
+        SyncManager.scheduleDeltaSync(context)
+        itemId
+    }
+
     /**
      * Adds a brand-new parent hardware item along with its initial variant.
      */
@@ -66,46 +126,22 @@ class LpsRepository(
         sellingPricePaise: Long,
         stockQuantity: Double,
         lowStockThreshold: Double
-    ): String = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val cleanName = displayName.trim()
-        val itemId = UUID.randomUUID().toString()
-        val variantId = UUID.randomUUID().toString()
-
-        val itemEntity = InventoryItemEntity(
-            id = itemId,
-            displayName = cleanName,
-            sortKey = cleanName.uppercase(),
-            category = category.trim().ifEmpty { "General Hardware" },
-            createdAt = now,
-            updatedAt = now,
-            isDeleted = false,
-            syncStatus = SyncState.PENDING_UPLOAD
+    ): String = addNewItemWithVariants(
+        displayName = displayName,
+        category = category,
+        variants = listOf(
+            NewVariantSpec(
+                sizeLabel = sizeLabel,
+                materialLabel = materialLabel,
+                colorFinishLabel = colorFinishLabel,
+                unit = unit,
+                purchasePricePaise = purchasePricePaise,
+                sellingPricePaise = sellingPricePaise,
+                stockQuantity = stockQuantity,
+                lowStockThreshold = lowStockThreshold
+            )
         )
-
-        val variantEntity = ItemVariantEntity(
-            id = variantId,
-            itemId = itemId,
-            sizeLabel = SmartItemMatcher.normalizeSizeString(sizeLabel),
-            materialLabel = SmartItemMatcher.normalizeMaterialString(materialLabel),
-            colorFinishLabel = SmartItemMatcher.normalizeColorString(colorFinishLabel),
-            unit = unit.trim().ifEmpty { "pcs" },
-            purchasePricePaise = purchasePricePaise,
-            sellingPricePaise = sellingPricePaise,
-            stockQuantity = stockQuantity,
-            lowStockThreshold = lowStockThreshold,
-            updatedAt = now,
-            isDeleted = false,
-            syncStatus = SyncState.PENDING_UPLOAD
-        )
-
-        database.withTransaction {
-            inventoryDao.upsertItem(itemEntity)
-            inventoryDao.upsertVariant(variantEntity)
-        }
-        SyncManager.scheduleDeltaSync(context)
-        itemId
-    }
+    )
 
     /**
      * Adds a new variant (size, material, or color/finish) under an existing parent hardware item,

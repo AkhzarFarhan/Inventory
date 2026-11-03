@@ -98,7 +98,7 @@ fun InventoryScreen(
     onFilterModeChange: (InventoryFilterMode) -> Unit,
     onAddNewItemClick: () -> Unit,
     onEditItemClick: (InventoryItemWithVariants, ItemVariantEntity) -> Unit,
-    onQuickSellClick: (InventoryItemEntity, ItemVariantEntity) -> Unit,
+    onQuickSellClick: (InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>) -> Unit,
     onAddToCartClick: (InventoryItemEntity, ItemVariantEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -368,7 +368,7 @@ fun InventoryScreen(
                                 if (searchQuery.isNotBlank()) {
                                     onCommitSearch(searchQuery)
                                 }
-                                onQuickSellClick(itemWithVariants.item, variant)
+                                onQuickSellClick(itemWithVariants.item, variant, itemWithVariants.variants)
                             },
                             onAddToCart = { variant ->
                                 if (searchQuery.isNotBlank()) {
@@ -653,6 +653,7 @@ private fun InventoryItemCard(
                 variants.forEachIndexed { idx, variant ->
                     val isSelected = idx == safeIndex
                     val summary = variant.buildVariantSummary()
+                    val priceLabel = IndianCurrencyFormatter.formatPaise(variant.sellingPricePaise)
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
@@ -663,7 +664,7 @@ private fun InventoryItemCard(
                         modifier = Modifier.clickable { selectedVariantIndex = idx }
                     ) {
                         Text(
-                            text = summary,
+                            text = "$summary • $priceLabel",
                             fontSize = 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
