@@ -72,10 +72,20 @@ class MainViewModel(
             InventoryFilterMode.ALL_ALPHABETICAL -> allItems
             InventoryFilterMode.LOW_STOCK_ONLY -> allItems.filter { it.hasLowStockVariant }
         }
-        if (query.isBlank()) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) {
             modeFiltered
         } else {
-            modeFiltered.filter { SmartItemMatcher.matchesSearchQuery(query, it) }
+            modeFiltered
+                .mapNotNull { item ->
+                    val score = SmartItemMatcher.calculateSearchRelevanceScore(trimmed, item)
+                    if (score > 0.0) item to score else null
+                }
+                .sortedWith(
+                    compareByDescending<Pair<InventoryItemWithVariants, Double>> { it.second }
+                        .thenBy { it.first.item.displayName.lowercase() }
+                )
+                .map { it.first }
         }
     }.stateIn(
         scope = viewModelScope,

@@ -302,59 +302,212 @@ object SmartItemMatcher {
     }
 
     /**
-     * Semantic search scorer used by the Inventory search bar so queries like `"4 inch kabza"`
-     * or `"ss chatkani"` find matching items and variants even when spelled differently.
+     * Levenshtein edit distance between two strings for typo tolerance.
+     */
+    fun levenshteinDistance(s1: String, s2: String): Int {
+        if (s1 == s2) return 0
+        if (s1.isEmpty()) return s2.length
+        if (s2.isEmpty()) return s1.length
+
+        val m = s1.length
+        val n = s2.length
+        val dp = IntArray(n + 1) { it }
+        for (i in 1..m) {
+            var prev = dp[0]
+            dp[0] = i
+            for (j in 1..n) {
+                val temp = dp[j]
+                dp[j] = if (s1[i - 1] == s2[j - 1]) {
+                    prev
+                } else {
+                    1 + minOf(prev, dp[j], dp[j - 1])
+                }
+                prev = temp
+            }
+        }
+        return dp[n]
+    }
+
+    /**
+     * Calculates a search relevance score >= 0.0 for an inventory item.
+     * Returns 0.0 if the item does NOT match the query and should be filtered out.
+     *
+     * Higher score indicates higher search relevance:
+     * - Exact item display name match: 10,000
+     * - Direct word token match in item display name: 4,000 to 6,500
+     * - Prefix match of words in item display name: 2,500 to 3,500
+     * - Domain ontology concept match (e.g. "kabza" -> Hinge, "pech" -> Screw): 3,500 to 5,500
+     * - Substring match in item display name: 1,500 to 2,300
+     * - Match in variant attributes (size, material, finish): 700 to 1,500
+     * - Typo tolerance with Levenshtein distance on discrete words: 2,000
+     * - Category match: 150 to 300 (intentionally low so category matches never rank above name matches)
+     */
+    fun calculateSearchRelevanceScore(
+        query: String,
+        itemWithVariants: InventoryItemWithVariants
+    ): Double {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return 1.0
+
+        val lowerQuery = trimmed.lowercase()
+        val displayName = itemWithVariants.item.displayName.trim()
+        val lowerDisplayName = displayName.lowercase()
+
+        // 1. Exact full display name match
+        if (lowerDisplayName == lowerQuery) {
+            return 10000.0
+        }
+
+        val queryWords = lowerQuery.split(Regex("""[^a-z0-9]+""")).filter { it.isNotBlank() }
+        val nameWords = lowerDisplayName.split(Regex("""[^a-z0-9]+""")).filter { it.isNotBlank() }
+        if (queryWords.isEmpty()) return 1.0
+
+        var score = 0.0
+
+        // 2. Exact word boundary / token match in item displayName
+        val exactNameWordMatches = queryWords.count { q -> nameWords.contains(q) }
+        if (exactNameWordMatches > 0) {
+            val fraction = exactNameWordMatches.toDouble() / queryWords.size
+            var wordScore = 4000.0 * fraction
+            if (exactNameWordMatches == queryWords.size) {
+                wordScore += 1500.0 // All query words match in title!
+            }
+            if (nameWords.firstOrNull() == queryWords.firstOrNull()) {
+                wordScore += 1000.0
+            } else if (lowerDisplayName.startsWith(lowerQuery)) {
+                wordScore += 800.0
+            }
+            score = max(score, wordScore)
+        }
+
+        // 3. Prefix match in item displayName (e.g. "cemen" matches "cement", "hing" matches "hinge")
+        val prefixMatches = queryWords.count { q ->
+            nameWords.any { nw -> nw.startsWith(q) && nw != q }
+        }
+        if (prefixMatches > 0) {
+            val fraction = prefixMatches.toDouble() / queryWords.size
+            var prefixScore = 2500.0 * fraction
+            if (nameWords.firstOrNull()?.startsWith(queryWords.first()) == true) {
+                prefixScore += 500.0
+            }
+            score = max(score, prefixScore)
+        }
+
+        // 4. Substring match in item displayName
+        if (score == 0.0 && lowerDisplayName.contains(lowerQuery)) {
+            var subScore = 1500.0
+            if (lowerDisplayName.startsWith(lowerQuery)) {
+                subScore += 800.0
+            }
+            score = max(score, subScore)
+        }
+
+        // 5. Semantic & Hardware Domain Ontology Concepts (Hinglish trade synonyms like "kabza" -> Hinge)
+        val querySig = parseSignature(trimmed)
+        val itemSig = parseSignature(itemWithVariants.item.displayName)
+
+        // Check size requirement if specified in query
+        var sizeMatched = false
+        if (querySig.canonicalSize.isNotEmpty()) {
+            val hasSize = itemWithVariants.variants.any {
+                normalizeSizeString(it.sizeLabel).equals(querySig.canonicalSize, ignoreCase = true)
+            } || itemSig.canonicalSize.equals(querySig.canonicalSize, ignoreCase = true)
+            if (!hasSize) {
+                return 0.0
+            }
+            sizeMatched = true
+        }
+
+        // Check material requirement if specified in query
+        var materialMatched = false
+        if (querySig.canonicalMaterial.isNotEmpty()) {
+            val hasMat = itemWithVariants.variants.any {
+                normalizeMaterialString(it.materialLabel).equals(querySig.canonicalMaterial, ignoreCase = true)
+            } || itemSig.canonicalMaterial.equals(querySig.canonicalMaterial, ignoreCase = true)
+            if (!hasMat) {
+                return 0.0
+            }
+            materialMatched = true
+        }
+
+        val queryConcepts = querySig.baseConceptTokens.filter { it.startsWith("CONCEPT_") }.toSet()
+        val itemConcepts = itemSig.baseConceptTokens.filter { it.startsWith("CONCEPT_") }.toSet()
+
+        if (queryConcepts.isNotEmpty() && itemConcepts.isNotEmpty()) {
+            val commonConcepts = queryConcepts.intersect(itemConcepts)
+            if (commonConcepts.isNotEmpty()) {
+                var conceptScore = 3500.0
+                if (sizeMatched) conceptScore += 1200.0
+                if (materialMatched) conceptScore += 500.0
+                score = max(score, conceptScore)
+            } else if (score == 0.0) {
+                return 0.0
+            }
+        }
+
+        // Standalone size or material queries (e.g. query is "4 inch" or "SS 304")
+        if (sizeMatched && queryConcepts.isEmpty() && score == 0.0) {
+            score = max(score, 1500.0)
+        }
+        if (materialMatched && queryConcepts.isEmpty() && score == 0.0) {
+            score = max(score, 1500.0)
+        }
+
+        // 6. Variant Attribute Matching (Size, Material, Color/Finish)
+        for (v in itemWithVariants.variants) {
+            val vSize = v.sizeLabel.lowercase()
+            val vMat = v.materialLabel.lowercase()
+            val vColor = v.colorFinishLabel.lowercase()
+
+            if (lowerQuery.length >= 2) {
+                if (vSize == lowerQuery || vMat == lowerQuery || vColor == lowerQuery) {
+                    score = max(score, 1200.0)
+                } else if (vSize.contains(lowerQuery) || vMat.contains(lowerQuery) || vColor.contains(lowerQuery)) {
+                    score = max(score, 700.0)
+                }
+            }
+        }
+
+        // 7. Typo tolerance using Levenshtein distance on discrete words (e.g. "cemnt" for "cement")
+        if (score == 0.0 && queryWords.isNotEmpty()) {
+            var typoCount = 0
+            for (q in queryWords) {
+                if (q.length < 3) continue
+                val maxAllowedDist = if (q.length <= 4) 1 else 2
+                val hasTypoMatch = nameWords.any { nw ->
+                    nw.first() == q.first() && Math.abs(nw.length - q.length) <= maxAllowedDist &&
+                        levenshteinDistance(q, nw) <= maxAllowedDist
+                }
+                if (hasTypoMatch) typoCount++
+            }
+            if (typoCount > 0) {
+                score = 2000.0 * (typoCount.toDouble() / queryWords.size)
+            }
+        }
+
+        // 8. Category match (low weight so category matches never rank above name matches)
+        val lowerCat = itemWithVariants.item.category.lowercase()
+        if (lowerCat.isNotBlank() && lowerQuery.length >= 3) {
+            val catWords = lowerCat.split(Regex("""[^a-z0-9]+""")).filter { it.isNotBlank() }
+            if (catWords.contains(lowerQuery)) {
+                score = max(score, 300.0)
+            } else if (lowerCat.contains(lowerQuery)) {
+                score = max(score, 150.0)
+            }
+        }
+
+        return score
+    }
+
+    /**
+     * Semantic search matcher used by the Inventory search bar and search history recording.
+     * Evaluates whether the given item has a positive relevance score for the query.
      */
     fun matchesSearchQuery(
         query: String,
         itemWithVariants: InventoryItemWithVariants
     ): Boolean {
-        val trimmed = query.trim()
-        if (trimmed.isEmpty()) return true
-        val lowerQuery = trimmed.lowercase()
-
-        // Fast substring check first
-        if (itemWithVariants.item.displayName.lowercase().contains(lowerQuery) ||
-            itemWithVariants.item.category.lowercase().contains(lowerQuery)
-        ) {
-            return true
-        }
-        for (v in itemWithVariants.variants) {
-            if (v.sizeLabel.lowercase().contains(lowerQuery) ||
-                v.materialLabel.lowercase().contains(lowerQuery) ||
-                v.colorFinishLabel.lowercase().contains(lowerQuery)
-            ) {
-                return true
-            }
-        }
-
-        // Semantic & phonetic concept check
-        val querySig = parseSignature(trimmed)
-        val itemSig = parseSignature(itemWithVariants.item.displayName)
-
-        // If query specifies a size, check if any variant has that canonical size
-        if (querySig.canonicalSize.isNotEmpty()) {
-            val hasSize = itemWithVariants.variants.any {
-                normalizeSizeString(it.sizeLabel).equals(querySig.canonicalSize, ignoreCase = true)
-            } || itemSig.canonicalSize.equals(querySig.canonicalSize, ignoreCase = true)
-            if (!hasSize) return false
-        }
-
-        // If query specifies a material, check if item or any variant matches
-        if (querySig.canonicalMaterial.isNotEmpty()) {
-            val hasMat = itemWithVariants.variants.any {
-                normalizeMaterialString(it.materialLabel).equals(querySig.canonicalMaterial, ignoreCase = true)
-            } || itemSig.canonicalMaterial.equals(querySig.canonicalMaterial, ignoreCase = true)
-            if (!hasMat) return false
-        }
-
-        // If query has base concepts, verify every query concept matches item's concepts or phonetic tokens
-        if (querySig.phoneticBaseTokens.isNotEmpty()) {
-            val conceptScore = calculateBaseConceptSimilarity(querySig, itemSig)
-            return conceptScore >= 0.65
-        }
-
-        return true
+        return calculateSearchRelevanceScore(query, itemWithVariants) > 0.0
     }
 
     /**
@@ -386,7 +539,8 @@ object SmartItemMatcher {
                 } else if (tokenA.startsWith("CONCEPT_") || tokenB.startsWith("CONCEPT_")) {
                     0.0
                 } else {
-                    PhoneticEncoder.jaroWinklerSimilarity(tokenA, tokenB)
+                    val jw = PhoneticEncoder.jaroWinklerSimilarity(tokenA, tokenB)
+                    if (jw >= 0.92) jw else 0.0
                 }
                 if (sim > bestTokenMatch) bestTokenMatch = sim
             }
@@ -402,7 +556,8 @@ object SmartItemMatcher {
                 } else if (tokenA.startsWith("CONCEPT_") || tokenB.startsWith("CONCEPT_")) {
                     0.0
                 } else {
-                    PhoneticEncoder.jaroWinklerSimilarity(tokenB, tokenA)
+                    val jw = PhoneticEncoder.jaroWinklerSimilarity(tokenB, tokenA)
+                    if (jw >= 0.92) jw else 0.0
                 }
                 if (sim > bestTokenMatch) bestTokenMatch = sim
             }

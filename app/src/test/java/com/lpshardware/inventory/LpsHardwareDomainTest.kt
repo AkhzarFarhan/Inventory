@@ -163,6 +163,148 @@ class LpsHardwareDomainTest {
 
         assertTrue(SmartItemMatcher.matchesSearchQuery("chatkani", towerBolt))
         assertTrue(SmartItemMatcher.matchesSearchQuery("dedh inch kundi", towerBolt))
+
+        val whiteCement = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "wc-1",
+                displayName = "White Cement",
+                sortKey = "WHITE CEMENT",
+                category = "Paints & Adhesives"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "wc-v1",
+                    itemId = "wc-1",
+                    sizeLabel = "1 kg",
+                    materialLabel = "",
+                    colorFinishLabel = "White",
+                    unit = "pkt",
+                    purchasePricePaise = 2500L,
+                    sellingPricePaise = 4000L,
+                    stockQuantity = 20.0
+                )
+            )
+        )
+
+        val buttHinge = InventoryItemWithVariants(
+            item = InventoryItemEntity(id = "bh-1", displayName = "Butt Hinge (Kabza)", sortKey = "BUTT HINGE (KABZA)", category = "Door & Window Fittings"),
+            allVariants = emptyList()
+        )
+        val drywallScrew = InventoryItemWithVariants(
+            item = InventoryItemEntity(id = "ds-1", displayName = "Drywall Screw (Black)", sortKey = "DRYWALL SCREW (BLACK)", category = "Fasteners & Screws"),
+            allVariants = emptyList()
+        )
+        val woodAdhesive = InventoryItemWithVariants(
+            item = InventoryItemEntity(id = "wa-1", displayName = "Wood Adhesive (Fevicol SH)", sortKey = "WOOD ADHESIVE (FEVICOL SH)", category = "Paints & Adhesives"),
+            allVariants = emptyList()
+        )
+
+        // Verifies searching 'Cement' matches White Cement and excludes non-matching products
+        assertTrue(SmartItemMatcher.matchesSearchQuery("Cement", whiteCement))
+        assertFalse(SmartItemMatcher.matchesSearchQuery("Cement", buttHinge))
+        assertFalse(SmartItemMatcher.matchesSearchQuery("Cement", drywallScrew))
+        assertFalse(SmartItemMatcher.matchesSearchQuery("Cement", woodAdhesive))
+        assertFalse(SmartItemMatcher.matchesSearchQuery("Cement", towerBolt))
+    }
+
+    @Test
+    fun searchRelevanceRanking_ranksDirectNameMatchesAboveCategoryAndWeakMatches() {
+        val whiteCement = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "wc-1",
+                displayName = "White Cement",
+                sortKey = "WHITE CEMENT",
+                category = "Paints & Adhesives"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "wc-v1",
+                    itemId = "wc-1",
+                    sizeLabel = "1 kg",
+                    materialLabel = "",
+                    colorFinishLabel = "White",
+                    unit = "pkt",
+                    purchasePricePaise = 2500L,
+                    sellingPricePaise = 4000L,
+                    stockQuantity = 20.0
+                )
+            )
+        )
+        val wallPuttyWithCementCategory = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "wp-1",
+                displayName = "Wall Putty (JK White)",
+                sortKey = "WALL PUTTY (JK WHITE)",
+                category = "Cement & Aggregates"
+            ),
+            allVariants = emptyList()
+        )
+        val buttHinge = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "bh-1",
+                displayName = "Butt Hinge (Kabza)",
+                sortKey = "BUTT HINGE (KABZA)",
+                category = "Door & Window Fittings"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "bh-v1",
+                    itemId = "bh-1",
+                    sizeLabel = "4 inch (100mm)",
+                    materialLabel = "SS 304",
+                    colorFinishLabel = "Matt Black",
+                    unit = "pcs",
+                    purchasePricePaise = 4800L,
+                    sellingPricePaise = 7500L,
+                    stockQuantity = 20.0
+                )
+            )
+        )
+        val drywallScrew = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "ds-1",
+                displayName = "Drywall Screw (Black)",
+                sortKey = "DRYWALL SCREW (BLACK)",
+                category = "Fasteners & Screws"
+            ),
+            allVariants = emptyList()
+        )
+
+        val inventoryList = listOf(buttHinge, drywallScrew, wallPuttyWithCementCategory, whiteCement)
+
+        // Searching for "Cement"
+        val query = "Cement"
+        val rankedResults = inventoryList
+            .mapNotNull { item ->
+                val score = SmartItemMatcher.calculateSearchRelevanceScore(query, item)
+                if (score > 0.0) item to score else null
+            }
+            .sortedWith(
+                compareByDescending<Pair<InventoryItemWithVariants, Double>> { it.second }
+                    .thenBy { it.first.item.displayName.lowercase() }
+            )
+            .map { it.first }
+
+        // White Cement has direct word match in title, so it MUST be #1 at the very top!
+        assertEquals(2, rankedResults.size)
+        assertEquals("White Cement", rankedResults[0].item.displayName)
+        assertEquals("Wall Putty (JK White)", rankedResults[1].item.displayName)
+
+        // Searching for "4 inch kabza"
+        val hingeQuery = "4 inch kabza"
+        val hingeResults = inventoryList
+            .mapNotNull { item ->
+                val score = SmartItemMatcher.calculateSearchRelevanceScore(hingeQuery, item)
+                if (score > 0.0) item to score else null
+            }
+            .sortedWith(
+                compareByDescending<Pair<InventoryItemWithVariants, Double>> { it.second }
+                    .thenBy { it.first.item.displayName.lowercase() }
+            )
+            .map { it.first }
+
+        assertEquals(1, hingeResults.size)
+        assertEquals("Butt Hinge (Kabza)", hingeResults[0].item.displayName)
     }
 
     @Test
