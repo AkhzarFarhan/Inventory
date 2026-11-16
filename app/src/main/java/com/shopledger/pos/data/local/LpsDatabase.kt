@@ -271,7 +271,7 @@ abstract class LpsDatabase : RoomDatabase() {
                         ownerPinHash, isSetupCompleted, updatedAt
                     ) VALUES (
                         'default_shop', 'ShopLedger POS', 'HARDWARE', '', '', '09', 0,
-                        '', '', '', 'INV', 'STROKE_GLYPHS', 'BLACKHORSE',
+                        '', '', '', 'INV', 'CUSTOM_CODE', 'BLACKHORSE',
                         '', 1, $now
                     )
                     """.trimIndent()

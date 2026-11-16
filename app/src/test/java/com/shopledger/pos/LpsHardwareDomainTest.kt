@@ -2,7 +2,7 @@ package com.shopledger.pos
 
 import com.shopledger.pos.core.auth.SignedInGoogleUser
 import com.shopledger.pos.core.buyer.BuyerHistoryHelper
-import com.shopledger.pos.core.cipher.CipherSymbol
+import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CostCipherEngine
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.DuplicateDecisionType
@@ -10,6 +10,7 @@ import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.core.nlp.TradeTaxonomyRegistry
 import com.shopledger.pos.core.print.ThermalPrinterManager
+import com.shopledger.pos.core.scanner.OnDeviceOrderScannerManager
 import com.shopledger.pos.core.share.ReceiptLineItem
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.share.SaleReceiptData
@@ -19,6 +20,7 @@ import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.data.repository.LpsRepository
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,26 +29,40 @@ import org.junit.Test
 class LpsHardwareDomainTest {
 
     @Test
-    fun costCipherEngine_encodesAllDigitsFromPhotoCorrectly() {
-        // ₹1234567890 -> 123456789000L paise
-        val symbols = CostCipherEngine.encodePaiseToSymbols(123456789000L)
-        assertEquals(
-            listOf(
-                CipherSymbol.ONE,
-                CipherSymbol.TWO,
-                CipherSymbol.THREE,
-                CipherSymbol.FOUR,
-                CipherSymbol.FIVE,
-                CipherSymbol.SIX,
-                CipherSymbol.SEVEN,
-                CipherSymbol.EIGHT,
-                CipherSymbol.NINE,
-                CipherSymbol.ZERO
-            ),
-            symbols
+    fun costCipherEngine_encodesAndDecodesCustomUserDigitMapCorrectly() {
+        val customDigitMap = mapOf(
+            '1' to "@",
+            '2' to "#",
+            '3' to "$",
+            '4' to "%",
+            '5' to "&",
+            '6' to "*",
+            '7' to "+",
+            '8' to "?",
+            '9' to "!",
+            '0' to "~"
         )
-        val decodedPaise = CostCipherEngine.decodeSymbolsToPaise(symbols)
-        assertEquals(123456789000L, decodedPaise)
+        // ₹1,250.75 -> 125075L paise -> [@ # & ~ . + &]
+        val coded = CostCipherEngine.encodePaiseToCustomCode(125075L, customDigitMap)
+        assertEquals("[@ # & ~ . + &]", coded)
+        assertEquals(125075L, CostCipherEngine.decodeCustomCodeToPaise(coded, customDigitMap))
+
+        // Full 10-digit roundtrip via custom digit tokens
+        val multiCharMap = mapOf(
+            '1' to "AA",
+            '2' to "BB",
+            '3' to "CC",
+            '4' to "DD",
+            '5' to "EE",
+            '6' to "FF",
+            '7' to "GG",
+            '8' to "HH",
+            '9' to "II",
+            '0' to "OO"
+        )
+        val encodedAll = CostCipherEngine.encodePaiseToCustomCode(123456789000L, multiCharMap)
+        assertEquals("[AA BB CC DD EE FF GG HH II OO]", encodedAll)
+        assertEquals(123456789000L, CostCipherEngine.decodeCustomCodeToPaise(encodedAll, multiCharMap))
     }
 
     @Test
@@ -599,5 +615,111 @@ class LpsHardwareDomainTest {
         assertTrue(text58.contains("#D1-20261116-0001"))
         assertTrue(text58.contains("BALANCE DUE (UDHAR)"))
         assertTrue(text58.contains("Thank you! Visit again."))
+    }
+
+    @Test
+    fun orderScannerManager_parsesOrderListLinesAndMatchesInventoryIntoCart() = runBlocking {
+        val whiteCement = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "item-wc",
+                displayName = "White Cement",
+                sortKey = "WHITE CEMENT",
+                category = "Paints & Adhesives"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "var-wc-1kg",
+                    itemId = "item-wc",
+                    sizeLabel = "1 kg",
+                    materialLabel = "",
+                    colorFinishLabel = "White",
+                    unit = "pkt",
+                    purchasePricePaise = 2500L,
+                    sellingPricePaise = 4000L,
+                    stockQuantity = 30.0
+                )
+            )
+        )
+        val buttHinge = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "item-bh",
+                displayName = "Butt Hinge (Kabza)",
+                sortKey = "BUTT HINGE (KABZA)",
+                category = "Door & Window Fittings"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "var-bh-3in",
+                    itemId = "item-bh",
+                    sizeLabel = "3 inch",
+                    materialLabel = "Iron",
+                    colorFinishLabel = "Black",
+                    unit = "pcs",
+                    purchasePricePaise = 1800L,
+                    sellingPricePaise = 3000L,
+                    stockQuantity = 50.0
+                ),
+                ItemVariantEntity(
+                    id = "var-bh-4in-ss",
+                    itemId = "item-bh",
+                    sizeLabel = "4 inch",
+                    materialLabel = "SS 304",
+                    colorFinishLabel = "Satin",
+                    unit = "pcs",
+                    purchasePricePaise = 4200L,
+                    sellingPricePaise = 7000L,
+                    stockQuantity = 40.0
+                )
+            )
+        )
+        val fevicol = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "item-fev",
+                displayName = "Wood Adhesive (Fevicol SH)",
+                sortKey = "WOOD ADHESIVE (FEVICOL SH)",
+                category = "Paints & Adhesives"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "var-fev-1kg",
+                    itemId = "item-fev",
+                    sizeLabel = "1 kg",
+                    materialLabel = "",
+                    colorFinishLabel = "White",
+                    unit = "box",
+                    purchasePricePaise = 18000L,
+                    sellingPricePaise = 24000L,
+                    stockQuantity = 12.0
+                )
+            )
+        )
+
+        val scannedOrderText = """
+            ESTIMATE / ORDER LIST
+            1. White Cement 1 kg - 5 pkt
+            2. 4 inch SS Kabza x 12
+            3. Fevicol SH 2
+            Grand Total Rs. 1520
+        """.trimIndent()
+
+        val result = OnDeviceOrderScannerManager.parseOrderListToCart(
+            rawText = scannedOrderText,
+            inventory = listOf(whiteCement, buttHinge, fevicol),
+            context = null,
+            vertical = ShopVertical.HARDWARE
+        )
+
+        assertFalse(result.usedOnDeviceLlm)
+        assertTrue(result.unmatchedLines.isEmpty())
+        assertEquals(3, result.matchedCartLines.size)
+
+        val line1 = result.matchedCartLines.first { it.variantId == "var-wc-1kg" }
+        assertEquals(5.0, line1.quantity, 0.01)
+
+        val line2 = result.matchedCartLines.first { it.variantId == "var-bh-4in-ss" }
+        assertEquals(12.0, line2.quantity, 0.01)
+
+        val line3 = result.matchedCartLines.first { it.variantId == "var-fev-1kg" }
+        assertEquals(2.0, line3.quantity, 0.01)
     }
 }

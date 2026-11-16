@@ -67,6 +67,7 @@ import com.shopledger.pos.ui.screens.inventory.AddEditItemSheet
 import com.shopledger.pos.ui.screens.inventory.CounterCartSheet
 import com.shopledger.pos.ui.screens.inventory.InventoryScreen
 import com.shopledger.pos.ui.screens.inventory.ItemEditorMode
+import com.shopledger.pos.ui.screens.inventory.OrderScanSheet
 import com.shopledger.pos.ui.screens.inventory.QuickSellSheet
 import com.shopledger.pos.ui.screens.khata.PartiesKhataScreen
 import com.shopledger.pos.ui.screens.sales.ReceiptShareDialog
@@ -104,6 +105,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val frequentSearches by viewModel.frequentSearchesState.collectAsState()
     val salesHistory by viewModel.salesHistoryState.collectAsState()
     val knownBuyers by viewModel.knownBuyersState.collectAsState()
+    val carts by viewModel.cartsState.collectAsState()
+    val activeCartSession by viewModel.activeCartSessionState.collectAsState()
     val cartItems by viewModel.cartItems.collectAsState()
     val activeReceipt by viewModel.activeReceiptForSharing.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCountState.collectAsState()
@@ -116,8 +119,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
     var quickSellTarget by remember { mutableStateOf<Triple<InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>>?>(null) }
     var showCounterCartSheet by remember { mutableStateOf(false) }
-    var prefilledCartBuyerName by remember { mutableStateOf("") }
-    var prefilledCartBuyerPhone by remember { mutableStateOf("") }
+    var showOrderScanSheet by remember { mutableStateOf(false) }
     var showCloudSyncSheet by remember { mutableStateOf(false) }
     var showOwnerPinDialog by remember { mutableStateOf(false) }
     var pinEntryInput by remember { mutableStateOf("") }
@@ -212,8 +214,14 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                     tint = if (cartItems.isNotEmpty()) Color.White else CupertinoColors.LabelPrimary,
                                     modifier = Modifier.size(15.dp)
                                 )
+                                val totalItemsAcrossCarts = carts.sumOf { it.items.size }
+                                val cartBadgeText = if (carts.size > 1) {
+                                    "${carts.size} Carts ($totalItemsAcrossCarts)"
+                                } else {
+                                    "${activeCartSession.label} (${cartItems.size})"
+                                }
                                 Text(
-                                    text = "Cart (${cartItems.size})",
+                                    text = cartBadgeText,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (cartItems.isNotEmpty()) Color.White else CupertinoColors.LabelPrimary
@@ -400,6 +408,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         isSellerUnlocked = isSellerUnlocked,
                         recentSearches = recentSearches,
                         frequentSearches = frequentSearches,
+                        carts = carts,
+                        activeCartId = activeCartSession.cartId,
+                        activeCartItems = cartItems,
                         onSearchQueryChange = viewModel::updateSearchQuery,
                         onCommitSearch = viewModel::commitSearchToHistory,
                         onDeleteSearchEntry = viewModel::deleteSearchHistoryItem,
@@ -414,9 +425,14 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onQuickSellClick = { item, variant, variants ->
                             quickSellTarget = Triple(item, variant, variants)
                         },
-                        onAddToCartClick = { item, variant ->
-                            viewModel.addOrUpdateCartItem(item, variant, 1.0)
-                        }
+                        onAddToCartClick = { item, variant, delta ->
+                            viewModel.addOrUpdateCartItem(item, variant, delta)
+                        },
+                        onSwitchCart = viewModel::switchActiveCart,
+                        onCreateNewCart = { viewModel.createNewCart() },
+                        onCloseCart = viewModel::closeCart,
+                        onOpenCartSheet = { showCounterCartSheet = true },
+                        onOpenOrderScanner = { showOrderScanSheet = true }
                     )
                 }
                 1 -> {
@@ -495,8 +511,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             },
             onFillCartWithBuyerOrderAndOpenCart = { snapshots, buyerName, buyerPhone ->
                 viewModel.fillCartFromBuyerHistory(snapshots)
-                prefilledCartBuyerName = buyerName
-                prefilledCartBuyerPhone = buyerPhone
+                viewModel.updateActiveCartBuyer(buyerName, buyerPhone)
                 quickSellTarget = null
                 showCounterCartSheet = true
             },
@@ -504,18 +519,26 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         )
     }
 
-    // Multi-Item Counter Cart Sheet
+    // Multi-Item & Multi-Session Counter Cart Sheet
     if (showCounterCartSheet) {
         CounterCartSheet(
             cartItems = cartItems,
             isSellerUnlocked = isSellerUnlocked,
             knownBuyers = knownBuyers,
-            initialBuyerName = prefilledCartBuyerName,
-            initialBuyerPhone = prefilledCartBuyerPhone,
+            carts = carts,
+            activeCartId = activeCartSession.cartId,
+            initialBuyerName = activeCartSession.buyerName,
+            initialBuyerPhone = activeCartSession.buyerPhone,
+            onSwitchCart = viewModel::switchActiveCart,
+            onCreateNewCart = { viewModel.createNewCart() },
+            onCloseCart = viewModel::closeCart,
+            onActiveCartBuyerChange = viewModel::updateActiveCartBuyer,
             onUpdateCartLine = viewModel::updateCartLineQuantityAndPrice,
             onRemoveCartLine = viewModel::removeCartLine,
+            onRemoveMultipleCartLines = viewModel::removeMultipleCartLines,
             onClearCart = viewModel::clearCart,
             onFillCartFromBuyerOrder = viewModel::fillCartFromBuyerHistory,
+            onOpenOrderScanner = { showOrderScanSheet = true },
             onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
                 viewModel.prepareEstimateImageForSharing(
                     itemsToEstimate = itemsToEstimate,
@@ -533,10 +556,22 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                     discountPaise = discountPaise,
                     amountPaidPaise = amountPaidPaise
                 )
-                prefilledCartBuyerName = ""
-                prefilledCartBuyerPhone = ""
             },
             onDismiss = { showCounterCartSheet = false }
+        )
+    }
+
+    // Unbundled On-Device Order List / Receipt Scanner Sheet
+    if (showOrderScanSheet) {
+        OrderScanSheet(
+            inventory = allInventory,
+            activeCartLabel = activeCartSession.label,
+            onAddScannedItemsAndOpenCart = { scannedLines ->
+                viewModel.batchAddItemsToActiveCart(scannedLines)
+                showOrderScanSheet = false
+                showCounterCartSheet = true
+            },
+            onDismiss = { showOrderScanSheet = false }
         )
     }
 

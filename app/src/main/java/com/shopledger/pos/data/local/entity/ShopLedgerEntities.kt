@@ -24,7 +24,7 @@ data class ShopProfileEntity(
     val whatsappPhone: String = "",
     val deviceShortCode: String = "",
     val invoicePrefix: String = "INV",
-    val cipherMode: String = CipherMode.STROKE_GLYPHS.name,
+    val cipherMode: String = CipherMode.CUSTOM_CODE.name,
     val cipherWord10: String = CostCipherEngine.DEFAULT_WORD_10,
     val ownerPinHash: String = "",
     val isSetupCompleted: Boolean = false,

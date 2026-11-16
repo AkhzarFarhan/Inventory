@@ -26,11 +26,21 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 enum class InventoryFilterMode {
     ALL_ALPHABETICAL,
     LOW_STOCK_ONLY
 }
+
+data class CustomerCartSession(
+    val cartId: String,
+    val label: String,
+    val buyerName: String = "",
+    val buyerPhone: String = "",
+    val items: List<CartLineItem> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis()
+)
 
 class MainViewModel(
     private val repository: LpsRepository
@@ -51,8 +61,33 @@ class MainViewModel(
     private val _filterMode = MutableStateFlow(InventoryFilterMode.ALL_ALPHABETICAL)
     val filterMode: StateFlow<InventoryFilterMode> = _filterMode.asStateFlow()
 
-    private val _cartItems = MutableStateFlow<List<CartLineItem>>(emptyList())
-    val cartItems: StateFlow<List<CartLineItem>> = _cartItems.asStateFlow()
+    private var nextCartSequence = 2
+    private val _carts = MutableStateFlow(
+        listOf(CustomerCartSession(cartId = "cart-1", label = "Cart 1"))
+    )
+    val cartsState: StateFlow<List<CustomerCartSession>> = _carts.asStateFlow()
+
+    private val _activeCartId = MutableStateFlow("cart-1")
+    val activeCartIdState: StateFlow<String> = _activeCartId.asStateFlow()
+
+    val activeCartSessionState: StateFlow<CustomerCartSession> = combine(
+        _carts,
+        _activeCartId
+    ) { carts, activeId ->
+        carts.firstOrNull { it.cartId == activeId } ?: carts.first()
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = _carts.value.first()
+    )
+
+    val cartItems: StateFlow<List<CartLineItem>> = activeCartSessionState
+        .map { it.items }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     private val _activeReceiptForSharing = MutableStateFlow<SaleReceiptData?>(null)
     val activeReceiptForSharing: StateFlow<SaleReceiptData?> = _activeReceiptForSharing.asStateFlow()
@@ -351,8 +386,68 @@ class MainViewModel(
         }
     }
 
+    private inline fun updateActiveCart(transform: (CustomerCartSession) -> CustomerCartSession) {
+        val activeId = _activeCartId.value
+        val currentCarts = _carts.value.toMutableList()
+        val idx = currentCarts.indexOfFirst { it.cartId == activeId }
+        if (idx >= 0) {
+            currentCarts[idx] = transform(currentCarts[idx])
+            _carts.value = currentCarts
+        } else if (currentCarts.isNotEmpty()) {
+            _activeCartId.value = currentCarts.first().cartId
+            currentCarts[0] = transform(currentCarts[0])
+            _carts.value = currentCarts
+        }
+    }
+
+    fun switchActiveCart(cartId: String) {
+        if (_carts.value.any { it.cartId == cartId }) {
+            _activeCartId.value = cartId
+        }
+    }
+
+    fun createNewCart(
+        customLabel: String? = null,
+        initialBuyerName: String = "",
+        initialBuyerPhone: String = ""
+    ): String {
+        val newId = "cart-${UUID.randomUUID()}"
+        val label = customLabel?.trim().takeUnless { it.isNullOrBlank() } ?: "Cart ${nextCartSequence++}"
+        val created = CustomerCartSession(
+            cartId = newId,
+            label = label,
+            buyerName = initialBuyerName,
+            buyerPhone = initialBuyerPhone
+        )
+        _carts.value = _carts.value + created
+        _activeCartId.value = newId
+        return newId
+    }
+
+    fun closeCart(cartId: String) {
+        val remaining = _carts.value.filterNot { it.cartId == cartId }
+        if (remaining.isEmpty()) {
+            val fresh = CustomerCartSession(cartId = "cart-${UUID.randomUUID()}", label = "Cart 1")
+            nextCartSequence = 2
+            _carts.value = listOf(fresh)
+            _activeCartId.value = fresh.cartId
+        } else {
+            _carts.value = remaining
+            if (_activeCartId.value == cartId) {
+                _activeCartId.value = remaining.last().cartId
+            }
+        }
+    }
+
+    fun updateActiveCartBuyer(buyerName: String, buyerPhone: String) {
+        updateActiveCart { cart ->
+            cart.copy(buyerName = buyerName, buyerPhone = buyerPhone)
+        }
+    }
+
     /**
-     * Adds or updates an item variant inside the Multi-Item Counter Cart.
+     * Adds, increments/decrements, or updates an item variant inside the currently active Cart.
+     * Supports simultaneous multi-item additions and delta removals directly from Inventory cards.
      */
     fun addOrUpdateCartItem(
         item: InventoryItemEntity,
@@ -360,31 +455,41 @@ class MainViewModel(
         quantityToAdd: Double = 1.0,
         customSellingPricePaise: Long = variant.sellingPricePaise
     ) {
-        val current = _cartItems.value.toMutableList()
-        val existingIdx = current.indexOfFirst { it.variantId == variant.id }
-        if (existingIdx >= 0) {
-            val existing = current[existingIdx]
-            current[existingIdx] = existing.copy(
-                quantity = existing.quantity + quantityToAdd,
-                customSellingPricePaise = customSellingPricePaise
-            )
-        } else {
-            current.add(
-                CartLineItem(
-                    itemId = item.id,
-                    variantId = variant.id,
-                    itemName = item.displayName,
-                    variantSummary = variant.buildVariantSummary(),
-                    unit = variant.unit,
-                    availableStock = variant.stockQuantity,
-                    unitPurchasePricePaise = variant.purchasePricePaise,
-                    defaultSellingPricePaise = variant.sellingPricePaise,
-                    customSellingPricePaise = customSellingPricePaise,
-                    quantity = quantityToAdd
+        updateActiveCart { cart ->
+            val current = cart.items.toMutableList()
+            val existingIdx = current.indexOfFirst { it.variantId == variant.id }
+            if (existingIdx >= 0) {
+                val existing = current[existingIdx]
+                val nextQty = existing.quantity + quantityToAdd
+                if (nextQty <= 0.0) {
+                    current.removeAt(existingIdx)
+                } else {
+                    current[existingIdx] = existing.copy(
+                        quantity = nextQty,
+                        customSellingPricePaise = customSellingPricePaise
+                    )
+                }
+            } else if (quantityToAdd > 0.0) {
+                current.add(
+                    CartLineItem(
+                        itemId = item.id,
+                        variantId = variant.id,
+                        itemName = item.displayName,
+                        variantSummary = variant.buildVariantSummary(),
+                        unit = variant.unit,
+                        availableStock = variant.stockQuantity,
+                        unitPurchasePricePaise = variant.purchasePricePaise,
+                        defaultSellingPricePaise = variant.sellingPricePaise,
+                        customSellingPricePaise = customSellingPricePaise,
+                        skuCode = variant.skuCode,
+                        barcode = variant.barcode,
+                        gstRateBps = variant.gstRateBps,
+                        quantity = quantityToAdd
+                    )
                 )
-            )
+            }
+            cart.copy(items = current)
         }
-        _cartItems.value = current
     }
 
     fun updateCartLineQuantityAndPrice(
@@ -392,31 +497,70 @@ class MainViewModel(
         newQuantity: Double,
         newSellingPricePaise: Long
     ) {
-        val current = _cartItems.value.toMutableList()
-        val idx = current.indexOfFirst { it.variantId == variantId }
-        if (idx >= 0) {
-            if (newQuantity <= 0.0) {
-                current.removeAt(idx)
+        updateActiveCart { cart ->
+            val current = cart.items.toMutableList()
+            val idx = current.indexOfFirst { it.variantId == variantId }
+            if (idx >= 0) {
+                if (newQuantity <= 0.0) {
+                    current.removeAt(idx)
+                } else {
+                    current[idx] = current[idx].copy(
+                        quantity = newQuantity,
+                        customSellingPricePaise = newSellingPricePaise
+                    )
+                }
+                cart.copy(items = current)
             } else {
-                current[idx] = current[idx].copy(
-                    quantity = newQuantity,
-                    customSellingPricePaise = newSellingPricePaise
-                )
+                cart
             }
-            _cartItems.value = current
         }
     }
 
     fun removeCartLine(variantId: String) {
-        _cartItems.value = _cartItems.value.filterNot { it.variantId == variantId }
+        updateActiveCart { cart ->
+            cart.copy(items = cart.items.filterNot { it.variantId == variantId })
+        }
+    }
+
+    fun removeMultipleCartLines(variantIds: Set<String>) {
+        if (variantIds.isEmpty()) return
+        updateActiveCart { cart ->
+            cart.copy(items = cart.items.filterNot { it.variantId in variantIds })
+        }
     }
 
     fun clearCart() {
-        _cartItems.value = emptyList()
+        updateActiveCart { cart ->
+            cart.copy(items = emptyList())
+        }
+    }
+
+    fun batchAddItemsToActiveCart(
+        lines: List<CartLineItem>,
+        replaceExisting: Boolean = false
+    ) {
+        if (lines.isEmpty()) return
+        updateActiveCart { cart ->
+            if (replaceExisting) {
+                cart.copy(items = lines)
+            } else {
+                val merged = cart.items.toMutableList()
+                for (line in lines) {
+                    val existingIdx = merged.indexOfFirst { it.variantId == line.variantId }
+                    if (existingIdx >= 0) {
+                        val existing = merged[existingIdx]
+                        merged[existingIdx] = existing.copy(quantity = existing.quantity + line.quantity)
+                    } else {
+                        merged.add(line)
+                    }
+                }
+                cart.copy(items = merged)
+            }
+        }
     }
 
     /**
-     * Single-tap fills the Counter Cart with all items from a known buyer's historical order.
+     * Single-tap fills the Active Cart with all items from a known buyer's historical order.
      */
     fun fillCartFromBuyerHistory(snapshots: List<BuyerOrderLineSnapshot>) {
         val mapped = BuyerHistoryHelper.mapSnapshotsToCartLineItems(
@@ -424,7 +568,7 @@ class MainViewModel(
             currentInventory = allInventoryState.value
         )
         if (mapped.isNotEmpty()) {
-            _cartItems.value = mapped
+            batchAddItemsToActiveCart(mapped, replaceExisting = true)
         }
     }
 
@@ -473,7 +617,13 @@ class MainViewModel(
                 amountPaidPaise = amountPaidPaise
             )
             if (clearCounterCart) {
-                _cartItems.value = emptyList()
+                val checkedOutCartId = _activeCartId.value
+                if (_carts.value.size > 1) {
+                    closeCart(checkedOutCartId)
+                } else {
+                    clearCart()
+                    updateActiveCartBuyer("", "")
+                }
             }
             _activeReceiptForSharing.value = receipt
             onComplete(receipt)

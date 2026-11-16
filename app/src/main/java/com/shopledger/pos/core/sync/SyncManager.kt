@@ -41,6 +41,7 @@ object SyncManager {
     private const val KEY_VERTICAL = "shop_vertical"
     private const val KEY_CIPHER_MODE = "cipher_mode"
     private const val KEY_CIPHER_WORD_10 = "cipher_word_10"
+    private const val KEY_CUSTOM_DIGIT_MAP = "custom_digit_map"
     private const val KEY_OWNER_PIN_HASH = "owner_pin_hash"
     private const val KEY_UPI_ID = "upi_id"
     private const val KEY_GSTIN = "gstin"
@@ -69,11 +70,14 @@ object SyncManager {
     private val _shopVerticalFlow = MutableStateFlow(ShopVertical.HARDWARE)
     val shopVerticalFlow: StateFlow<ShopVertical> = _shopVerticalFlow.asStateFlow()
 
-    private val _cipherModeFlow = MutableStateFlow(CipherMode.STROKE_GLYPHS)
+    private val _cipherModeFlow = MutableStateFlow(CipherMode.CUSTOM_CODE)
     val cipherModeFlow: StateFlow<CipherMode> = _cipherModeFlow.asStateFlow()
 
     private val _cipherWord10Flow = MutableStateFlow(CostCipherEngine.DEFAULT_WORD_10)
     val cipherWord10Flow: StateFlow<String> = _cipherWord10Flow.asStateFlow()
+
+    private val _customDigitMapFlow = MutableStateFlow(CostCipherEngine.defaultDigitMap())
+    val customDigitMapFlow: StateFlow<Map<Char, String>> = _customDigitMapFlow.asStateFlow()
 
     private val _ownerPinHashFlow = MutableStateFlow("")
     val ownerPinHashFlow: StateFlow<String> = _ownerPinHashFlow.asStateFlow()
@@ -119,12 +123,18 @@ object SyncManager {
         _shopVerticalFlow.value = vertical
         TradeTaxonomyRegistry.setActiveVertical(vertical)
 
-        val cipherModeName = p.getString(KEY_CIPHER_MODE, CipherMode.STROKE_GLYPHS.name)
-        val cipherMode = CipherMode.entries.firstOrNull { it.name == cipherModeName } ?: CipherMode.STROKE_GLYPHS
+        val cipherMode = CipherMode.fromStoredName(p.getString(KEY_CIPHER_MODE, CipherMode.CUSTOM_CODE.name))
         val word10 = CostCipherEngine.normalizedWord10(p.getString(KEY_CIPHER_WORD_10, CostCipherEngine.DEFAULT_WORD_10).orEmpty())
+        val serializedMap = p.getString(KEY_CUSTOM_DIGIT_MAP, "").orEmpty()
+        val digitMap = if (serializedMap.isNotBlank()) {
+            CostCipherEngine.parseDigitMap(serializedMap)
+        } else {
+            CostCipherEngine.word10ToDigitMap(word10)
+        }
         _cipherModeFlow.value = cipherMode
-        _cipherWord10Flow.value = word10
-        CostCipherEngine.setActiveConfig(cipherMode, word10)
+        _cipherWord10Flow.value = CostCipherEngine.digitMapToWord10(digitMap)
+        _customDigitMapFlow.value = digitMap
+        CostCipherEngine.setActiveCustomDigitMap(cipherMode, digitMap)
 
         _ownerPinHashFlow.value = p.getString(KEY_OWNER_PIN_HASH, "").orEmpty()
         _upiIdFlow.value = p.getString(KEY_UPI_ID, "").orEmpty()
@@ -162,13 +172,30 @@ object SyncManager {
 
     fun saveCipherConfig(context: Context, mode: CipherMode, word10: String = _cipherWord10Flow.value) {
         val normalizedWord = CostCipherEngine.normalizedWord10(word10)
+        val digitMap = CostCipherEngine.word10ToDigitMap(normalizedWord)
         prefs(context).edit()
             .putString(KEY_CIPHER_MODE, mode.name)
             .putString(KEY_CIPHER_WORD_10, normalizedWord)
+            .putString(KEY_CUSTOM_DIGIT_MAP, CostCipherEngine.serializeDigitMap(digitMap))
             .apply()
         _cipherModeFlow.value = mode
         _cipherWord10Flow.value = normalizedWord
-        CostCipherEngine.setActiveConfig(mode, normalizedWord)
+        _customDigitMapFlow.value = digitMap
+        CostCipherEngine.setActiveCustomDigitMap(mode, digitMap)
+    }
+
+    fun saveCustomDigitMap(context: Context, mode: CipherMode, digitMap: Map<Char, String>) {
+        val sanitized = CostCipherEngine.normalizeDigitMap(digitMap)
+        val derivedWord = CostCipherEngine.digitMapToWord10(sanitized)
+        prefs(context).edit()
+            .putString(KEY_CIPHER_MODE, mode.name)
+            .putString(KEY_CIPHER_WORD_10, derivedWord)
+            .putString(KEY_CUSTOM_DIGIT_MAP, CostCipherEngine.serializeDigitMap(sanitized))
+            .apply()
+        _cipherModeFlow.value = mode
+        _cipherWord10Flow.value = derivedWord
+        _customDigitMapFlow.value = sanitized
+        CostCipherEngine.setActiveCustomDigitMap(mode, sanitized)
     }
 
     fun saveOwnerPin(context: Context, rawPin: String) {

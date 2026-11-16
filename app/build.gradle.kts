@@ -110,6 +110,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.play.services.auth)
     implementation(libs.play.services.code.scanner)
+    implementation(libs.play.services.mlkit.text.recognition)
+    implementation(libs.play.services.mlkit.document.scanner)
+    implementation(libs.mediapipe.tasks.genai)
     implementation(libs.zxing.core)
 
     testImplementation(libs.junit)

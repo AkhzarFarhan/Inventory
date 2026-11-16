@@ -23,13 +23,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -69,6 +73,7 @@ import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.model.CartLineItem
+import com.shopledger.pos.ui.CustomerCartSession
 import com.shopledger.pos.ui.theme.CupertinoCard
 import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
@@ -480,12 +485,20 @@ fun CounterCartSheet(
     cartItems: List<CartLineItem>,
     isSellerUnlocked: Boolean,
     knownBuyers: List<KnownBuyerProfile>,
+    carts: List<CustomerCartSession> = emptyList(),
+    activeCartId: String = "cart-1",
     initialBuyerName: String = "",
     initialBuyerPhone: String = "",
+    onSwitchCart: (String) -> Unit = {},
+    onCreateNewCart: () -> Unit = {},
+    onCloseCart: (String) -> Unit = {},
+    onActiveCartBuyerChange: (buyerName: String, buyerPhone: String) -> Unit = { _, _ -> },
     onUpdateCartLine: (variantId: String, newQty: Double, newPricePaise: Long) -> Unit,
     onRemoveCartLine: (variantId: String) -> Unit,
+    onRemoveMultipleCartLines: (Set<String>) -> Unit = {},
     onClearCart: () -> Unit,
     onFillCartFromBuyerOrder: (List<BuyerOrderLineSnapshot>) -> Unit = {},
+    onOpenOrderScanner: () -> Unit = {},
     onShareEstimatePhoto: (List<CartLineItem>, buyerName: String, buyerPhone: String) -> Unit,
     onCheckoutCart: (buyerName: String, buyerPhone: String, paymentMode: String, discountPaise: Long, amountPaidPaise: Long?) -> Unit,
     onDismiss: () -> Unit
@@ -495,11 +508,13 @@ fun CounterCartSheet(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    var buyerName by remember(initialBuyerName) { mutableStateOf(initialBuyerName) }
-    var buyerPhone by remember(initialBuyerPhone) { mutableStateOf(initialBuyerPhone) }
-    var paymentModeIndex by remember { mutableIntStateOf(0) } // 0 = CASH, 1 = UPI, 2 = CREDIT
-    var discountInput by remember { mutableStateOf("") }
-    var amountPaidInput by remember { mutableStateOf("0") }
+    var buyerName by remember(activeCartId, initialBuyerName) { mutableStateOf(initialBuyerName) }
+    var buyerPhone by remember(activeCartId, initialBuyerPhone) { mutableStateOf(initialBuyerPhone) }
+    var paymentModeIndex by remember(activeCartId) { mutableIntStateOf(0) } // 0 = CASH, 1 = UPI, 2 = CREDIT
+    var discountInput by remember(activeCartId) { mutableStateOf("") }
+    var amountPaidInput by remember(activeCartId) { mutableStateOf("0") }
+    var isMultiSelectMode by remember(activeCartId) { mutableStateOf(false) }
+    var selectedVariantIds by remember(activeCartId, cartItems) { mutableStateOf<Set<String>>(emptySet()) }
 
     val totalCostPaise = remember(cartItems) { cartItems.sumOf { it.lineCostPaise } }
     val totalRevenuePaise = remember(cartItems) { cartItems.sumOf { it.lineRevenuePaise } }
@@ -525,34 +540,141 @@ fun CounterCartSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Counter Cart / Estimate (${cartItems.size})",
+                    text = "Counter Cart (${cartItems.size})",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = CupertinoColors.LabelPrimary
+                    color = CupertinoColors.LabelPrimary,
+                    modifier = Modifier.weight(1f)
                 )
-                if (cartItems.isNotEmpty()) {
-                    TextButton(onClick = onClearCart) {
-                        Text(
-                            text = "Clear Cart",
-                            color = CupertinoColors.DestructiveRed,
-                            fontWeight = FontWeight.Bold
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TextButton(
+                        onClick = onOpenOrderScanner,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DocumentScanner,
+                            contentDescription = "Scan Order List",
+                            tint = CupertinoColors.WhatsAppGreen,
+                            modifier = Modifier.size(16.dp)
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Scan List",
+                            color = CupertinoColors.WhatsAppGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                    if (cartItems.isNotEmpty()) {
+                        TextButton(
+                            onClick = onClearCart,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Clear",
+                                color = CupertinoColors.DestructiveRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }
 
-            // Smart Buyer Search / Auto-Suggest at the top so seller can type a returning buyer's
+            // Active Cart Switcher Strip (+ New Cart / Close Cart / Instant Switch)
+            if (carts.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    carts.forEach { cart ->
+                        val isSelected = cart.cartId == activeCartId
+                        Surface(
+                            shape = RoundedCornerShape(9.dp),
+                            color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.CardSurface,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
+                            ),
+                            modifier = Modifier.clickable { onSwitchCart(cart.cartId) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "${cart.label} (${cart.items.size})",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else CupertinoColors.LabelPrimary
+                                )
+                                if (carts.size > 1) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Close ${cart.label}",
+                                        tint = if (isSelected) Color.White.copy(alpha = 0.85f) else CupertinoColors.LabelMuted,
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clickable { onCloseCart(cart.cartId) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(9.dp),
+                        color = CupertinoColors.SystemBlueTint,
+                        border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.35f)),
+                        modifier = Modifier.clickable { onCreateNewCart() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add New Cart",
+                                tint = CupertinoColors.SystemBlue,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "New Cart",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CupertinoColors.SystemBlue
+                            )
+                        }
+                    }
+                }
+            }
+
             // Smart Buyer Search / Auto-Suggest (1-Tap Name & Phone Fill)
             BuyerSuggestAndHistoryCard(
                 buyerName = buyerName,
                 buyerPhone = buyerPhone,
                 knownBuyers = knownBuyers,
-                onBuyerNameChange = { buyerName = it },
-                onBuyerPhoneChange = { buyerPhone = it },
+                onBuyerNameChange = {
+                    buyerName = it
+                    onActiveCartBuyerChange(it, buyerPhone)
+                },
+                onBuyerPhoneChange = {
+                    buyerPhone = it
+                    onActiveCartBuyerChange(buyerName, it)
+                },
                 onSingleTapSelectBuyer = { selectedBuyer ->
                     HapticHelper.tick(context)
                     buyerName = selectedBuyer.buyerName
                     buyerPhone = selectedBuyer.buyerPhone
+                    onActiveCartBuyerChange(selectedBuyer.buyerName, selectedBuyer.buyerPhone)
                     Toast.makeText(
                         context,
                         "Selected customer: ${selectedBuyer.buyerName.ifBlank { selectedBuyer.buyerPhone }}",
@@ -564,12 +686,104 @@ fun CounterCartSheet(
             if (cartItems.isEmpty()) {
                 CupertinoCard {
                     Text(
-                        text = "Your Counter Cart is empty. Tap '+ Cart' on items in Inventory to add them to this sale.",
+                        text = "This Cart is empty. Tap '+ Cart' on items in Inventory or use 'Scan List' to fill it automatically.",
                         fontSize = 13.sp,
                         color = CupertinoColors.LabelSecondary
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onOpenOrderScanner,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, CupertinoColors.WhatsAppGreen),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DocumentScanner,
+                            contentDescription = null,
+                            tint = CupertinoColors.WhatsAppGreen,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Scan Order List / Receipt Photo",
+                            color = CupertinoColors.WhatsAppGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             } else {
+                // Multi-Select Batch Remove Controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            isMultiSelectMode = !isMultiSelectMode
+                            if (!isMultiSelectMode) selectedVariantIds = emptySet()
+                        },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SelectAll,
+                            contentDescription = null,
+                            tint = CupertinoColors.SystemBlue,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isMultiSelectMode) "Cancel Multi-Select" else "Select Multiple to Remove",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CupertinoColors.SystemBlue
+                        )
+                    }
+
+                    if (isMultiSelectMode) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(
+                                onClick = {
+                                    selectedVariantIds = if (selectedVariantIds.size == cartItems.size) {
+                                        emptySet()
+                                    } else {
+                                        cartItems.map { it.variantId }.toSet()
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = if (selectedVariantIds.size == cartItems.size) "None" else "All",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            if (selectedVariantIds.isNotEmpty()) {
+                                Button(
+                                    onClick = {
+                                        onRemoveMultipleCartLines(selectedVariantIds)
+                                        selectedVariantIds = emptySet()
+                                        isMultiSelectMode = false
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = CupertinoColors.DestructiveRed,
+                                        contentColor = Color.White
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "Remove (${selectedVariantIds.size})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 cartItems.forEach { line ->
                     var qtyText by remember(line.variantId, line.quantity) {
                         mutableStateOf(IndianCurrencyFormatter.formatQuantity(line.quantity))
@@ -577,6 +791,7 @@ fun CounterCartSheet(
                     var priceText by remember(line.variantId, line.customSellingPricePaise) {
                         mutableStateOf(IndianCurrencyFormatter.paiseToEditableString(line.customSellingPricePaise))
                     }
+                    val isChecked = line.variantId in selectedVariantIds
 
                     CupertinoCard(contentPadding = PaddingValues(12.dp)) {
                         Row(
@@ -584,6 +799,19 @@ fun CounterCartSheet(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            if (isMultiSelectMode) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        selectedVariantIds = if (checked) {
+                                            selectedVariantIds + line.variantId
+                                        } else {
+                                            selectedVariantIds - line.variantId
+                                        }
+                                    }
+                                )
+                            }
+
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = line.itemName,
@@ -620,9 +848,28 @@ fun CounterCartSheet(
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            FilledIconButton(
+                                onClick = {
+                                    HapticHelper.tick(context)
+                                    val nextQty = line.quantity - 1.0
+                                    if (nextQty <= 0.0) {
+                                        onRemoveCartLine(line.variantId)
+                                    } else {
+                                        onUpdateCartLine(line.variantId, nextQty, line.customSellingPricePaise)
+                                    }
+                                },
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = CupertinoColors.SecondarySurface,
+                                    contentColor = CupertinoColors.LabelPrimary
+                                ),
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Default.Remove, contentDescription = "Decrease qty", modifier = Modifier.size(15.dp))
+                            }
+
                             CupertinoTextField(
                                 value = qtyText,
                                 onValueChange = {
@@ -634,8 +881,22 @@ fun CounterCartSheet(
                                 },
                                 label = "Qty (${line.unit})",
                                 keyboardType = KeyboardType.Decimal,
-                                modifier = Modifier.weight(0.9f)
+                                modifier = Modifier.weight(0.75f)
                             )
+
+                            FilledIconButton(
+                                onClick = {
+                                    HapticHelper.tick(context)
+                                    onUpdateCartLine(line.variantId, line.quantity + 1.0, line.customSellingPricePaise)
+                                },
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = CupertinoColors.SystemBlueTint,
+                                    contentColor = CupertinoColors.SystemBlue
+                                ),
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Increase qty", modifier = Modifier.size(15.dp))
+                            }
 
                             CupertinoTextField(
                                 value = priceText,
@@ -646,23 +907,23 @@ fun CounterCartSheet(
                                         onUpdateCartLine(line.variantId, line.quantity, p)
                                     }
                                 },
-                                label = "Unit Rate (₹)",
+                                label = "Rate (₹)",
                                 keyboardType = KeyboardType.Decimal,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(0.85f)
                             )
 
                             Column(
                                 horizontalAlignment = Alignment.End,
-                                modifier = Modifier.weight(0.9f)
+                                modifier = Modifier.weight(0.8f)
                             ) {
                                 Text(
-                                    text = "Line Total",
+                                    text = "Total",
                                     fontSize = 10.sp,
                                     color = CupertinoColors.LabelMuted
                                 )
                                 Text(
                                     text = IndianCurrencyFormatter.formatPaise(line.lineRevenuePaise),
-                                    fontSize = 15.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = CupertinoColors.LabelPrimary
                                 )

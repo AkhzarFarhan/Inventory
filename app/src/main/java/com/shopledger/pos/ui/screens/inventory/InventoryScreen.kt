@@ -31,16 +31,22 @@ import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -78,7 +84,9 @@ import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
+import com.shopledger.pos.data.model.CartLineItem
 import com.shopledger.pos.data.model.InventoryItemWithVariants
+import com.shopledger.pos.ui.CustomerCartSession
 import com.shopledger.pos.ui.InventoryFilterMode
 import com.shopledger.pos.ui.theme.AlphabetScrubberBar
 import com.shopledger.pos.ui.theme.CupertinoCard
@@ -96,6 +104,9 @@ fun InventoryScreen(
     isSellerUnlocked: Boolean,
     recentSearches: List<SearchHistoryEntity>,
     frequentSearches: List<SearchHistoryEntity>,
+    carts: List<CustomerCartSession> = emptyList(),
+    activeCartId: String = "cart-1",
+    activeCartItems: List<CartLineItem> = emptyList(),
     onSearchQueryChange: (String) -> Unit,
     onCommitSearch: (String) -> Unit,
     onDeleteSearchEntry: (Long) -> Unit,
@@ -104,7 +115,12 @@ fun InventoryScreen(
     onAddNewItemClick: () -> Unit,
     onEditItemClick: (InventoryItemWithVariants, ItemVariantEntity) -> Unit,
     onQuickSellClick: (InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>) -> Unit,
-    onAddToCartClick: (InventoryItemEntity, ItemVariantEntity) -> Unit,
+    onAddToCartClick: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit,
+    onSwitchCart: (String) -> Unit = {},
+    onCreateNewCart: () -> Unit = {},
+    onCloseCart: (String) -> Unit = {},
+    onOpenCartSheet: () -> Unit = {},
+    onOpenOrderScanner: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -244,7 +260,7 @@ fun InventoryScreen(
                         containerColor = CupertinoColors.SystemBlue,
                         contentColor = Color.White
                     ),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -253,6 +269,111 @@ fun InventoryScreen(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Add", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+
+            // Multi-Cart Switcher + 1-Tap Order List / Receipt Scan Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(9.dp),
+                    color = CupertinoColors.WhatsAppTint,
+                    border = BorderStroke(1.dp, CupertinoColors.WhatsAppGreen.copy(alpha = 0.45f)),
+                    modifier = Modifier.clickable { onOpenOrderScanner() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DocumentScanner,
+                            contentDescription = "Scan Order List",
+                            tint = CupertinoColors.WhatsAppGreen,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "Scan List",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CupertinoColors.WhatsAppGreen
+                        )
+                    }
+                }
+
+                carts.forEach { cart ->
+                    val isSelected = cart.cartId == activeCartId
+                    Surface(
+                        shape = RoundedCornerShape(9.dp),
+                        color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
+                        ),
+                        modifier = Modifier.clickable {
+                            if (isSelected) onOpenCartSheet() else onSwitchCart(cart.cartId)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ShoppingCart,
+                                contentDescription = null,
+                                tint = if (isSelected) Color.White else CupertinoColors.LabelSecondary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = "${cart.label} (${cart.items.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else CupertinoColors.LabelPrimary
+                            )
+                            if (carts.size > 1) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close ${cart.label}",
+                                    tint = if (isSelected) Color.White.copy(alpha = 0.85f) else CupertinoColors.LabelMuted,
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .clickable { onCloseCart(cart.cartId) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(9.dp),
+                    color = CupertinoColors.SystemBlueTint,
+                    border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.35f)),
+                    modifier = Modifier.clickable { onCreateNewCart() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New Cart",
+                            tint = CupertinoColors.SystemBlue,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "New Cart",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CupertinoColors.SystemBlue
+                        )
+                    }
                 }
             }
 
@@ -391,6 +512,7 @@ fun InventoryScreen(
                         InventoryItemCard(
                             itemWithVariants = itemWithVariants,
                             isSellerUnlocked = isSellerUnlocked,
+                            activeCartItems = activeCartItems,
                             onEditItem = { variant ->
                                 onEditItemClick(itemWithVariants, variant)
                             },
@@ -400,12 +522,12 @@ fun InventoryScreen(
                                 }
                                 onQuickSellClick(itemWithVariants.item, variant, itemWithVariants.variants)
                             },
-                            onAddToCart = { variant ->
+                            onCartQuantityDelta = { variant, delta ->
                                 if (searchQuery.isNotBlank()) {
                                     onCommitSearch(searchQuery)
                                 }
                                 HapticHelper.tick(context)
-                                onAddToCartClick(itemWithVariants.item, variant)
+                                onAddToCartClick(itemWithVariants.item, variant, delta)
                             }
                         )
                     }
@@ -576,9 +698,10 @@ private fun SearchHistoryPanel(
 private fun InventoryItemCard(
     itemWithVariants: InventoryItemWithVariants,
     isSellerUnlocked: Boolean,
+    activeCartItems: List<CartLineItem>,
     onEditItem: (ItemVariantEntity) -> Unit,
     onQuickSell: (ItemVariantEntity) -> Unit,
-    onAddToCart: (ItemVariantEntity) -> Unit
+    onCartQuantityDelta: (ItemVariantEntity, Double) -> Unit
 ) {
     val variants = itemWithVariants.variants
     if (variants.isEmpty()) return
@@ -784,32 +907,84 @@ private fun InventoryItemCard(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // PRIMARY COUNTER ACTIONS: Streamlined 2-Button Row (+ Cart | Sell Now)
+        // PRIMARY COUNTER ACTIONS: Streamlined 2-Button Row (Live Cart Stepper / + Cart | Sell Now)
+        val qtyInCart = remember(activeCartItems, activeVariant.id) {
+            activeCartItems.firstOrNull { it.variantId == activeVariant.id }?.quantity ?: 0.0
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(
-                onClick = { onAddToCart(activeVariant) },
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.45f)),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AddShoppingCart,
-                    contentDescription = "Add to Counter Cart",
-                    tint = CupertinoColors.SystemBlue,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "+ Cart",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.SystemBlue
-                )
+            if (qtyInCart > 0.0) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(CupertinoColors.SystemBlueTint)
+                        .border(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledIconButton(
+                        onClick = { onCartQuantityDelta(activeVariant, -1.0) },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = Color.White,
+                            contentColor = CupertinoColors.SystemBlue
+                        ),
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Remove,
+                            contentDescription = "Remove 1 from Cart",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Text(
+                        text = "${IndianCurrencyFormatter.formatQuantity(qtyInCart)} in Cart",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = CupertinoColors.SystemBlue
+                    )
+                    FilledIconButton(
+                        onClick = { onCartQuantityDelta(activeVariant, 1.0) },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = CupertinoColors.SystemBlue,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add 1 to Cart",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { onCartQuantityDelta(activeVariant, 1.0) },
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.45f)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AddShoppingCart,
+                        contentDescription = "Add to Counter Cart",
+                        tint = CupertinoColors.SystemBlue,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "+ Cart",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CupertinoColors.SystemBlue
+                    )
+                }
             }
 
             Button(

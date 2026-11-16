@@ -1,6 +1,5 @@
 package com.shopledger.pos.core.cipher
 
-import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,75 +8,55 @@ import java.util.Locale
 import kotlin.math.roundToLong
 
 enum class CipherMode(val displayName: String) {
-    STROKE_GLYPHS("Stroke Symbols"),
-    WORD_10_LETTER("10-Letter Word Code"),
-    HIDDEN_PIN("PIN-Protected Hidden")
+    CUSTOM_CODE("Custom Coded Price"),
+    HIDDEN_PIN("PIN-Protected Hidden");
+
+    companion object {
+        fun fromStoredName(name: String?): CipherMode = when (name) {
+            HIDDEN_PIN.name -> HIDDEN_PIN
+            else -> CUSTOM_CODE
+        }
+    }
 }
 
 typealias CostCodeEngine = CostCipherEngine
 
 /**
- * Represents a single symbol token in the stroke-based secret purchase price cipher:
+ * Configurable User-Defined Cost Price Cipher Engine.
  *
- * - `1` = Vertical line `|` (1 stroke)
- * - `2` = Cross `X` (2 diagonal strokes)
- * - `3` = Triangle `△` (3 strokes)
- * - `4` = Square `□` (4 strokes)
- * - `5` = Square with 1 diagonal `/` (5 strokes)
- * - `6` = Square with 2 diagonals `☒` (6 strokes)
- * - `7` = Square with triangle roof `⌂` (7 strokes)
- * - `8` = House (`7`) + bottom vertical stem `|` (8 strokes)
- * - `9` = House with bottom stem (`8`) + horizontal crossbar `+` at bottom (9 strokes)
- * - `0` = Circle `○`
+ * Replaces shop-specific stroke glyphs with a customizable digit-to-code cipher where
+ * every shopkeeper defines their own secret mapping for digits `1..9, 0` (either as a
+ * 10-character code key like `BLACKHORSE` / `MONEYCHARM` / `@#$%^&*+=?` or custom tokens
+ * per digit), plus optional PIN-protected `••••` masking.
  */
-@Immutable
-enum class CipherSymbol(
-    val digitChar: Char,
-    val strokeDescription: String
-) {
-    ZERO('0', "Circle (0)"),
-    ONE('1', "Vertical Line (1)"),
-    TWO('2', "Diagonal Cross X (2)"),
-    THREE('3', "Triangle (3)"),
-    FOUR('4', "Square (4)"),
-    FIVE('5', "Square + 1 Diagonal (5)"),
-    SIX('6', "Square + 2 Diagonals (6)"),
-    SEVEN('7', "Square + Roof House (7)"),
-    EIGHT('8', "House + Bottom Vertical Line (8)"),
-    NINE('9', "House + Bottom Cross (9)"),
-    DECIMAL('.', "Decimal Dot");
-
-    companion object {
-        fun fromChar(c: Char): CipherSymbol? = when (c) {
-            '0' -> ZERO
-            '1' -> ONE
-            '2' -> TWO
-            '3' -> THREE
-            '4' -> FOUR
-            '5' -> FIVE
-            '6' -> SIX
-            '7' -> SEVEN
-            '8' -> EIGHT
-            '9' -> NINE
-            '.' -> DECIMAL
-            else -> null
-        }
-    }
-}
-
 object CostCipherEngine {
 
     const val DEFAULT_WORD_10 = "BLACKHORSE"
+    val ORDERED_DIGITS: List<Char> = listOf('1', '2', '3', '4', '5', '6', '7', '8', '9', '0')
 
-    private val _activeModeFlow = MutableStateFlow(CipherMode.STROKE_GLYPHS)
+    fun defaultDigitMap(): Map<Char, String> = word10ToDigitMap(DEFAULT_WORD_10)
+
+    private val _activeModeFlow = MutableStateFlow(CipherMode.CUSTOM_CODE)
     val activeModeFlow: StateFlow<CipherMode> = _activeModeFlow.asStateFlow()
 
     private val _activeWord10Flow = MutableStateFlow(DEFAULT_WORD_10)
     val activeWord10Flow: StateFlow<String> = _activeWord10Flow.asStateFlow()
 
+    private val _activeCustomDigitMapFlow = MutableStateFlow(defaultDigitMap())
+    val activeCustomDigitMapFlow: StateFlow<Map<Char, String>> = _activeCustomDigitMapFlow.asStateFlow()
+
     fun setActiveConfig(mode: CipherMode, word10: String = DEFAULT_WORD_10) {
+        val norm = normalizedWord10(word10)
         _activeModeFlow.value = mode
-        _activeWord10Flow.value = normalizedWord10(word10)
+        _activeWord10Flow.value = norm
+        _activeCustomDigitMapFlow.value = word10ToDigitMap(norm)
+    }
+
+    fun setActiveCustomDigitMap(mode: CipherMode, digitMap: Map<Char, String>) {
+        val sanitized = normalizeDigitMap(digitMap)
+        _activeModeFlow.value = mode
+        _activeCustomDigitMapFlow.value = sanitized
+        _activeWord10Flow.value = digitMapToWord10(sanitized)
     }
 
     fun formatPaiseNumericString(purchasePricePaise: Long): String {
@@ -94,73 +73,95 @@ object CostCipherEngine {
     }
 
     /**
-     * Converts a purchase price in Paise (`Long`, where ₹1 = 100 paise) into an ordered
-     * list of [CipherSymbol] tokens representing the Rupee amount.
-     *
-     * Examples:
-     * - `18500L` (₹185) -> `[ONE, EIGHT, FIVE]`
-     * - `4550L` (₹45.50) -> `[FOUR, FIVE, DECIMAL, FIVE]`
-     * - `0L` (₹0) -> `[ZERO]`
-     */
-    fun encodePaiseToSymbols(purchasePricePaise: Long): List<CipherSymbol> {
-        if (purchasePricePaise <= 0L) return listOf(CipherSymbol.ZERO)
-        return encodeNumericString(formatPaiseNumericString(purchasePricePaise))
-    }
-
-    /**
-     * Converts a raw numeric string (e.g., `"240"` or `"67.5"`) into [CipherSymbol] tokens.
-     */
-    fun encodeNumericString(numericInput: String): List<CipherSymbol> {
-        val cleaned = numericInput.trim()
-        if (cleaned.isEmpty()) return emptyList()
-        val result = ArrayList<CipherSymbol>(cleaned.length)
-        for (ch in cleaned) {
-            CipherSymbol.fromChar(ch)?.let { result.add(it) }
-        }
-        return result
-    }
-
-    /**
-     * Decodes a sequence of [CipherSymbol] tokens back into Paise (`Long`).
-     */
-    fun decodeSymbolsToPaise(symbols: List<CipherSymbol>): Long {
-        if (symbols.isEmpty()) return 0L
-        val sb = StringBuilder(symbols.size)
-        for (s in symbols) {
-            sb.append(s.digitChar)
-        }
-        val value = sb.toString().toDoubleOrNull() ?: 0.0
-        return (value * 100.0).roundToLong()
-    }
-
-    /**
-     * Validates that a merchant's 10-letter code word has exactly 10 unique alphabetic characters.
+     * Validates that a merchant's 10-character code key has 10 unique non-whitespace symbols/letters.
      */
     fun isValidCipherWord10(word: String): Boolean {
-        val cleaned = word.trim().uppercase(Locale.ROOT).filter { it.isLetter() }
+        val cleaned = word.trim()
+            .uppercase(Locale.ROOT)
+            .filter { !it.isWhitespace() && it != '[' && it != ']' && it != '=' }
         return cleaned.length == 10 && cleaned.toSet().size == 10
     }
 
     fun normalizedWord10(word10: String): String {
-        val cleaned = word10.trim().uppercase(Locale.ROOT).filter { it.isLetter() }
+        val cleaned = word10.trim()
+            .uppercase(Locale.ROOT)
+            .filter { !it.isWhitespace() && it != '[' && it != ']' && it != '=' }
         return if (cleaned.length == 10 && cleaned.toSet().size == 10) cleaned else DEFAULT_WORD_10
     }
 
-    /**
-     * Encodes Paise into a 10-letter merchant word code (e.g. `"BLACKHORSE"` where
-     * `B=1, L=2, A=3, C=4, K=5, H=6, O=7, R=8, S=9, E=0`: ₹185 -> `"[B R K]"`).
-     */
-    fun encodePaiseToWordCode(
-        purchasePricePaise: Long,
-        word10: String = DEFAULT_WORD_10
-    ): String {
+    fun sanitizeCodeToken(raw: String, fallback: String): String {
+        val cleaned = raw.trim()
+            .replace("[", "")
+            .replace("]", "")
+            .replace("=", "")
+            .replace("\n", "")
+            .replace("\r", "")
+            .take(4)
+            .uppercase(Locale.ROOT)
+        return cleaned.ifEmpty { fallback }
+    }
+
+    fun normalizeDigitMap(input: Map<Char, String>): Map<Char, String> {
+        val defaults = defaultDigitMap()
+        val result = LinkedHashMap<Char, String>(10)
+        for (digit in ORDERED_DIGITS) {
+            val fallback = defaults[digit] ?: digit.toString()
+            result[digit] = sanitizeCodeToken(input[digit].orEmpty(), fallback)
+        }
+        return result
+    }
+
+    fun word10ToDigitMap(word10: String): Map<Char, String> {
         val key = normalizedWord10(word10)
+        val result = LinkedHashMap<Char, String>(10)
+        ORDERED_DIGITS.forEachIndexed { idx, digit ->
+            result[digit] = key[idx].toString()
+        }
+        return result
+    }
+
+    fun digitMapToWord10(map: Map<Char, String>): String {
+        val normalized = normalizeDigitMap(map)
+        val singleChars = ORDERED_DIGITS.map { normalized[it].orEmpty().firstOrNull() ?: it }.joinToString("")
+        return if (isValidCipherWord10(singleChars)) singleChars else _activeWord10Flow.value
+    }
+
+    fun serializeDigitMap(map: Map<Char, String>): String {
+        val normalized = normalizeDigitMap(map)
+        return ORDERED_DIGITS.joinToString("\n") { digit ->
+            "$digit=${normalized[digit].orEmpty()}"
+        }
+    }
+
+    fun parseDigitMap(serialized: String): Map<Char, String> {
+        if (serialized.isBlank()) return word10ToDigitMap(_activeWord10Flow.value)
+        val parsed = LinkedHashMap<Char, String>()
+        serialized.lines().forEach { line ->
+            val idx = line.indexOf('=')
+            if (idx == 1 && line[0] in '0'..'9') {
+                val digit = line[0]
+                val value = line.substring(2).trim()
+                if (value.isNotEmpty()) {
+                    parsed[digit] = value
+                }
+            }
+        }
+        return normalizeDigitMap(parsed)
+    }
+
+    /**
+     * Encodes Paise using the user's custom digit mapping (`1..9, 0`).
+     */
+    fun encodePaiseToCustomCode(
+        purchasePricePaise: Long,
+        digitMap: Map<Char, String> = _activeCustomDigitMapFlow.value
+    ): String {
+        val map = normalizeDigitMap(digitMap)
         val numeric = formatPaiseNumericString(purchasePricePaise)
         val tokens = ArrayList<String>(numeric.length)
         for (ch in numeric) {
             when (ch) {
-                in '1'..'9' -> tokens.add(key[ch - '1'].toString())
-                '0' -> tokens.add(key[9].toString())
+                in '0'..'9' -> tokens.add(map[ch] ?: ch.toString())
                 '.' -> tokens.add(".")
             }
         }
@@ -168,28 +169,70 @@ object CostCipherEngine {
     }
 
     /**
-     * Decodes a 10-letter merchant word code back into Paise (`Long`).
+     * Decodes a custom user-defined coded price back into Paise (`Long`).
      */
-    fun decodeWordCodeToPaise(
+    fun decodeCustomCodeToPaise(
         coded: String,
-        word10: String = DEFAULT_WORD_10
+        digitMap: Map<Char, String> = _activeCustomDigitMapFlow.value
     ): Long {
-        val key = normalizedWord10(word10)
+        val map = normalizeDigitMap(digitMap)
+        val reverseMap = HashMap<String, Char>(10)
+        for ((digit, token) in map) {
+            reverseMap[token.uppercase(Locale.ROOT)] = digit
+        }
+        val stripped = coded.replace("[", "").replace("]", "").trim()
+        if (stripped.isEmpty()) return 0L
+
+        val spacedTokens = stripped.split(Regex("""\s+""")).filter { it.isNotEmpty() }
         val sb = StringBuilder()
-        for (ch in coded.uppercase(Locale.ROOT)) {
-            if (ch == '.') {
-                sb.append('.')
+        if (spacedTokens.size > 1 || spacedTokens.all { it.length > 1 }) {
+            for (token in spacedTokens) {
+                if (token == ".") {
+                    sb.append('.')
+                } else {
+                    val mapped = reverseMap[token.uppercase(Locale.ROOT)]
+                    if (mapped != null) sb.append(mapped)
+                }
+            }
+        } else {
+            // Single unspaced string or 1-token input
+            val singleUpper = stripped.uppercase(Locale.ROOT)
+            val direct = reverseMap[singleUpper]
+            if (direct != null) {
+                sb.append(direct)
             } else {
-                val idx = key.indexOf(ch)
-                if (idx in 0..8) {
-                    sb.append(('1'.code + idx).toChar())
-                } else if (idx == 9) {
-                    sb.append('0')
+                for (ch in singleUpper) {
+                    if (ch == '.') {
+                        sb.append('.')
+                    } else {
+                        reverseMap[ch.toString()]?.let { sb.append(it) }
+                    }
                 }
             }
         }
         val value = sb.toString().toDoubleOrNull() ?: 0.0
         return (value * 100.0).roundToLong()
+    }
+
+    /**
+     * Encodes Paise into a 10-character merchant code key (e.g. `"BLACKHORSE"` where
+     * `B=1, L=2, A=3, C=4, K=5, H=6, O=7, R=8, S=9, E=0`: ₹185 -> `"[B R K]"`).
+     */
+    fun encodePaiseToWordCode(
+        purchasePricePaise: Long,
+        word10: String = DEFAULT_WORD_10
+    ): String {
+        return encodePaiseToCustomCode(purchasePricePaise, word10ToDigitMap(word10))
+    }
+
+    /**
+     * Decodes a 10-character merchant word code back into Paise (`Long`).
+     */
+    fun decodeWordCodeToPaise(
+        coded: String,
+        word10: String = DEFAULT_WORD_10
+    ): Long {
+        return decodeCustomCodeToPaise(coded, word10ToDigitMap(word10))
     }
 
     /**

@@ -69,6 +69,7 @@ import com.google.android.gms.common.api.ApiException
 import com.shopledger.pos.core.auth.GoogleAuthManager
 import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CipherReferenceStrip
+import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.cipher.CostCipherEngine
 import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.share.ReceiptShareManager
@@ -111,6 +112,7 @@ fun CloudSyncAndBackupSheet(
     val activeVertical by SyncManager.shopVerticalFlow.collectAsState()
     val activeCipherMode by SyncManager.cipherModeFlow.collectAsState()
     val activeWord10 by SyncManager.cipherWord10Flow.collectAsState()
+    val activeCustomDigitMap by SyncManager.customDigitMapFlow.collectAsState()
     val ownerPinHash by SyncManager.ownerPinHashFlow.collectAsState()
 
     var sellerNameInput by remember {
@@ -122,7 +124,8 @@ fun CloudSyncAndBackupSheet(
     var upiIdInput by remember { mutableStateOf(SyncManager.getUpiId(context)) }
     var gstinInput by remember { mutableStateOf(SyncManager.getGstin(context)) }
     var deviceCodeInput by remember { mutableStateOf(SyncManager.getDeviceShortCode(context)) }
-    var word10Input by remember { mutableStateOf(activeWord10) }
+    var word10Input by remember(activeWord10) { mutableStateOf(activeWord10) }
+    var customDigitInputs by remember(activeCustomDigitMap) { mutableStateOf(activeCustomDigitMap) }
     var newPinInput by remember { mutableStateOf("") }
     var importJsonText by remember { mutableStateOf("") }
     var showImportBox by remember { mutableStateOf(false) }
@@ -498,42 +501,100 @@ fun CloudSyncAndBackupSheet(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 CupertinoSegmentedControl(
-                    options = listOf("Stroke", "Word Code", "PIN Hide"),
-                    selectedIndex = when (activeCipherMode) {
-                        CipherMode.STROKE_GLYPHS -> 0
-                        CipherMode.WORD_10_LETTER -> 1
-                        CipherMode.HIDDEN_PIN -> 2
-                    },
+                    options = listOf("Custom Coded Price", "PIN Hide (••••)"),
+                    selectedIndex = if (activeCipherMode == CipherMode.HIDDEN_PIN) 1 else 0,
                     onSelect = { idx ->
-                        val nextMode = when (idx) {
-                            1 -> CipherMode.WORD_10_LETTER
-                            2 -> CipherMode.HIDDEN_PIN
-                            else -> CipherMode.STROKE_GLYPHS
-                        }
-                        SyncManager.saveCipherConfig(context, nextMode, word10Input)
+                        val nextMode = if (idx == 1) CipherMode.HIDDEN_PIN else CipherMode.CUSTOM_CODE
+                        SyncManager.saveCustomDigitMap(context, nextMode, customDigitInputs)
                     }
                 )
 
-                if (activeCipherMode == CipherMode.WORD_10_LETTER) {
+                if (activeCipherMode == CipherMode.CUSTOM_CODE) {
                     Spacer(modifier = Modifier.height(8.dp))
                     CupertinoTextField(
                         value = word10Input,
                         onValueChange = { raw ->
-                            val clean = raw.uppercase(Locale.ROOT).filter { it.isLetter() }.take(10)
+                            val clean = raw.uppercase(Locale.ROOT)
+                                .filter { !it.isWhitespace() && it != '[' && it != ']' && it != '=' }
+                                .take(10)
                             word10Input = clean
                             if (CostCipherEngine.isValidCipherWord10(clean)) {
-                                SyncManager.saveCipherConfig(context, CipherMode.WORD_10_LETTER, clean)
+                                val mapped = CostCipherEngine.word10ToDigitMap(clean)
+                                customDigitInputs = mapped
+                                SyncManager.saveCustomDigitMap(context, CipherMode.CUSTOM_CODE, mapped)
                             }
                         },
-                        label = "10-Unique-Letter Code Word (1..9, 0)",
+                        label = "Quick 10-Char Key (Digits 1..9, 0)",
                         placeholder = CostCipherEngine.DEFAULT_WORD_10,
                         capitalization = KeyboardCapitalization.Characters
                     )
                     if (!CostCipherEngine.isValidCipherWord10(word10Input)) {
                         Text(
-                            text = "Enter 10 unique letters (defaulting to ${CostCipherEngine.DEFAULT_WORD_10})",
+                            text = "Enter 10 unique letters/symbols (or customize each digit below)",
                             fontSize = 10.sp,
                             color = CupertinoColors.AmberWarning
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Customize Code Per Digit (1–9, 0)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = CupertinoColors.LabelSecondary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    val digitRow1 = remember { listOf('1', '2', '3', '4', '5') }
+                    val digitRow2 = remember { listOf('6', '7', '8', '9', '0') }
+                    listOf(digitRow1, digitRow2).forEach { rowDigits ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            rowDigits.forEach { d ->
+                                CupertinoTextField(
+                                    value = customDigitInputs[d].orEmpty(),
+                                    onValueChange = { typed ->
+                                        val cleanToken = typed
+                                            .replace("[", "")
+                                            .replace("]", "")
+                                            .replace("=", "")
+                                            .trim()
+                                            .take(4)
+                                            .uppercase(Locale.ROOT)
+                                        val updated = customDigitInputs.toMutableMap().apply {
+                                            put(d, cleanToken)
+                                        }
+                                        customDigitInputs = updated
+                                        if (cleanToken.isNotEmpty()) {
+                                            SyncManager.saveCustomDigitMap(context, CipherMode.CUSTOM_CODE, updated)
+                                        }
+                                    },
+                                    label = "Digit $d",
+                                    placeholder = CostCipherEngine.defaultDigitMap()[d].orEmpty(),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Live Preview (₹1,250):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = CupertinoColors.LabelSecondary
+                        )
+                        CodedPurchasePriceBadge(
+                            purchasePricePaise = 125000L,
+                            isSellerUnlocked = false,
+                            cipherMode = CipherMode.CUSTOM_CODE
                         )
                     }
                 }
