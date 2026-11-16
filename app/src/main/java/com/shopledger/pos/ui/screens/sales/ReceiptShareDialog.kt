@@ -45,6 +45,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.shopledger.pos.core.error.AppErrorManager
+import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.print.ThermalPrinterManager
 import com.shopledger.pos.core.share.ReceiptShareManager
@@ -109,6 +111,7 @@ fun ReceiptShareDialog(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                FloatingAppMessageHost()
                 // Visual Preview of Receipt / Estimate Card
                 Column(
                     modifier = Modifier
@@ -366,12 +369,16 @@ fun ReceiptShareDialog(
 
                 Button(
                     onClick = {
-                        val updated = buildUpdatedReceipt()
-                        ReceiptShareManager.shareReceiptImageToWhatsApp(
-                            context = context,
-                            receipt = updated,
-                            rawBuyerPhone = buyerPhoneInput
-                        )
+                        runCatching {
+                            val updated = buildUpdatedReceipt()
+                            ReceiptShareManager.shareReceiptImageToWhatsApp(
+                                context = context,
+                                receipt = updated,
+                                rawBuyerPhone = buyerPhoneInput
+                            )
+                        }.onFailure { err ->
+                            AppErrorManager.reportError("Receipt Share Failed", err)
+                        }
                     },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -408,9 +415,9 @@ fun ReceiptShareDialog(
                             val result = ThermalPrinterManager.printReceiptViaBluetooth(context, updated, 58)
                             isPrinting = false
                             result.onSuccess { printerName ->
-                                Toast.makeText(context, "Printed via $printerName", Toast.LENGTH_SHORT).show()
+                                AppErrorManager.reportSuccess("Thermal Print Sent", "Printed via $printerName")
                             }.onFailure { err ->
-                                Toast.makeText(context, err.localizedMessage ?: "Print failed", Toast.LENGTH_LONG).show()
+                                AppErrorManager.reportError("Bluetooth Print Failed", err)
                             }
                         }
                     },

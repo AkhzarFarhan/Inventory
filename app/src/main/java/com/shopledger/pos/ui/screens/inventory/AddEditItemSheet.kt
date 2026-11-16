@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,8 +59,13 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.shopledger.pos.core.cipher.CipherReferenceStrip
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
+import com.shopledger.pos.core.draft.ItemDraftManager
+import com.shopledger.pos.core.draft.SavedItemDraft
+import com.shopledger.pos.core.error.AppErrorManager
+import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.DuplicateCheckResult
 import com.shopledger.pos.core.nlp.DuplicateDecisionType
@@ -175,14 +182,34 @@ fun AddEditItemSheet(
     val variants = managedItemWithVariants?.variants.orEmpty()
     val initialStartInAdd = (mode as? ItemEditorMode.ManageItem)?.startInAddVariantMode ?: false
 
+    val existingSavedDraft = remember(mode) {
+        if (mode is ItemEditorMode.AddNewItem) ItemDraftManager.draftFlow.value else null
+    }
+    var isDraftClearedOrSaved by remember(mode) { mutableStateOf(false) }
+
     val draftVariants = remember(mode) {
-        mutableStateListOf(
-            VariantDraft(
-                unit = activeVertical.defaultUnit
+        if (mode is ItemEditorMode.AddNewItem && existingSavedDraft != null && existingSavedDraft.variants.isNotEmpty()) {
+            mutableStateListOf<VariantDraft>().apply {
+                addAll(existingSavedDraft.variants.map { it.copy() })
+            }
+        } else {
+            mutableStateListOf(
+                VariantDraft(
+                    unit = activeVertical.defaultUnit
+                )
             )
+        }
+    }
+    var activeDraftIndex by remember(mode) {
+        mutableIntStateOf(
+            if (mode is ItemEditorMode.AddNewItem && existingSavedDraft != null) {
+                existingSavedDraft.activeDraftIndex.coerceIn(0, (draftVariants.size - 1).coerceAtLeast(0))
+            } else 0
         )
     }
-    var activeDraftIndex by remember(mode) { mutableIntStateOf(0) }
+    val initialDraftVariant = remember(mode) {
+        if (mode is ItemEditorMode.AddNewItem) draftVariants.getOrNull(activeDraftIndex) else null
+    }
 
     var isAddingNewVariant by remember(mode) { mutableStateOf(initialStartInAdd) }
 
@@ -203,7 +230,7 @@ fun AddEditItemSheet(
     var itemName by remember(mode) {
         mutableStateOf(
             when (mode) {
-                is ItemEditorMode.AddNewItem -> ""
+                is ItemEditorMode.AddNewItem -> existingSavedDraft?.itemName.orEmpty()
                 is ItemEditorMode.ManageItem -> mode.itemWithVariants.item.displayName
             }
         )
@@ -212,7 +239,9 @@ fun AddEditItemSheet(
     var category by remember(mode) {
         mutableStateOf(
             when (mode) {
-                is ItemEditorMode.AddNewItem -> activePack.defaultCategories.firstOrNull() ?: "Uncategorized"
+                is ItemEditorMode.AddNewItem -> existingSavedDraft?.category?.takeIf { it.isNotBlank() }
+                    ?: activePack.defaultCategories.firstOrNull()
+                    ?: "Uncategorized"
                 is ItemEditorMode.ManageItem -> mode.itemWithVariants.item.category
             }
         )
@@ -220,75 +249,94 @@ fun AddEditItemSheet(
 
     var sizeLabel by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && mode.startInAddVariantMode) {
-                mode.prefillSize
-            } else {
-                activeVariant?.sizeLabel.orEmpty()
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.sizeLabel.orEmpty()
+                mode is ItemEditorMode.ManageItem && mode.startInAddVariantMode -> mode.prefillSize
+                else -> activeVariant?.sizeLabel.orEmpty()
             }
         )
     }
 
     var materialLabel by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && mode.startInAddVariantMode) {
-                mode.prefillMaterial
-            } else {
-                activeVariant?.materialLabel.orEmpty()
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.materialLabel.orEmpty()
+                mode is ItemEditorMode.ManageItem && mode.startInAddVariantMode -> mode.prefillMaterial
+                else -> activeVariant?.materialLabel.orEmpty()
             }
         )
     }
 
     var colorFinishLabel by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && mode.startInAddVariantMode) {
-                mode.prefillColor
-            } else {
-                activeVariant?.colorFinishLabel.orEmpty()
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.colorFinishLabel.orEmpty()
+                mode is ItemEditorMode.ManageItem && mode.startInAddVariantMode -> mode.prefillColor
+                else -> activeVariant?.colorFinishLabel.orEmpty()
             }
         )
     }
 
     var barcodeInput by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode) {
-                activeVariant?.barcode.orEmpty()
-            } else ""
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.barcode.orEmpty()
+                mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode -> activeVariant?.barcode.orEmpty()
+                else -> ""
+            }
         )
     }
 
     var unit by remember(mode) {
-        mutableStateOf(activeVariant?.unit ?: variants.firstOrNull()?.unit ?: activeVertical.defaultUnit)
+        mutableStateOf(
+            when (mode) {
+                is ItemEditorMode.AddNewItem -> initialDraftVariant?.unit?.takeIf { it.isNotBlank() } ?: activeVertical.defaultUnit
+                is ItemEditorMode.ManageItem -> activeVariant?.unit ?: variants.firstOrNull()?.unit ?: activeVertical.defaultUnit
+            }
+        )
     }
 
     var purchasePriceInput by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode) {
-                activeVariant?.let { IndianCurrencyFormatter.paiseToEditableString(it.purchasePricePaise) }.orEmpty()
-            } else ""
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.purchasePriceInput.orEmpty()
+                mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode ->
+                    activeVariant?.let { IndianCurrencyFormatter.paiseToEditableString(it.purchasePricePaise) }.orEmpty()
+                else -> ""
+            }
         )
     }
 
     var sellingPriceInput by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode) {
-                activeVariant?.let { IndianCurrencyFormatter.paiseToEditableString(it.sellingPricePaise) }.orEmpty()
-            } else ""
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.sellingPriceInput.orEmpty()
+                mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode ->
+                    activeVariant?.let { IndianCurrencyFormatter.paiseToEditableString(it.sellingPricePaise) }.orEmpty()
+                else -> ""
+            }
         )
     }
 
     var stockQtyInput by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode) {
-                activeVariant?.let { IndianCurrencyFormatter.formatQuantity(it.stockQuantity) } ?: "10"
-            } else "10"
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.stockQtyInput?.takeIf { it.isNotBlank() } ?: "10"
+                mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode ->
+                    activeVariant?.let { IndianCurrencyFormatter.formatQuantity(it.stockQuantity) } ?: "10"
+                else -> "10"
+            }
         )
     }
 
     var lowStockInput by remember(mode) {
         mutableStateOf(
-            if (mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode) {
-                activeVariant?.let { IndianCurrencyFormatter.formatQuantity(it.lowStockThreshold) } ?: "5"
-            } else "5"
+            when {
+                mode is ItemEditorMode.AddNewItem -> initialDraftVariant?.lowStockInput?.takeIf { it.isNotBlank() } ?: "5"
+                mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode ->
+                    activeVariant?.let { IndianCurrencyFormatter.formatQuantity(it.lowStockThreshold) } ?: "5"
+                else -> "5"
+            }
         )
     }
 
@@ -320,6 +368,53 @@ fun AddEditItemSheet(
         stockQtyInput = draft.stockQtyInput
         lowStockInput = draft.lowStockInput
         validationError = ""
+    }
+
+    fun persistAddDraft(): Boolean {
+        if (mode !is ItemEditorMode.AddNewItem || isDraftClearedOrSaved) return false
+        draftVariants.getOrNull(activeDraftIndex)?.let { saveCurrentIntoDraft(it) }
+        val draftSnapshot = SavedItemDraft(
+            itemName = itemName,
+            category = category,
+            variants = draftVariants.map { it.copy() },
+            activeDraftIndex = activeDraftIndex
+        )
+        ItemDraftManager.saveDraft(context, draftSnapshot)
+        return draftSnapshot.hasContent
+    }
+
+    fun clearAddDraftAndReset() {
+        isDraftClearedOrSaved = true
+        ItemDraftManager.clearDraft(context)
+        val freshVariant = VariantDraft(unit = activeVertical.defaultUnit)
+        draftVariants.clear()
+        draftVariants.add(freshVariant)
+        activeDraftIndex = 0
+        itemName = ""
+        category = activePack.defaultCategories.firstOrNull() ?: "Uncategorized"
+        loadDraft(freshVariant)
+        AppErrorManager.reportInfo("Draft Cleared", "Started a blank item form.")
+    }
+
+    LaunchedEffect(
+        mode,
+        itemName,
+        category,
+        sizeLabel,
+        materialLabel,
+        colorFinishLabel,
+        barcodeInput,
+        unit,
+        purchasePriceInput,
+        sellingPriceInput,
+        stockQtyInput,
+        lowStockInput,
+        activeDraftIndex,
+        draftVariants.size
+    ) {
+        if (mode is ItemEditorMode.AddNewItem && !isDraftClearedOrSaved) {
+            persistAddDraft()
+        }
     }
 
     fun selectVariant(v: ItemVariantEntity) {
@@ -368,48 +463,89 @@ fun AddEditItemSheet(
     val units = remember(activePack) { activePack.defaultUnits }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (mode is ItemEditorMode.AddNewItem && !isDraftClearedOrSaved) {
+                if (persistAddDraft()) {
+                    AppErrorManager.reportInfo(
+                        title = "Draft Saved",
+                        detail = "Your item draft is saved. Tap '+ Add' anytime to continue editing."
+                    )
+                }
+            }
+            onDismiss()
+        },
         sheetState = sheetState,
         containerColor = CupertinoColors.SystemGroupedBackground
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // SHEET HEADER: Clean title and optional Delete action
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Box(modifier = Modifier.fillMaxWidth()) {
+            FloatingAppMessageHost(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .zIndex(10f)
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = when (mode) {
-                        is ItemEditorMode.AddNewItem -> "Add Product"
-                        is ItemEditorMode.ManageItem -> "Edit Product & Variants"
-                    },
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = CupertinoColors.LabelPrimary
-                )
+                // SHEET HEADER: Clean title and optional Clear Draft / Delete action
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = when (mode) {
+                            is ItemEditorMode.AddNewItem -> if (existingSavedDraft?.hasContent == true && !isDraftClearedOrSaved) {
+                                "Add Product (Draft)"
+                            } else "Add Product"
+                            is ItemEditorMode.ManageItem -> "Edit Product & Variants"
+                        },
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = CupertinoColors.LabelPrimary
+                    )
 
-                if (mode is ItemEditorMode.ManageItem) {
-                    TextButton(
-                        onClick = { showDeleteConfirm = true },
-                        colors = ButtonDefaults.textButtonColors(contentColor = CupertinoColors.DestructiveRed)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = "Delete Item",
-                            modifier = Modifier.size(17.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Delete", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    if (mode is ItemEditorMode.AddNewItem) {
+                        val hasAnyDraftInput = itemName.isNotBlank() ||
+                            sizeLabel.isNotBlank() ||
+                            materialLabel.isNotBlank() ||
+                            colorFinishLabel.isNotBlank() ||
+                            barcodeInput.isNotBlank() ||
+                            purchasePriceInput.isNotBlank() ||
+                            sellingPriceInput.isNotBlank() ||
+                            draftVariants.size > 1
+                        if (hasAnyDraftInput) {
+                            TextButton(
+                                onClick = { clearAddDraftAndReset() },
+                                colors = ButtonDefaults.textButtonColors(contentColor = CupertinoColors.DestructiveRed)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "Clear Draft",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Clear Draft", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    } else if (mode is ItemEditorMode.ManageItem) {
+                        TextButton(
+                            onClick = { showDeleteConfirm = true },
+                            colors = ButtonDefaults.textButtonColors(contentColor = CupertinoColors.DestructiveRed)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteOutline,
+                                contentDescription = "Delete Item",
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Delete", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
                     }
                 }
-            }
 
             // CARD 1: Item Name & User-Writable Category (Requirement #2)
             CupertinoCard(contentPadding = PaddingValues(12.dp)) {
@@ -1134,13 +1270,21 @@ fun AddEditItemSheet(
                     onClick = {
                         keyboardController?.hide()
                         focusManager.clearFocus()
+                        if (mode is ItemEditorMode.AddNewItem && !isDraftClearedOrSaved) {
+                            if (persistAddDraft()) {
+                                AppErrorManager.reportInfo(
+                                    title = "Draft Saved",
+                                    detail = "Your item draft is stored. Tap '+ Add' anytime to resume."
+                                )
+                            }
+                        }
                         onDismiss()
                     },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(vertical = 13.dp)
                 ) {
-                    Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Save Draft / Close", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
 
                 Button(
@@ -1150,6 +1294,7 @@ fun AddEditItemSheet(
 
                         if (itemName.isBlank()) {
                             validationError = "Please enter an item name."
+                            AppErrorManager.reportWarning("Missing Item Name", validationError)
                             return@Button
                         }
                         val cleanCategory = category.trim().ifEmpty { "Uncategorized" }
@@ -1158,6 +1303,7 @@ fun AddEditItemSheet(
                             is ItemEditorMode.AddNewItem -> {
                                 if (duplicateCheckResult?.decision == DuplicateDecisionType.EXACT_DUPLICATE) {
                                     validationError = "This exact item already exists! Tap 'Edit Existing' above."
+                                    AppErrorManager.reportWarning("Duplicate Product", validationError)
                                     return@Button
                                 }
 
@@ -1170,6 +1316,7 @@ fun AddEditItemSheet(
                                     if (finalSelling <= 0L) {
                                         val hint = if (draft.buildSummary() == "Standard") "Variant #${index + 1}" else draft.buildSummary()
                                         validationError = "Please enter a valid selling price (₹) for $hint."
+                                        AppErrorManager.reportWarning("Invalid Selling Price", validationError)
                                         activeDraftIndex = index
                                         loadDraft(draft)
                                         return@Button
@@ -1189,7 +1336,10 @@ fun AddEditItemSheet(
                                     )
                                 }
 
+                                isDraftClearedOrSaved = true
+                                ItemDraftManager.clearDraft(context)
                                 onSaveNewItemWithVariants(itemName, cleanCategory, specs)
+                                AppErrorManager.reportSuccess("Item Added", "\"$itemName\" saved to inventory.")
                             }
                             is ItemEditorMode.ManageItem -> {
                                 val finalPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
@@ -1199,6 +1349,7 @@ fun AddEditItemSheet(
 
                                 if (finalSellingPaise <= 0L) {
                                     validationError = "Please enter a valid selling price (₹)."
+                                    AppErrorManager.reportWarning("Invalid Selling Price", validationError)
                                     return@Button
                                 }
 
@@ -1257,6 +1408,7 @@ fun AddEditItemSheet(
                         fontSize = 14.sp
                     )
                 }
+            }
             }
         }
     }

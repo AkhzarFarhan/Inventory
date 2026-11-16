@@ -4,6 +4,10 @@ import com.shopledger.pos.core.auth.SignedInGoogleUser
 import com.shopledger.pos.core.buyer.BuyerHistoryHelper
 import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CostCipherEngine
+import com.shopledger.pos.core.draft.ItemDraftManager
+import com.shopledger.pos.core.draft.SavedItemDraft
+import com.shopledger.pos.core.error.AppErrorManager
+import com.shopledger.pos.core.error.MessageSeverity
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.DuplicateDecisionType
 import com.shopledger.pos.core.nlp.ShopVertical
@@ -20,6 +24,7 @@ import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.data.repository.LpsRepository
+import com.shopledger.pos.ui.screens.inventory.VariantDraft
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -721,5 +726,78 @@ class LpsHardwareDomainTest {
 
         val line3 = result.matchedCartLines.first { it.variantId == "var-fev-1kg" }
         assertEquals(2.0, line3.quantity, 0.01)
+    }
+
+    @Test
+    fun itemDraftManager_serializesAndRestoresMultiVariantDraftCorrectly() {
+        val original = SavedItemDraft(
+            itemName = "Asian \"Apex\" Primer",
+            category = "Paints & Primers",
+            activeDraftIndex = 1,
+            updatedAt = 1794816000000L,
+            variants = listOf(
+                VariantDraft(
+                    id = "v-1",
+                    sizeLabel = "1 Ltr",
+                    materialLabel = "Water Base",
+                    colorFinishLabel = "White",
+                    barcode = "8901234000111",
+                    unit = "ltr",
+                    purchasePriceInput = "185",
+                    sellingPriceInput = "240",
+                    stockQtyInput = "12",
+                    lowStockInput = "4"
+                ),
+                VariantDraft(
+                    id = "v-2",
+                    sizeLabel = "4 Ltr",
+                    materialLabel = "Water Base",
+                    colorFinishLabel = "White",
+                    barcode = "8901234000444",
+                    unit = "ltr",
+                    purchasePriceInput = "680",
+                    sellingPriceInput = "890",
+                    stockQtyInput = "6",
+                    lowStockInput = "2"
+                )
+            )
+        )
+
+        val json = ItemDraftManager.serializeDraftToJson(original)
+        val restored = ItemDraftManager.deserializeDraftFromJson(json)
+        requireNotNull(restored)
+
+        assertTrue(restored.hasContent)
+        assertEquals("Asian \"Apex\" Primer", restored.itemName)
+        assertEquals("Paints & Primers", restored.category)
+        assertEquals(1, restored.activeDraftIndex)
+        assertEquals(2, restored.variants.size)
+        assertEquals("4 Ltr", restored.variants[1].sizeLabel)
+        assertEquals("890", restored.variants[1].sellingPriceInput)
+        assertEquals("8901234000111", restored.variants[0].barcode)
+    }
+
+    @Test
+    fun appErrorManager_capturesAndFormatsExceptionsIntoFloatingMessages() {
+        AppErrorManager.dismiss()
+        assertEquals(null, AppErrorManager.activeMessage.value)
+
+        AppErrorManager.reportError(
+            title = "Checkout Failed",
+            throwable = IllegalStateException("Insufficient disk space")
+        )
+        val errMsg = AppErrorManager.activeMessage.value
+        requireNotNull(errMsg)
+        assertEquals(MessageSeverity.ERROR, errMsg.severity)
+        assertEquals("Checkout Failed", errMsg.title)
+        assertEquals("Insufficient disk space", errMsg.detail)
+
+        AppErrorManager.reportWarning("Draft Saved", "Your item draft was saved.")
+        val warnMsg = AppErrorManager.activeMessage.value
+        requireNotNull(warnMsg)
+        assertEquals(MessageSeverity.WARNING, warnMsg.severity)
+
+        AppErrorManager.dismiss(warnMsg.id)
+        assertEquals(null, AppErrorManager.activeMessage.value)
     }
 }

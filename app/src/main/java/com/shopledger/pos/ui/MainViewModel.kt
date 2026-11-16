@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.shopledger.pos.core.buyer.BuyerHistoryHelper
 import com.shopledger.pos.core.buyer.BuyerOrderLineSnapshot
 import com.shopledger.pos.core.buyer.KnownBuyerProfile
+import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.nlp.DuplicateCheckResult
 import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.core.share.ReceiptLineItem
@@ -18,6 +19,7 @@ import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.CartLineItem
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.data.repository.LpsRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -177,8 +179,21 @@ class MainViewModel(
             initialValue = emptyList()
         )
 
+    private fun launchSafe(
+        operationName: String,
+        block: suspend CoroutineScope.() -> Unit
+    ) {
+        viewModelScope.launch(AppErrorManager.exceptionHandler(operationName)) {
+            try {
+                block()
+            } catch (t: Throwable) {
+                AppErrorManager.reportError(operationName, t)
+            }
+        }
+    }
+
     init {
-        viewModelScope.launch {
+        launchSafe("Catalog Initialization") {
             repository.seedStarterCatalogIfEmpty()
         }
     }
@@ -198,7 +213,7 @@ class MainViewModel(
     fun commitSearchToHistory(query: String) {
         val trimmed = query.trim()
         if (trimmed.length < 2) return
-        viewModelScope.launch {
+        launchSafe("Save Search History") {
             val matchCount = allInventoryState.value.count {
                 SmartItemMatcher.matchesSearchQuery(trimmed, it)
             }
@@ -207,13 +222,13 @@ class MainViewModel(
     }
 
     fun deleteSearchHistoryItem(id: Long) {
-        viewModelScope.launch {
+        launchSafe("Delete Search Entry") {
             repository.deleteSearchHistoryItem(id)
         }
     }
 
     fun clearAllSearchHistory() {
-        viewModelScope.launch {
+        launchSafe("Clear Search History") {
             repository.clearAllSearchHistory()
         }
     }
@@ -232,14 +247,26 @@ class MainViewModel(
         candidateColorFinish: String,
         excludeItemId: String? = null
     ): DuplicateCheckResult {
-        return SmartItemMatcher.checkDuplicateOrVariant(
-            candidateName = candidateName,
-            candidateSize = candidateSize,
-            candidateMaterial = candidateMaterial,
-            candidateColorFinish = candidateColorFinish,
-            existingInventory = allInventoryState.value,
-            excludeItemId = excludeItemId
-        )
+        return runCatching {
+            SmartItemMatcher.checkDuplicateOrVariant(
+                candidateName = candidateName,
+                candidateSize = candidateSize,
+                candidateMaterial = candidateMaterial,
+                candidateColorFinish = candidateColorFinish,
+                existingInventory = allInventoryState.value,
+                excludeItemId = excludeItemId
+            )
+        }.getOrElse { err ->
+            AppErrorManager.reportError("Duplicate Check Failed", err)
+            DuplicateCheckResult(
+                decision = com.shopledger.pos.core.nlp.DuplicateDecisionType.UNIQUE_NEW_ITEM,
+                matchedItem = null,
+                matchedVariantId = null,
+                confidenceScore = 0.0,
+                candidateSignature = SmartItemMatcher.parseSignature(candidateName),
+                explanationMessage = ""
+            )
+        }
     }
 
     fun addNewItemWithVariants(
@@ -247,7 +274,7 @@ class MainViewModel(
         category: String,
         variants: List<LpsRepository.NewVariantSpec>
     ) {
-        viewModelScope.launch {
+        launchSafe("Failed to Save New Product") {
             repository.addNewItemWithVariants(
                 displayName = displayName,
                 category = category,
@@ -268,7 +295,7 @@ class MainViewModel(
         stockQuantity: Double,
         lowStockThreshold: Double
     ) {
-        viewModelScope.launch {
+        launchSafe("Failed to Save Product") {
             repository.addNewItemWithVariant(
                 displayName = displayName,
                 category = category,
@@ -298,7 +325,7 @@ class MainViewModel(
         lowStockThreshold: Double,
         barcode: String = ""
     ) {
-        viewModelScope.launch {
+        launchSafe("Failed to Add Variant") {
             repository.addVariantToExistingItem(
                 itemId = itemId,
                 newDisplayName = newDisplayName,
@@ -361,7 +388,7 @@ class MainViewModel(
         newLowStockThreshold: Double,
         newBarcode: String = variant.barcode
     ) {
-        viewModelScope.launch {
+        launchSafe("Failed to Update Item") {
             repository.updateItemAndVariant(
                 item = item,
                 newDisplayName = newDisplayName,
@@ -381,7 +408,7 @@ class MainViewModel(
     }
 
     fun deleteItemOrVariant(itemId: String, variantId: String?, totalVariantsCount: Int) {
-        viewModelScope.launch {
+        launchSafe("Failed to Delete Item") {
             repository.deleteItemOrVariant(itemId, variantId, totalVariantsCount)
         }
     }
@@ -582,7 +609,7 @@ class MainViewModel(
         buyerPhone: String
     ) {
         if (itemsToEstimate.isEmpty()) return
-        viewModelScope.launch {
+        launchSafe("Failed to Prepare Estimate") {
             val estimateData = repository.prepareEstimateReceiptData(
                 cartItems = itemsToEstimate,
                 buyerName = buyerName,
@@ -607,7 +634,7 @@ class MainViewModel(
         onComplete: (SaleReceiptData) -> Unit = {}
     ) {
         if (itemsToSell.isEmpty()) return
-        viewModelScope.launch {
+        launchSafe("Checkout Failed") {
             val receipt = repository.executeCheckoutAndDeductStock(
                 cartItems = itemsToSell,
                 buyerName = buyerName,
@@ -636,7 +663,7 @@ class MainViewModel(
         partyType: String = "CUSTOMER",
         openingBalancePaise: Long = 0L
     ) {
-        viewModelScope.launch {
+        launchSafe("Failed to Save Khata Party") {
             repository.addOrUpdateParty(
                 name = name,
                 phone = phone,
@@ -652,7 +679,7 @@ class MainViewModel(
         paymentMode: String = "CASH",
         note: String = ""
     ) {
-        viewModelScope.launch {
+        launchSafe("Failed to Record Payment") {
             repository.recordPartyPaymentReceived(
                 partyId = partyId,
                 amountPaise = amountPaise,
@@ -705,14 +732,23 @@ class MainViewModel(
     }
 
     fun returnSaleAndRestoreStock(sale: SaleRecordEntity) {
-        viewModelScope.launch {
+        launchSafe("Failed to Return Sale") {
             repository.returnSaleAndRestoreStock(sale)
+            AppErrorManager.reportSuccess("Sale Returned", "Stock restored for #${sale.receiptNumber}.")
         }
     }
 
-    suspend fun exportBackupJson(): String = repository.exportBackupJson()
+    suspend fun exportBackupJson(): String {
+        return runCatching { repository.exportBackupJson() }
+            .onFailure { AppErrorManager.reportError("Backup Export Failed", it) }
+            .getOrDefault("")
+    }
 
-    suspend fun importBackupJson(json: String): Boolean = repository.importBackupJson(json)
+    suspend fun importBackupJson(json: String): Boolean {
+        return runCatching { repository.importBackupJson(json) }
+            .onFailure { AppErrorManager.reportError("Backup Restore Failed", it) }
+            .getOrDefault(false)
+    }
 
     class Factory(private val repository: LpsRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

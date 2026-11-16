@@ -58,7 +58,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.shopledger.pos.core.auth.GoogleAuthManager
+import com.shopledger.pos.core.error.AppErrorManager
+import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
@@ -135,7 +138,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         }
     }
 
-    Scaffold(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
         containerColor = CupertinoColors.SystemGroupedBackground,
         topBar = {
             Column(
@@ -455,6 +459,14 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         }
     }
 
+        FloatingAppMessageHost(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 8.dp)
+                .zIndex(20f)
+        )
+    }
+
     val allExistingCategories = remember(allInventory) {
         allInventory.map { it.item.category }.filter { it.isNotBlank() }.distinct()
     }
@@ -634,6 +646,10 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             pinEntryInput = ""
                             viewModel.toggleSellerUnlocked()
                         } else {
+                            AppErrorManager.reportError(
+                                title = "Wrong Owner PIN",
+                                customDetail = "Entered PIN did not match. Please try again."
+                            )
                             Toast.makeText(context, "Incorrect Owner PIN", Toast.LENGTH_SHORT).show()
                         }
                     },

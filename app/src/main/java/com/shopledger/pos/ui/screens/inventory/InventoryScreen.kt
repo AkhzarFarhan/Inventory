@@ -77,6 +77,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
+import com.shopledger.pos.core.draft.ItemDraftManager
+import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.scanner.BarcodeScannerHelper
 import com.shopledger.pos.core.share.ReceiptShareManager
@@ -130,6 +132,7 @@ fun InventoryScreen(
     val coroutineScope = rememberCoroutineScope()
     val activeVertical by SyncManager.shopVerticalFlow.collectAsState()
     val activeSellerName by SyncManager.sellerNameFlow.collectAsState()
+    val savedItemDraft by ItemDraftManager.draftFlow.collectAsState()
 
     var isSearchFocused by remember { mutableStateOf(false) }
 
@@ -199,7 +202,10 @@ fun InventoryScreen(
                                             isSearchFocused = false
                                         },
                                         onError = { err ->
-                                            Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                            AppErrorManager.reportError(
+                                                title = "Barcode Scanner Failed",
+                                                customDetail = err
+                                            )
                                         }
                                     )
                                 }
@@ -373,6 +379,57 @@ fun InventoryScreen(
                             fontWeight = FontWeight.Bold,
                             color = CupertinoColors.SystemBlue
                         )
+                    }
+                }
+            }
+
+            // Unsaved Add-Item Draft Resume Pill (prevents data loss on accidental slide-close)
+            val draft = savedItemDraft
+            if (draft != null && draft.hasContent) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = CupertinoColors.AmberTint,
+                    border = BorderStroke(1.dp, CupertinoColors.AmberWarning.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onAddNewItemClick() }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Saved Draft: ${draft.itemName.ifBlank { "Untitled Item" }}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CupertinoColors.AmberWarning,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Tap to resume (${draft.variants.size.coerceAtLeast(1)} variant${if (draft.variants.size > 1) "s" else ""})",
+                                fontSize = 10.sp,
+                                color = CupertinoColors.LabelSecondary
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                ItemDraftManager.clearDraft(context)
+                                AppErrorManager.reportInfo("Draft Discarded", "Removed saved item draft.")
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Discard Draft",
+                                tint = CupertinoColors.AmberWarning,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
                     }
                 }
             }

@@ -2,6 +2,8 @@ package com.shopledger.pos
 
 import android.app.Application
 import com.shopledger.pos.core.auth.GoogleAuthManager
+import com.shopledger.pos.core.draft.ItemDraftManager
+import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.repository.LpsRepository
@@ -20,10 +22,16 @@ class ShopLedgerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        GoogleAuthManager.init(this)
-        SyncManager.init(this)
+        AppErrorManager.installGlobalExceptionHandler(this)
+        runCatching { ItemDraftManager.init(this) }
+            .onFailure { AppErrorManager.reportError("Failed to restore saved item draft", it) }
+        runCatching { GoogleAuthManager.init(this) }
+            .onFailure { AppErrorManager.reportError("Auth initialization issue", it) }
+        runCatching { SyncManager.init(this) }
+            .onFailure { AppErrorManager.reportError("Settings initialization issue", it) }
         database = LpsDatabase.getInstance(this)
         repository = LpsRepository(this, database)
-        SyncManager.scheduleDeltaSync(this)
+        runCatching { SyncManager.scheduleDeltaSync(this) }
+            .onFailure { AppErrorManager.reportError("Background sync scheduling failed", it) }
     }
 }

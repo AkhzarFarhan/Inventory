@@ -69,6 +69,8 @@ import com.shopledger.pos.core.buyer.BuyerHistoryHelper
 import com.shopledger.pos.core.buyer.BuyerOrderLineSnapshot
 import com.shopledger.pos.core.buyer.KnownBuyerProfile
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
+import com.shopledger.pos.core.error.AppErrorManager
+import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
@@ -131,6 +133,7 @@ fun QuickSellSheet(
         sheetState = sheetState,
         containerColor = CupertinoColors.SystemGroupedBackground
     ) {
+        FloatingAppMessageHost()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -527,6 +530,7 @@ fun CounterCartSheet(
         sheetState = sheetState,
         containerColor = CupertinoColors.SystemGroupedBackground
     ) {
+        FloatingAppMessageHost()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

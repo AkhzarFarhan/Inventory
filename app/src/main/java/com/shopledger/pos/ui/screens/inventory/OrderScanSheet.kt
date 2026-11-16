@@ -63,6 +63,8 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.core.error.AppErrorManager
+import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.scanner.LlmModelState
 import com.shopledger.pos.core.scanner.OnDeviceOrderScannerManager
 import com.shopledger.pos.core.scanner.OrderScanResult
@@ -113,32 +115,35 @@ fun OrderScanSheet(
 
     fun processTextIntoCart(text: String, autoOpenIfClean: Boolean) {
         if (text.isBlank()) {
-            Toast.makeText(context, "No readable order text detected.", Toast.LENGTH_SHORT).show()
+            AppErrorManager.reportWarning("Empty Order List", "No readable order text detected.")
             return
         }
         coroutineScope.launch {
             isProcessing = true
-            val result = OnDeviceOrderScannerManager.parseOrderListToCart(
-                rawText = text,
-                inventory = inventory,
-                context = context
-            )
-            isProcessing = false
-            lastScanResult = result
+            try {
+                val result = OnDeviceOrderScannerManager.parseOrderListToCart(
+                    rawText = text,
+                    inventory = inventory,
+                    context = context
+                )
+                lastScanResult = result
 
-            if (autoOpenIfClean && result.matchedCartLines.isNotEmpty() && result.unmatchedLines.isEmpty()) {
-                Toast.makeText(
-                    context,
-                    "$activeCartLabel ready with ${result.matchedCartLines.size} scanned items!",
-                    Toast.LENGTH_SHORT
-                ).show()
-                onAddScannedItemsAndOpenCart(result.matchedCartLines)
-            } else if (result.matchedCartLines.isEmpty()) {
-                Toast.makeText(
-                    context,
-                    "Scanned text ready — review or adjust item names to match catalog.",
-                    Toast.LENGTH_SHORT
-                ).show()
+                if (autoOpenIfClean && result.matchedCartLines.isNotEmpty() && result.unmatchedLines.isEmpty()) {
+                    AppErrorManager.reportSuccess(
+                        title = "Cart Ready",
+                        detail = "$activeCartLabel filled with ${result.matchedCartLines.size} scanned items."
+                    )
+                    onAddScannedItemsAndOpenCart(result.matchedCartLines)
+                } else if (result.matchedCartLines.isEmpty()) {
+                    AppErrorManager.reportWarning(
+                        title = "No Direct Catalog Match",
+                        detail = "Review or adjust item names below to match your inventory."
+                    )
+                }
+            } catch (t: Throwable) {
+                AppErrorManager.reportError("Order Parsing Failed", t)
+            } finally {
+                isProcessing = false
             }
         }
     }
@@ -155,7 +160,7 @@ fun OrderScanSheet(
                     rawOrderText = text
                     processTextIntoCart(text, autoOpenIfClean = true)
                 }.onFailure { err ->
-                    Toast.makeText(context, "OCR failed: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
+                    AppErrorManager.reportError("OCR Scan Failed", err)
                 }
             }
         }
@@ -184,11 +189,11 @@ fun OrderScanSheet(
                         rawOrderText = mergedText
                         processTextIntoCart(mergedText, autoOpenIfClean = true)
                     } else {
-                        Toast.makeText(
-                            context,
-                            "OCR error: ${firstError?.localizedMessage ?: "Could not read text"}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        AppErrorManager.reportError(
+                            title = "Document OCR Failed",
+                            throwable = firstError,
+                            customDetail = firstError?.localizedMessage ?: "Could not read text from scanned document."
+                        )
                     }
                 }
             }
@@ -207,7 +212,7 @@ fun OrderScanSheet(
                     rawOrderText = text
                     processTextIntoCart(text, autoOpenIfClean = true)
                 }.onFailure { err ->
-                    Toast.makeText(context, "OCR error: ${err.localizedMessage}", Toast.LENGTH_LONG).show()
+                    AppErrorManager.reportError("Gallery Image OCR Failed", err)
                 }
             }
         }
@@ -220,10 +225,10 @@ fun OrderScanSheet(
             coroutineScope.launch {
                 OnDeviceOrderScannerManager.importLocalModelUri(context, uri)
                     .onSuccess { file ->
-                        Toast.makeText(context, "Loaded model: ${file.name}", Toast.LENGTH_SHORT).show()
+                        AppErrorManager.reportSuccess("On-Device LLM Ready", "Loaded ${file.name}")
                     }
                     .onFailure { err ->
-                        Toast.makeText(context, err.localizedMessage ?: "Import failed", Toast.LENGTH_LONG).show()
+                        AppErrorManager.reportError("LLM Model Import Failed", err)
                     }
             }
         }
@@ -234,6 +239,7 @@ fun OrderScanSheet(
         sheetState = sheetState,
         containerColor = CupertinoColors.SystemGroupedBackground
     ) {
+        FloatingAppMessageHost()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

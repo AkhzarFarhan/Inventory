@@ -71,6 +71,8 @@ import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CipherReferenceStrip
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.cipher.CostCipherEngine
+import com.shopledger.pos.core.error.AppErrorManager
+import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.sync.SyncManager
@@ -174,6 +176,7 @@ fun CloudSyncAndBackupSheet(
         sheetState = sheetState,
         containerColor = CupertinoColors.SystemGroupedBackground
     ) {
+        FloatingAppMessageHost()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
