@@ -9,6 +9,35 @@
       "client_info": {
         "mobilesdk_app_id": "1:94340852366:android:0d1feb06d868a0428f77df",
         "android_client_info": {
+          "package_name": "com.shopledger.pos"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "94340852366-9jsh9b504m6ahf0s694umo5b4pc7k773.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2eAYFX0LJ6irFyg4S4j-ULfHkAl3W_uY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "94340852366-9jsh9b504m6ahf0s694umo5b4pc7k773.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:94340852366:android:0d1feb06d868a0428f77df",
+        "android_client_info": {
           "package_name": "com.lpshardware.inventory"
         }
       },

@@ -6,6 +6,18 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Bluetooth permissions for 58mm / 80mm ESC/POS Thermal Receipt Printers -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <!-- Required on Android 11+ (API 30+) to target WhatsApp / WhatsApp Business directly -->
     <queries>
         <package android:name="com.whatsapp" />
@@ -21,14 +33,14 @@
     </queries>
 
     <application
-        android:name=".LpsHardwareApp"
+        android:name=".ShopLedgerApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:largeHeap="false"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.LPSHardware">
+        android:theme="@style/Theme.ShopLedger">
 
         <activity
             android:name=".MainActivity"

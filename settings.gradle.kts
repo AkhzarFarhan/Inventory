@@ -25,5 +25,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LPSHardwareInventory"
+rootProject.name = "ShopLedgerPOS"
 include(":app")
