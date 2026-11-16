@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,6 +71,7 @@ import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.model.CartLineItem
 import com.shopledger.pos.ui.theme.CupertinoCard
 import com.shopledger.pos.ui.theme.CupertinoColors
+import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
 import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.HapticHelper
 
@@ -86,7 +88,7 @@ fun QuickSellSheet(
     allVariants: List<ItemVariantEntity> = emptyList(),
     isSellerUnlocked: Boolean,
     knownBuyers: List<KnownBuyerProfile>,
-    onConfirmQuickSell: (CartLineItem, buyerName: String, buyerPhone: String) -> Unit,
+    onConfirmQuickSell: (CartLineItem, buyerName: String, buyerPhone: String, paymentMode: String, discountPaise: Long, amountPaidPaise: Long?) -> Unit,
     onShareEstimatePhoto: (List<CartLineItem>, buyerName: String, buyerPhone: String) -> Unit,
     onFillCartWithBuyerOrderAndOpenCart: (List<BuyerOrderLineSnapshot>, buyerName: String, buyerPhone: String) -> Unit = { _, _, _ -> },
     onDismiss: () -> Unit
@@ -103,6 +105,9 @@ fun QuickSellSheet(
     }
     var buyerName by remember { mutableStateOf("") }
     var buyerPhone by remember { mutableStateOf("") }
+    var paymentModeIndex by remember { mutableIntStateOf(0) } // 0 = CASH, 1 = UPI, 2 = CREDIT
+    var discountInput by remember { mutableStateOf("") }
+    var amountPaidInput by remember { mutableStateOf("0") }
 
     val parsedQty = (qtyInput.toDoubleOrNull() ?: 1.0).coerceAtLeast(0.01)
     val parsedSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
@@ -113,6 +118,8 @@ fun QuickSellSheet(
             quantity = parsedQty
         )
     }
+    val parsedDiscountPaise = IndianCurrencyFormatter.parseRupeesToPaise(discountInput).coerceIn(0L, profitAnalysis.totalRevenuePaise)
+    val netPayablePaise = (profitAnalysis.totalRevenuePaise - parsedDiscountPaise).coerceAtLeast(0L)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -352,6 +359,16 @@ fun QuickSellSheet(
                 }
             )
 
+            PaymentModeAndDiscountCard(
+                totalAmountPaise = profitAnalysis.totalRevenuePaise,
+                paymentModeIndex = paymentModeIndex,
+                onPaymentModeIndexChange = { paymentModeIndex = it },
+                discountInput = discountInput,
+                onDiscountInputChange = { discountInput = it },
+                amountPaidInput = amountPaidInput,
+                onAmountPaidInputChange = { amountPaidInput = it }
+            )
+
             // Share Estimate Photo vs Complete Sale
             Row(
                 modifier = Modifier
@@ -418,7 +435,17 @@ fun QuickSellSheet(
                             customSellingPricePaise = parsedSellingPaise,
                             quantity = parsedQty
                         )
-                        onConfirmQuickSell(lineItem, buyerName, buyerPhone)
+                        val paymentMode = when (paymentModeIndex) {
+                            1 -> "UPI"
+                            2 -> "CREDIT"
+                            else -> "CASH"
+                        }
+                        val paidPaise = if (paymentMode == "CREDIT") {
+                            IndianCurrencyFormatter.parseRupeesToPaise(amountPaidInput).coerceIn(0L, netPayablePaise)
+                        } else {
+                            null
+                        }
+                        onConfirmQuickSell(lineItem, buyerName, buyerPhone, paymentMode, parsedDiscountPaise, paidPaise)
                         onDismiss()
                     },
                     shape = RoundedCornerShape(12.dp),
@@ -432,7 +459,7 @@ fun QuickSellSheet(
                     Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Sell (${IndianCurrencyFormatter.formatPaise(profitAnalysis.totalRevenuePaise)})",
+                        text = "Sell (${IndianCurrencyFormatter.formatPaise(netPayablePaise)})",
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
@@ -460,7 +487,7 @@ fun CounterCartSheet(
     onClearCart: () -> Unit,
     onFillCartFromBuyerOrder: (List<BuyerOrderLineSnapshot>) -> Unit = {},
     onShareEstimatePhoto: (List<CartLineItem>, buyerName: String, buyerPhone: String) -> Unit,
-    onCheckoutCart: (buyerName: String, buyerPhone: String) -> Unit,
+    onCheckoutCart: (buyerName: String, buyerPhone: String, paymentMode: String, discountPaise: Long, amountPaidPaise: Long?) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -470,10 +497,15 @@ fun CounterCartSheet(
 
     var buyerName by remember(initialBuyerName) { mutableStateOf(initialBuyerName) }
     var buyerPhone by remember(initialBuyerPhone) { mutableStateOf(initialBuyerPhone) }
+    var paymentModeIndex by remember { mutableIntStateOf(0) } // 0 = CASH, 1 = UPI, 2 = CREDIT
+    var discountInput by remember { mutableStateOf("") }
+    var amountPaidInput by remember { mutableStateOf("0") }
 
     val totalCostPaise = remember(cartItems) { cartItems.sumOf { it.lineCostPaise } }
     val totalRevenuePaise = remember(cartItems) { cartItems.sumOf { it.lineRevenuePaise } }
     val totalProfitPaise = totalRevenuePaise - totalCostPaise
+    val parsedDiscountPaise = IndianCurrencyFormatter.parseRupeesToPaise(discountInput).coerceIn(0L, totalRevenuePaise)
+    val netPayablePaise = (totalRevenuePaise - parsedDiscountPaise).coerceAtLeast(0L)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -662,7 +694,7 @@ fun CounterCartSheet(
                                 color = CupertinoColors.SystemBlue
                             )
                             Text(
-                                text = IndianCurrencyFormatter.formatPaise(totalRevenuePaise),
+                                text = IndianCurrencyFormatter.formatPaise(netPayablePaise),
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = CupertinoColors.SystemBlue
@@ -689,6 +721,16 @@ fun CounterCartSheet(
                         )
                     }
                 }
+
+                PaymentModeAndDiscountCard(
+                    totalAmountPaise = totalRevenuePaise,
+                    paymentModeIndex = paymentModeIndex,
+                    onPaymentModeIndexChange = { paymentModeIndex = it },
+                    discountInput = discountInput,
+                    onDiscountInputChange = { discountInput = it },
+                    amountPaidInput = amountPaidInput,
+                    onAmountPaidInputChange = { amountPaidInput = it }
+                )
 
                 // Share Estimate (Photo) vs Complete Sale (Deduct Stock + Receipt Photo)
                 Row(
@@ -729,7 +771,17 @@ fun CounterCartSheet(
                             keyboardController?.hide()
                             focusManager.clearFocus()
                             HapticHelper.successPulse(context)
-                            onCheckoutCart(buyerName, buyerPhone)
+                            val paymentMode = when (paymentModeIndex) {
+                                1 -> "UPI"
+                                2 -> "CREDIT"
+                                else -> "CASH"
+                            }
+                            val paidPaise = if (paymentMode == "CREDIT") {
+                                IndianCurrencyFormatter.parseRupeesToPaise(amountPaidInput).coerceIn(0L, netPayablePaise)
+                            } else {
+                                null
+                            }
+                            onCheckoutCart(buyerName, buyerPhone, paymentMode, parsedDiscountPaise, paidPaise)
                             onDismiss()
                         },
                         shape = RoundedCornerShape(12.dp),
@@ -895,6 +947,74 @@ private fun BuyerSuggestAndHistoryCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PaymentModeAndDiscountCard(
+    totalAmountPaise: Long,
+    paymentModeIndex: Int,
+    onPaymentModeIndexChange: (Int) -> Unit,
+    discountInput: String,
+    onDiscountInputChange: (String) -> Unit,
+    amountPaidInput: String,
+    onAmountPaidInputChange: (String) -> Unit
+) {
+    val discountPaise = IndianCurrencyFormatter.parseRupeesToPaise(discountInput).coerceIn(0L, totalAmountPaise)
+    val netTotalPaise = (totalAmountPaise - discountPaise).coerceAtLeast(0L)
+    val paidPaise = if (paymentModeIndex == 2) {
+        IndianCurrencyFormatter.parseRupeesToPaise(amountPaidInput).coerceIn(0L, netTotalPaise)
+    } else {
+        netTotalPaise
+    }
+    val duePaise = (netTotalPaise - paidPaise).coerceAtLeast(0L)
+
+    CupertinoCard {
+        Text(
+            text = "Payment Mode & Discount",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = CupertinoColors.LabelSecondary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        CupertinoSegmentedControl(
+            options = listOf("Cash", "UPI", "Credit (Udhar)"),
+            selectedIndex = paymentModeIndex,
+            onSelect = onPaymentModeIndexChange
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            CupertinoTextField(
+                value = discountInput,
+                onValueChange = onDiscountInputChange,
+                label = "Discount (₹, Opt)",
+                placeholder = "0",
+                keyboardType = KeyboardType.Decimal,
+                modifier = Modifier.weight(1f)
+            )
+            if (paymentModeIndex == 2) {
+                CupertinoTextField(
+                    value = amountPaidInput,
+                    onValueChange = onAmountPaidInputChange,
+                    label = "Paid Now (₹)",
+                    placeholder = "0",
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        if (paymentModeIndex == 2 && duePaise > 0L) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Khata Balance Due (Baaki): ${IndianCurrencyFormatter.formatPaise(duePaise)}",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = CupertinoColors.DestructiveRed
+            )
         }
     }
 }

@@ -151,7 +151,10 @@ object AppUpdateManager {
                 val asset = assetsArray.getJSONObject(i)
                 val assetName = asset.optString("name", "")
                 if (assetName.endsWith(".apk", ignoreCase = true)) {
-                    if (assetName.contains("LPS", ignoreCase = true) || apkDownloadUrl.isEmpty()) {
+                    if (assetName.contains("ShopLedger", ignoreCase = true) ||
+                        assetName.contains("LPS", ignoreCase = true) ||
+                        apkDownloadUrl.isEmpty()
+                    ) {
                         apkDownloadUrl = asset.optString("browser_download_url", "")
                         apkSize = asset.optLong("size", 0L)
                     }
@@ -220,7 +223,7 @@ object AppUpdateManager {
 
             val request = Request.Builder()
                 .url(downloadUrl)
-                .header("User-Agent", "LPSHardware-Inventory-Android")
+                .header("User-Agent", "ShopLedger-POS-Android")
                 .get()
                 .build()
 
@@ -235,7 +238,7 @@ object AppUpdateManager {
             val totalBytes = body.contentLength()
 
             val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-            val destinationFile = File(updatesDir, "LPSHardware-update.apk")
+            val destinationFile = File(updatesDir, "ShopLedgerPOS-update.apk")
             if (destinationFile.exists()) {
                 destinationFile.delete()
             }

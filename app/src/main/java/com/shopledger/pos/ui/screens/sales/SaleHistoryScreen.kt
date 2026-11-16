@@ -391,7 +391,7 @@ fun SaleHistoryScreen(
                 Text(
                     "Mark \"${target.itemNameSnapshot} (${target.variantSummarySnapshot})\" as returned and restore ${
                         IndianCurrencyFormatter.formatQuantity(target.quantitySold)
-                    } ${target.unitSnapshot} back into LPS Hardware inventory?"
+                    } ${target.unitSnapshot} back into inventory?"
                 )
             },
             confirmButton = {

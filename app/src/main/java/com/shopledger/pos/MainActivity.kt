@@ -1,6 +1,7 @@
 package com.shopledger.pos
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -21,14 +22,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -36,6 +41,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,10 +53,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shopledger.pos.core.auth.GoogleAuthManager
+import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.ui.MainViewModel
@@ -59,10 +68,12 @@ import com.shopledger.pos.ui.screens.inventory.CounterCartSheet
 import com.shopledger.pos.ui.screens.inventory.InventoryScreen
 import com.shopledger.pos.ui.screens.inventory.ItemEditorMode
 import com.shopledger.pos.ui.screens.inventory.QuickSellSheet
+import com.shopledger.pos.ui.screens.khata.PartiesKhataScreen
 import com.shopledger.pos.ui.screens.sales.ReceiptShareDialog
 import com.shopledger.pos.ui.screens.sales.SaleHistoryScreen
 import com.shopledger.pos.ui.screens.settings.CloudSyncAndBackupSheet
 import com.shopledger.pos.ui.theme.CupertinoColors
+import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.LpsCupertinoTheme
 
 class MainActivity : ComponentActivity() {
@@ -97,6 +108,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val activeReceipt by viewModel.activeReceiptForSharing.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCountState.collectAsState()
     val signedInGoogleUser by GoogleAuthManager.currentUser.collectAsState()
+    val activeSellerName by SyncManager.sellerNameFlow.collectAsState()
+    val parties by viewModel.partiesState.collectAsState()
+    val context = LocalContext.current
 
     var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
@@ -105,6 +119,19 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     var prefilledCartBuyerName by remember { mutableStateOf("") }
     var prefilledCartBuyerPhone by remember { mutableStateOf("") }
     var showCloudSyncSheet by remember { mutableStateOf(false) }
+    var showOwnerPinDialog by remember { mutableStateOf(false) }
+    var pinEntryInput by remember { mutableStateOf("") }
+
+    val requestToggleSeller = {
+        if (isSellerUnlocked) {
+            viewModel.toggleSellerUnlocked()
+        } else if (SyncManager.hasOwnerPin()) {
+            pinEntryInput = ""
+            showOwnerPinDialog = true
+        } else {
+            viewModel.toggleSellerUnlocked()
+        }
+    }
 
     Scaffold(
         containerColor = CupertinoColors.SystemGroupedBackground,
@@ -124,7 +151,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                     // Shop Name & Offline-First Sync Status Pill
                     Column {
                         Text(
-                            text = "LPS Hardware",
+                            text = activeSellerName.ifBlank { "ShopLedger POS" },
                             fontSize = 22.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = CupertinoColors.LabelPrimary
@@ -203,7 +230,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                 if (isSellerUnlocked) CupertinoColors.EmeraldGreen.copy(alpha = 0.4f)
                                 else CupertinoColors.CipherIndigo.copy(alpha = 0.25f)
                             ),
-                            modifier = Modifier.clickable { viewModel.toggleSellerUnlocked() }
+                            modifier = Modifier.clickable { requestToggleSeller() }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -317,6 +344,44 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             unselectedTextColor = CupertinoColors.LabelMuted
                         )
                     )
+
+                    val duePartyCount = parties.count { it.currentBalancePaise > 0L }
+                    NavigationBarItem(
+                        selected = currentTabIndex == 2,
+                        onClick = { currentTabIndex = 2 },
+                        icon = {
+                            BadgedBox(
+                                badge = {
+                                    if (duePartyCount > 0) {
+                                        Badge(
+                                            containerColor = CupertinoColors.DestructiveTint,
+                                            contentColor = CupertinoColors.DestructiveRed
+                                        ) {
+                                            Text(
+                                                duePartyCount.toString(),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Khata (Udhar)")
+                            }
+                        },
+                        label = {
+                            Text(
+                                text = "Khata (Udhar)",
+                                fontWeight = if (currentTabIndex == 2) FontWeight.Bold else FontWeight.Medium
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CupertinoColors.SystemBlue,
+                            selectedTextColor = CupertinoColors.SystemBlue,
+                            indicatorColor = CupertinoColors.SystemBlueTint,
+                            unselectedIconColor = CupertinoColors.LabelMuted,
+                            unselectedTextColor = CupertinoColors.LabelMuted
+                        )
+                    )
                 }
             }
         }
@@ -326,40 +391,50 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (currentTabIndex == 0) {
-                InventoryScreen(
-                    items = filteredInventory,
-                    searchQuery = searchQuery,
-                    filterMode = filterMode,
-                    isSellerUnlocked = isSellerUnlocked,
-                    recentSearches = recentSearches,
-                    frequentSearches = frequentSearches,
-                    onSearchQueryChange = viewModel::updateSearchQuery,
-                    onCommitSearch = viewModel::commitSearchToHistory,
-                    onDeleteSearchEntry = viewModel::deleteSearchHistoryItem,
-                    onClearAllSearches = viewModel::clearAllSearchHistory,
-                    onFilterModeChange = viewModel::setFilterMode,
-                    onAddNewItemClick = {
-                        activeEditorMode = ItemEditorMode.AddNewItem
-                    },
-                    onEditItemClick = { itemWithVariants, variant ->
-                        activeEditorMode = ItemEditorMode.ManageItem(itemWithVariants, variant.id)
-                    },
-                    onQuickSellClick = { item, variant, variants ->
-                        quickSellTarget = Triple(item, variant, variants)
-                    },
-                    onAddToCartClick = { item, variant ->
-                        viewModel.addOrUpdateCartItem(item, variant, 1.0)
-                    }
-                )
-            } else {
-                SaleHistoryScreen(
-                    sales = salesHistory,
-                    isSellerUnlocked = isSellerUnlocked,
-                    onToggleSellerUnlocked = viewModel::toggleSellerUnlocked,
-                    onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
-                    onReturnSale = viewModel::returnSaleAndRestoreStock
-                )
+            when (currentTabIndex) {
+                0 -> {
+                    InventoryScreen(
+                        items = filteredInventory,
+                        searchQuery = searchQuery,
+                        filterMode = filterMode,
+                        isSellerUnlocked = isSellerUnlocked,
+                        recentSearches = recentSearches,
+                        frequentSearches = frequentSearches,
+                        onSearchQueryChange = viewModel::updateSearchQuery,
+                        onCommitSearch = viewModel::commitSearchToHistory,
+                        onDeleteSearchEntry = viewModel::deleteSearchHistoryItem,
+                        onClearAllSearches = viewModel::clearAllSearchHistory,
+                        onFilterModeChange = viewModel::setFilterMode,
+                        onAddNewItemClick = {
+                            activeEditorMode = ItemEditorMode.AddNewItem
+                        },
+                        onEditItemClick = { itemWithVariants, variant ->
+                            activeEditorMode = ItemEditorMode.ManageItem(itemWithVariants, variant.id)
+                        },
+                        onQuickSellClick = { item, variant, variants ->
+                            quickSellTarget = Triple(item, variant, variants)
+                        },
+                        onAddToCartClick = { item, variant ->
+                            viewModel.addOrUpdateCartItem(item, variant, 1.0)
+                        }
+                    )
+                }
+                1 -> {
+                    SaleHistoryScreen(
+                        sales = salesHistory,
+                        isSellerUnlocked = isSellerUnlocked,
+                        onToggleSellerUnlocked = requestToggleSeller,
+                        onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
+                        onReturnSale = viewModel::returnSaleAndRestoreStock
+                    )
+                }
+                else -> {
+                    PartiesKhataScreen(
+                        parties = parties,
+                        onAddParty = viewModel::addOrUpdateParty,
+                        onRecordPaymentReceived = viewModel::recordPartyPaymentReceived
+                    )
+                }
             }
         }
     }
@@ -400,12 +475,15 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             allVariants = allVariants,
             isSellerUnlocked = isSellerUnlocked,
             knownBuyers = knownBuyers,
-            onConfirmQuickSell = { lineItem, buyerName, buyerPhone ->
+            onConfirmQuickSell = { lineItem, buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
                 viewModel.completeSaleAndPrepareReceipt(
                     itemsToSell = listOf(lineItem),
                     buyerName = buyerName,
                     buyerPhone = buyerPhone,
-                    clearCounterCart = false
+                    clearCounterCart = false,
+                    paymentMode = paymentMode,
+                    discountPaise = discountPaise,
+                    amountPaidPaise = amountPaidPaise
                 )
             },
             onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
@@ -445,12 +523,15 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                     buyerPhone = buyerPhone
                 )
             },
-            onCheckoutCart = { buyerName, buyerPhone ->
+            onCheckoutCart = { buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
                 viewModel.completeSaleAndPrepareReceipt(
                     itemsToSell = cartItems,
                     buyerName = buyerName,
                     buyerPhone = buyerPhone,
-                    clearCounterCart = true
+                    clearCounterCart = true,
+                    paymentMode = paymentMode,
+                    discountPaise = discountPaise,
+                    amountPaidPaise = amountPaidPaise
                 )
                 prefilledCartBuyerName = ""
                 prefilledCartBuyerPhone = ""
@@ -475,6 +556,62 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             onExportBackupJson = viewModel::exportBackupJson,
             onImportBackupJson = viewModel::importBackupJson,
             onDismiss = { showCloudSyncSheet = false }
+        )
+    }
+
+    // Owner PIN Lock Check Dialog before unlocking Cost & Margin Mode
+    if (showOwnerPinDialog) {
+        AlertDialog(
+            onDismissRequest = { showOwnerPinDialog = false },
+            containerColor = CupertinoColors.CardSurface,
+            title = {
+                Text(
+                    text = "Enter Owner PIN",
+                    fontWeight = FontWeight.Bold,
+                    color = CupertinoColors.LabelPrimary
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter your secret 4–6 digit PIN to unlock purchase prices and profit margins.",
+                        fontSize = 13.sp,
+                        color = CupertinoColors.LabelSecondary
+                    )
+                    CupertinoTextField(
+                        value = pinEntryInput,
+                        onValueChange = { ch ->
+                            if (ch.all { it.isDigit() } && ch.length <= 6) {
+                                pinEntryInput = ch
+                            }
+                        },
+                        label = "Owner PIN",
+                        placeholder = "4–6 digits",
+                        keyboardType = KeyboardType.NumberPassword
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (SyncManager.verifyOwnerPin(pinEntryInput.trim())) {
+                            showOwnerPinDialog = false
+                            pinEntryInput = ""
+                            viewModel.toggleSellerUnlocked()
+                        } else {
+                            Toast.makeText(context, "Incorrect Owner PIN", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CupertinoColors.EmeraldGreen)
+                ) {
+                    Text("Unlock", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOwnerPinDialog = false }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }

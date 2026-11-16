@@ -14,12 +14,16 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.runtime.Immutable
 import androidx.core.content.FileProvider
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.sync.SyncManager
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.EnumMap
 import java.util.Locale
 
 @Immutable
@@ -34,7 +38,7 @@ data class ReceiptLineItem(
 
 @Immutable
 data class SaleReceiptData(
-    /** Smart date-based Receipt ID in format YYYYMMDDCCCC (e.g. 202611010001) */
+    /** Smart Receipt ID (`YYYYMMDDCCCC` or `D1-YYYYMMDD-CCCC`) */
     val receiptNumber: String,
     val timestampMillis: Long,
     val buyerName: String = "",
@@ -43,43 +47,99 @@ data class SaleReceiptData(
     val sellerWhatsAppPhone: String = "",
     val isEstimate: Boolean = false,
     val items: List<ReceiptLineItem>,
-    val grandTotalPaise: Long
+    val grandTotalPaise: Long,
+    val paymentMode: String = "CASH",
+    val subtotalPaise: Long = grandTotalPaise,
+    val discountPaise: Long = 0L,
+    val taxPaise: Long = 0L,
+    val amountPaidPaise: Long = grandTotalPaise,
+    val balanceDuePaise: Long = 0L,
+    val upiId: String = "",
+    val gstin: String = ""
 )
 
 object ReceiptShareManager {
 
     /**
-     * Renders a crisp, modern iOS-styled Sale Receipt OR Estimate (Kaccha Parcha) Bitmap
-     * using low-memory `RGB_565` (2 bytes/pixel) and saves it to `cacheDir/receipts/` for sharing via WhatsApp.
-     *
-     * Strictly customer-safe: NEVER includes purchase price or profit margins.
-     * Includes Seller's WhatsApp Number so the buyer can contact the shop owner easily.
+     * Generates a scannable monochrome QR Bitmap for UPI payments (`upi://pay?...`) using ZXing.
+     */
+    fun generateUpiQrBitmap(
+        upiId: String,
+        payeeName: String,
+        amountPaise: Long,
+        sizePx: Int = 180
+    ): Bitmap? {
+        return try {
+            val amountStr = IndianCurrencyFormatter.paiseToEditableString(amountPaise).ifBlank { "0" }
+            val uri = "upi://pay?pa=${Uri.encode(upiId.trim())}&pn=${Uri.encode(payeeName.ifBlank { "ShopLedger POS" })}&am=$amountStr&cu=INR"
+            val hints = EnumMap<EncodeHintType, Any>(EncodeHintType::class.java).apply {
+                put(EncodeHintType.MARGIN, 1)
+            }
+            val matrix = QRCodeWriter().encode(uri, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+            val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.RGB_565)
+            for (x in 0 until sizePx) {
+                for (y in 0 until sizePx) {
+                    bmp.setPixel(x, y, if (matrix.get(x, y)) Color.BLACK else Color.WHITE)
+                }
+            }
+            bmp
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Renders a crisp, modern Sale Receipt OR Estimate PNG image (`RGB_565` low-memory config)
+     * with Seller WhatsApp link, Payment Mode / Balance Due (Udhar), optional GSTIN, and UPI QR code.
+     * Strictly customer-safe: NEVER includes purchase cost or profit margins.
      */
     fun generateReceiptImageUri(context: Context, receipt: SaleReceiptData): Uri? {
         return try {
             val sellerName = receipt.sellerName.ifBlank {
                 SyncManager.getSellerName(context)
-            }.ifBlank { "LPS Hardware" }
+            }.ifBlank { "ShopLedger POS" }
             val sellerPhone = receipt.sellerWhatsAppPhone.ifBlank {
                 SyncManager.getSellerWhatsAppNumber(context)
             }
+            val upiId = receipt.upiId.ifBlank { SyncManager.getUpiId(context) }
+            val gstin = receipt.gstin.ifBlank { SyncManager.getGstin(context) }
+
             val width = 760
             val hasBuyerRow = receipt.buyerPhone.isNotBlank() || receipt.buyerName.isNotBlank()
             val hasSellerRow = sellerPhone.isNotBlank() || sellerName.isNotBlank()
-            val headerHeight = 205 + (if (hasBuyerRow) 36 else 0) + (if (hasSellerRow) 34 else 0)
+            val hasGstin = gstin.isNotBlank()
+
+            val qrAmountPaise = if (receipt.balanceDuePaise > 0L && !receipt.isEstimate) {
+                receipt.balanceDuePaise
+            } else {
+                receipt.grandTotalPaise
+            }
+            val qrBitmap = if (upiId.isNotBlank() && qrAmountPaise > 0L) {
+                generateUpiQrBitmap(upiId, sellerName, qrAmountPaise, 176)
+            } else {
+                null
+            }
+
+            val headerHeight = 205 +
+                (if (hasBuyerRow) 36 else 0) +
+                (if (hasSellerRow) 34 else 0) +
+                (if (hasGstin) 28 else 0)
             val tableHeaderHeight = 56
             val perItemHeight = 76
-            val footerHeight = 200
+            val extrasHeight =
+                (if (receipt.discountPaise > 0L) 30 else 0) +
+                    (if (receipt.taxPaise > 0L) 30 else 0) +
+                    (if (!receipt.isEstimate) 34 else 0) +
+                    (if (!receipt.isEstimate && receipt.balanceDuePaise > 0L) 32 else 0) +
+                    (if (qrBitmap != null) 230 else 0)
+            val footerHeight = 195 + extrasHeight
             val totalHeight = headerHeight + tableHeaderHeight + (receipt.items.size * perItemHeight) + footerHeight
 
-            // RGB_565 uses 50% less RAM than ARGB_8888 on low-RAM devices
             val bitmap = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.RGB_565)
             val canvas = Canvas(bitmap)
 
-            // Background canvas (#F2F2F7 iOS grouped background)
             canvas.drawColor(Color.parseColor("#F2F2F7"))
 
-            // White Receipt Card container
             val cardRect = RectF(24f, 24f, (width - 24).toFloat(), (totalHeight - 24).toFloat())
             val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
@@ -93,7 +153,6 @@ object ReceiptShareManager {
             canvas.drawRoundRect(cardRect, 24f, 24f, cardPaint)
             canvas.drawRoundRect(cardRect, 24f, 24f, borderPaint)
 
-            // Top Brand Accent Banner (Blue for Sale Receipt, Teal/Indigo for Estimate)
             val bannerColor = if (receipt.isEstimate) Color.parseColor("#3634A3") else Color.parseColor("#007AFF")
             val bannerRect = RectF(24f, 24f, (width - 24).toFloat(), 118f)
             val bannerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -103,7 +162,6 @@ object ReceiptShareManager {
             canvas.drawRoundRect(bannerRect, 24f, 24f, bannerPaint)
             canvas.drawRect(24f, 90f, (width - 24).toFloat(), 118f, bannerPaint)
 
-            // Shop / Seller Name & Subtitle
             val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
                 textSize = if (sellerName.length > 18) 28f else 34f
@@ -118,13 +176,12 @@ object ReceiptShareManager {
             }
             canvas.drawText(sellerName.uppercase(Locale.ENGLISH), width / 2f, 68f, titlePaint)
             canvas.drawText(
-                if (receipt.isEstimate) "ESTIMATE / QUOTATION (KACCHA PARCHA)" else "CASH / SALE RECEIPT",
+                if (receipt.isEstimate) "ESTIMATE / QUOTATION" else if (hasGstin) "TAX / SALE RECEIPT" else "CASH / SALE RECEIPT",
                 width / 2f,
                 98f,
                 subTitlePaint
             )
 
-            // Receipt Metadata (Date, Smart Receipt ID YYYYMMDDCCCC, Buyer Info, Seller WhatsApp)
             val metaLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#6C6C70")
                 textSize = 20f
@@ -176,6 +233,11 @@ object ReceiptShareManager {
                 canvas.drawText(sellerLine, 52f, y, sellerPaint)
             }
 
+            if (hasGstin) {
+                y += 28f
+                canvas.drawText("GSTIN: $gstin", 52f, y, metaLabelPaint)
+            }
+
             y += 24f
             val dashedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#D1D1D6")
@@ -185,7 +247,6 @@ object ReceiptShareManager {
             }
             canvas.drawLine(48f, y, (width - 48).toFloat(), y, dashedPaint)
 
-            // Table Header
             y += 38f
             val colHeaderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#8E8E93")
@@ -200,7 +261,6 @@ object ReceiptShareManager {
             y += 16f
             canvas.drawLine(48f, y, (width - 48).toFloat(), y, borderPaint)
 
-            // Line Items
             val itemTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#1C1C1E")
                 textSize = 22f
@@ -251,6 +311,15 @@ object ReceiptShareManager {
                 canvas.drawLine(52f, y, (width - 52).toFloat(), y, borderPaint)
             }
 
+            if (receipt.discountPaise > 0L) {
+                y += 28f
+                canvas.drawText("Subtotal (${IndianCurrencyFormatter.formatPaise(receipt.subtotalPaise)})  •  Discount: -${IndianCurrencyFormatter.formatPaise(receipt.discountPaise)}", 52f, y, metaLabelPaint)
+            }
+            if (receipt.taxPaise > 0L) {
+                y += 28f
+                canvas.drawText("GST Tax Included / Added: ${IndianCurrencyFormatter.formatPaise(receipt.taxPaise)}", 52f, y, metaLabelPaint)
+            }
+
             // Grand Total Box
             y += 24f
             val totalBoxRect = RectF(48f, y, (width - 48).toFloat(), y + 68f)
@@ -284,16 +353,53 @@ object ReceiptShareManager {
                 totalValPaint
             )
 
-            // Footer
-            y += 108f
+            y += 96f
+            if (!receipt.isEstimate) {
+                canvas.drawText(
+                    "Payment Mode: ${receipt.paymentMode}   •   Paid: ${IndianCurrencyFormatter.formatPaise(receipt.amountPaidPaise)}",
+                    52f,
+                    y,
+                    metaValuePaint
+                )
+                y += 30f
+                if (receipt.balanceDuePaise > 0L) {
+                    val duePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#D70015")
+                        textSize = 21f
+                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    }
+                    canvas.drawText(
+                        "BALANCE DUE (UDHAR): ${IndianCurrencyFormatter.formatPaise(receipt.balanceDuePaise)}",
+                        52f,
+                        y,
+                        duePaint
+                    )
+                    y += 32f
+                }
+            }
+
+            if (qrBitmap != null) {
+                val qrLeft = (width - qrBitmap.width) / 2f
+                canvas.drawBitmap(qrBitmap, qrLeft, y, null)
+                y += qrBitmap.height + 24f
+                val qrLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.parseColor("#1C1C1E")
+                    textSize = 17f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    textAlign = Paint.Align.CENTER
+                }
+                canvas.drawText("Scan UPI QR to Pay ($upiId)", width / 2f, y, qrLabelPaint)
+                y += 34f
+                qrBitmap.recycle()
+            }
+
             val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#8E8E93")
                 textSize = 18f
                 textAlign = Paint.Align.CENTER
             }
-            canvas.drawText("Thank you for shopping at LPS Hardware!", width / 2f, y, footerPaint)
+            canvas.drawText("Thank you for shopping at $sellerName!", width / 2f, y + 10f, footerPaint)
 
-            // Write PNG to cacheDir/receipts
             val receiptsDir = File(context.cacheDir, "receipts")
             if (!receiptsDir.exists()) receiptsDir.mkdirs()
 
@@ -303,7 +409,7 @@ object ReceiptShareManager {
                 }
             }
 
-            val filePrefix = if (receipt.isEstimate) "LPS_Estimate_" else "LPS_Receipt_"
+            val filePrefix = if (receipt.isEstimate) "Shop_Estimate_" else "Shop_Receipt_"
             val outFile = File(receiptsDir, "$filePrefix${receipt.receiptNumber}.png")
             FileOutputStream(outFile).use { fos ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 95, fos)
@@ -324,8 +430,6 @@ object ReceiptShareManager {
 
     /**
      * Generates the Sale Receipt OR Estimate image and shares it over WhatsApp directly to the buyer's phone number.
-     * Includes a 1-tap `https://wa.me/91<SellerNumber>` link in the message caption so the buyer can
-     * message or call the seller back in a single tap!
      */
     fun shareReceiptImageToWhatsApp(
         context: Context,
@@ -341,7 +445,7 @@ object ReceiptShareManager {
         val normalizedBuyerPhone = normalizeIndianPhoneNumber(rawBuyerPhone)
         val sellerName = receipt.sellerName.ifBlank {
             SyncManager.getSellerName(context)
-        }.ifBlank { "LPS Hardware" }
+        }.ifBlank { "ShopLedger POS" }
         val rawSellerPhone = receipt.sellerWhatsAppPhone.ifBlank {
             SyncManager.getSellerWhatsAppNumber(context)
         }
@@ -354,8 +458,10 @@ object ReceiptShareManager {
                 append("Customer: ${receipt.buyerName}\n")
             }
             append("Total Amount: *${IndianCurrencyFormatter.formatPaise(receipt.grandTotalPaise)}*\n")
+            if (!receipt.isEstimate && receipt.balanceDuePaise > 0L) {
+                append("Balance Due (Udhar): *${IndianCurrencyFormatter.formatPaise(receipt.balanceDuePaise)}*\n")
+            }
             if (normalizedSellerPhone.isNotEmpty()) {
-                // Single-tap clickable wa.me link so buyer can reach out to seller in 1 tap!
                 append("\n📲 *Contact $sellerName (1-Tap):*\nhttps://wa.me/$normalizedSellerPhone\n")
             }
             append("Thank you for shopping with $sellerName!")
@@ -382,7 +488,6 @@ object ReceiptShareManager {
             }
         }
 
-        // Fallback: system share chooser with image + caption
         val chooserIntent = Intent.createChooser(
             Intent(Intent.ACTION_SEND).apply {
                 type = "image/png"
@@ -390,7 +495,7 @@ object ReceiptShareManager {
                 putExtra(Intent.EXTRA_TEXT, caption)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             },
-            "Share LPS Hardware $docTitle"
+            "Share $sellerName $docTitle"
         ).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -398,7 +503,7 @@ object ReceiptShareManager {
     }
 
     /**
-     * Shares plain text (e.g. Low-Stock Supplier Reorder List or JSON Backup) to WhatsApp.
+     * Shares plain text (e.g. Low-Stock Reorder List, Khata Reminder, or JSON Backup) to WhatsApp.
      */
     fun shareTextToWhatsApp(
         context: Context,
@@ -441,9 +546,6 @@ object ReceiptShareManager {
         }
     }
 
-    /**
-     * Normalizes an Indian mobile number (`9876543210` or `+91 98765-43210`) into `919876543210`.
-     */
     fun normalizeIndianPhoneNumber(rawPhone: String): String {
         val digitsOnly = rawPhone.filter { it.isDigit() }
         return when {

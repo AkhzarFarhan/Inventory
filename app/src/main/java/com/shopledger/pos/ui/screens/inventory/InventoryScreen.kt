@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingBag
@@ -47,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,9 +69,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.core.scanner.BarcodeScannerHelper
 import com.shopledger.pos.core.share.ReceiptShareManager
+import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
@@ -107,6 +112,8 @@ fun InventoryScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val activeVertical by SyncManager.shopVerticalFlow.collectAsState()
+    val activeSellerName by SyncManager.sellerNameFlow.collectAsState()
 
     var isSearchFocused by remember { mutableStateOf(false) }
 
@@ -150,7 +157,7 @@ fun InventoryScreen(
                     onValueChange = onSearchQueryChange,
                     placeholder = {
                         Text(
-                            text = "Search items, sizes, Hinglish (e.g. 4\" kabza)...",
+                            text = activeVertical.searchHint,
                             fontSize = 13.sp,
                             color = CupertinoColors.LabelMuted,
                             maxLines = 1,
@@ -165,20 +172,43 @@ fun InventoryScreen(
                         )
                     },
                     trailingIcon = {
-                        if (searchQuery.isNotEmpty() || isSearchFocused) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = {
-                                    onSearchQueryChange("")
-                                    isSearchFocused = false
-                                    focusManager.clearFocus()
-                                    keyboardController?.hide()
+                                    BarcodeScannerHelper.scanBarcode(
+                                        context = context,
+                                        onScanned = { scanned ->
+                                            onSearchQueryChange(scanned)
+                                            onCommitSearch(scanned)
+                                            isSearchFocused = false
+                                        },
+                                        onError = { err ->
+                                            Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
                                 }
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "Clear search",
-                                    tint = CupertinoColors.LabelSecondary
+                                    imageVector = Icons.Default.QrCodeScanner,
+                                    contentDescription = "Scan Barcode",
+                                    tint = CupertinoColors.SystemBlue
                                 )
+                            }
+                            if (searchQuery.isNotEmpty() || isSearchFocused) {
+                                IconButton(
+                                    onClick = {
+                                        onSearchQueryChange("")
+                                        isSearchFocused = false
+                                        focusManager.clearFocus()
+                                        keyboardController?.hide()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Clear search",
+                                        tint = CupertinoColors.LabelSecondary
+                                    )
+                                }
                             }
                         }
                     },
@@ -251,7 +281,7 @@ fun InventoryScreen(
                         .border(1.dp, CupertinoColors.WhatsAppGreen.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
                         .clickable {
                             val orderText = buildString {
-                                append("*LPS Hardware — Reorder / Mandi Stock List*\n\n")
+                                append("*${activeSellerName.ifBlank { "ShopLedger POS" }} — Reorder / Purchase List*\n\n")
                                 var count = 1
                                 items.forEach { itemWithVars ->
                                     itemWithVars.variants
@@ -325,7 +355,7 @@ fun InventoryScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = if (searchQuery.isNotBlank()) "No matching hardware items found"
+                        text = if (searchQuery.isNotBlank()) "No matching items found"
                         else "No items in this view",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
@@ -334,9 +364,9 @@ fun InventoryScreen(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = if (searchQuery.isNotBlank()) {
-                            "Try searching by Hinglish name (e.g. kabza, pech, chatkani), size (4 inch, 100mm), or material (SS, Brass)."
+                            "Try another product name, variant attribute, category, or tap the barcode scanner icon."
                         } else {
-                            "Tap '+ Add' in the top bar to add your first hardware item."
+                            "Tap '+ Add' in the top bar to add your first item."
                         },
                         fontSize = 13.sp,
                         color = CupertinoColors.LabelSecondary

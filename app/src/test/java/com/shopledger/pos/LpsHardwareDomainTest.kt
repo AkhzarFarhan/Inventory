@@ -6,8 +6,13 @@ import com.shopledger.pos.core.cipher.CipherSymbol
 import com.shopledger.pos.core.cipher.CostCipherEngine
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.DuplicateDecisionType
+import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.nlp.SmartItemMatcher
+import com.shopledger.pos.core.nlp.TradeTaxonomyRegistry
+import com.shopledger.pos.core.print.ThermalPrinterManager
+import com.shopledger.pos.core.share.ReceiptLineItem
 import com.shopledger.pos.core.share.ReceiptShareManager
+import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.core.update.AppUpdateManager
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
@@ -421,5 +426,178 @@ class LpsHardwareDomainTest {
         assertEquals("919876543210", ReceiptShareManager.normalizeIndianPhoneNumber("+91 98765 43210"))
         assertEquals("919876543210", ReceiptShareManager.normalizeIndianPhoneNumber("09876543210"))
         assertEquals("919876543210", ReceiptShareManager.normalizeIndianPhoneNumber("919876543210"))
+    }
+
+    @Test
+    fun costCodeEngine_supportsWord10LetterAndPinHashingModes() {
+        assertTrue(CostCipherEngine.isValidCipherWord10("BLACKHORSE"))
+        assertFalse(CostCipherEngine.isValidCipherWord10("AABBCCDDEE"))
+        assertFalse(CostCipherEngine.isValidCipherWord10("SHORT"))
+
+        // ₹185 -> 18500L paise; BLACKHORSE => B=1, L=2, A=3, C=4, K=5, H=6, O=7, R=8, S=9, E=0
+        val encoded = CostCipherEngine.encodePaiseToWordCode(18500L, "BLACKHORSE")
+        assertEquals("[B R K]", encoded)
+        assertEquals(18500L, CostCipherEngine.decodeWordCodeToPaise(encoded, "BLACKHORSE"))
+
+        val pinHash = CostCipherEngine.hashPin("4829")
+        assertTrue(pinHash.isNotEmpty())
+        assertTrue(CostCipherEngine.verifyPin("4829", pinHash))
+        assertFalse(CostCipherEngine.verifyPin("0000", pinHash))
+        assertTrue(CostCipherEngine.verifyPin("anything", ""))
+    }
+
+    @Test
+    fun tradeTaxonomyRegistry_supportsAll5VerticalsAndBarcodeSearchRanking() {
+        assertEquals(5, ShopVertical.entries.size)
+        for (vertical in ShopVertical.entries) {
+            val pack = TradeTaxonomyRegistry.getPack(vertical)
+            assertEquals(vertical, pack.vertical)
+            assertTrue(pack.defaultCategories.isNotEmpty())
+            assertTrue(pack.defaultUnits.isNotEmpty())
+        }
+
+        val scannedProduct = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "kir-1",
+                displayName = "Sugar (Cheeni)",
+                sortKey = "SUGAR (CHEENI)",
+                category = "Grains & Staples"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "kir-v1",
+                    itemId = "kir-1",
+                    skuCode = "SUG-1KG",
+                    barcode = "8901058001122",
+                    sizeLabel = "1 kg",
+                    materialLabel = "Loose",
+                    colorFinishLabel = "White",
+                    unit = "kg",
+                    purchasePricePaise = 4000L,
+                    sellingPricePaise = 4600L,
+                    stockQuantity = 25.0
+                )
+            )
+        )
+        val otherProduct = InventoryItemWithVariants(
+            item = InventoryItemEntity(
+                id = "kir-2",
+                displayName = "Parle-G Gold",
+                sortKey = "PARLE-G GOLD",
+                category = "Snacks & Biscuits"
+            ),
+            allVariants = listOf(
+                ItemVariantEntity(
+                    id = "kir-v2",
+                    itemId = "kir-2",
+                    skuCode = "PG-100",
+                    barcode = "8901719125410",
+                    sizeLabel = "100 g",
+                    unit = "pkt",
+                    purchasePricePaise = 850L,
+                    sellingPricePaise = 1000L,
+                    stockQuantity = 40.0
+                )
+            )
+        )
+
+        val exactBarcodeScore = SmartItemMatcher.calculateSearchRelevanceScore(
+            query = "8901058001122",
+            itemWithVariants = scannedProduct,
+            vertical = ShopVertical.KIRANA
+        )
+        val nonMatchingBarcodeScore = SmartItemMatcher.calculateSearchRelevanceScore(
+            query = "8901058001122",
+            itemWithVariants = otherProduct,
+            vertical = ShopVertical.KIRANA
+        )
+        assertEquals(12000.0, exactBarcodeScore, 0.01)
+        assertEquals(0.0, nonMatchingBarcodeScore, 0.01)
+        assertTrue(SmartItemMatcher.matchesSearchQuery("cheeni", scannedProduct, ShopVertical.KIRANA))
+    }
+
+    @Test
+    fun currencyFormatter_milliUnitsAndGstBreakdownCalculateAccurately() {
+        assertEquals(1500L, IndianCurrencyFormatter.doubleToMilliUnits(1.5))
+        assertEquals(1.5, IndianCurrencyFormatter.milliUnitsToDouble(1500L), 0.0001)
+        assertEquals("1.5", IndianCurrencyFormatter.formatMilliUnits(1500L))
+        assertEquals("4", IndianCurrencyFormatter.formatMilliUnits(4000L))
+
+        val intra = IndianCurrencyFormatter.computeGstBreakdown(
+            taxablePaise = 100000L,
+            gstRateBps = 1800,
+            isInterState = false
+        )
+        assertEquals(9000L, intra.cgstPaise)
+        assertEquals(9000L, intra.sgstPaise)
+        assertEquals(0L, intra.igstPaise)
+        assertEquals(18000L, intra.totalTaxPaise)
+        assertEquals(118000L, intra.grandTotalPaise)
+
+        val inter = IndianCurrencyFormatter.computeGstBreakdown(
+            taxablePaise = 100000L,
+            gstRateBps = 1800,
+            isInterState = true
+        )
+        assertEquals(0L, inter.cgstPaise)
+        assertEquals(0L, inter.sgstPaise)
+        assertEquals(18000L, inter.igstPaise)
+        assertEquals(18000L, inter.totalTaxPaise)
+        assertEquals(118000L, inter.grandTotalPaise)
+    }
+
+    @Test
+    fun smartReceiptId_supportsMultiDevicePrefixAndLegacyFormat() {
+        assertEquals("202611160007", LpsRepository.formatSmartReceiptId(2026, 11, 16, 7, ""))
+        assertEquals("D1-20261116-0007", LpsRepository.formatSmartReceiptId(2026, 11, 16, 7, "d1"))
+        assertEquals("C2-20261116-0123", LpsRepository.formatSmartReceiptId(2026, 11, 16, 123, " C2 "))
+    }
+
+    @Test
+    fun thermalPrinterManager_buildsValid58mmAnd80mmEscPosBytes() {
+        val receipt = SaleReceiptData(
+            receiptNumber = "D1-20261116-0001",
+            timestampMillis = 1794816000000L,
+            buyerName = "Suresh Verma",
+            buyerPhone = "9876543210",
+            sellerName = "Sharma Kirana",
+            sellerWhatsAppPhone = "9988776655",
+            isEstimate = false,
+            items = listOf(
+                ReceiptLineItem(
+                    itemName = "Tata Salt",
+                    variantSummary = "1 kg • Tata",
+                    quantity = 3.0,
+                    unit = "pkt",
+                    unitSellingPricePaise = 5000L,
+                    lineTotalPaise = 15000L
+                )
+            ),
+            grandTotalPaise = 15000L,
+            paymentMode = "CREDIT",
+            subtotalPaise = 15000L,
+            discountPaise = 0L,
+            taxPaise = 0L,
+            amountPaidPaise = 10000L,
+            balanceDuePaise = 5000L,
+            upiId = "sharma@okicici",
+            gstin = "27AABCU9603R1ZM"
+        )
+
+        val bytes58 = ThermalPrinterManager.buildEscPosBytes(receipt, paperWidthMm = 58)
+        val bytes80 = ThermalPrinterManager.buildEscPosBytes(receipt, paperWidthMm = 80)
+
+        assertTrue(bytes58.size > 100)
+        assertTrue(bytes80.size > 100)
+        assertEquals(0x1B.toByte(), bytes58[0])
+        assertEquals(0x40.toByte(), bytes58[1])
+        assertEquals(0x1B.toByte(), bytes80[0])
+        assertEquals(0x40.toByte(), bytes80[1])
+
+        val text58 = String(bytes58, Charsets.US_ASCII)
+        assertTrue(text58.contains("SHARMA KIRANA"))
+        assertTrue(text58.contains("#D1-20261116-0001"))
+        assertTrue(text58.contains("BALANCE DUE (UDHAR)"))
+        assertTrue(text58.contains("Thank you! Visit again."))
     }
 }

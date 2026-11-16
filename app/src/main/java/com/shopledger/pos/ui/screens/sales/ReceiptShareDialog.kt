@@ -1,5 +1,7 @@
 package com.shopledger.pos.ui.screens.sales
 
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,19 +46,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.core.print.ThermalPrinterManager
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoTextField
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Interactive Sale Receipt OR Estimate Photo Preview & Direct WhatsApp Buyer Phone Number Share Modal.
- * Generates a high-contrast PNG image of the receipt/estimate and opens WhatsApp directly to the buyer's phone number,
- * including the Seller's WhatsApp Number so the buyer can reach out to the seller in a single tap.
+ * Interactive Sale Receipt OR Estimate Photo Preview, UPI QR & WhatsApp Share,
+ * plus 58mm / 80mm Bluetooth ESC/POS Thermal Printing Modal.
  */
 @Composable
 fun ReceiptShareDialog(
@@ -62,6 +67,8 @@ fun ReceiptShareDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     var buyerPhoneInput by remember(receipt) { mutableStateOf(receipt.buyerPhone) }
     var buyerNameInput by remember(receipt) { mutableStateOf(receipt.buyerName) }
     var sellerNameInput by remember(receipt) {
@@ -74,6 +81,13 @@ fun ReceiptShareDialog(
             receipt.sellerWhatsAppPhone.ifBlank { SyncManager.getSellerWhatsAppNumber(context) }
         )
     }
+    val activeUpiId = remember(receipt) {
+        receipt.upiId.ifBlank { SyncManager.getUpiId(context) }
+    }
+    val activeGstin = remember(receipt) {
+        receipt.gstin.ifBlank { SyncManager.getGstin(context) }
+    }
+    var isPrinting by remember { mutableStateOf(false) }
 
     val dateFormatted = remember(receipt.timestampMillis) {
         SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date(receipt.timestampMillis))
@@ -95,7 +109,7 @@ fun ReceiptShareDialog(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Visual Preview of the Receipt / Estimate Photo Card
+                // Visual Preview of Receipt / Estimate Card
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -103,7 +117,6 @@ fun ReceiptShareDialog(
                         .background(CupertinoColors.CardSurface)
                         .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(14.dp))
                 ) {
-                    // Header Banner
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -112,13 +125,14 @@ fun ReceiptShareDialog(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = sellerNameInput.ifBlank { "LPS HARDWARE" }.uppercase(Locale.ENGLISH),
+                            text = sellerNameInput.ifBlank { "SHOPLEDGER POS" }.uppercase(Locale.ENGLISH),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White
                         )
                         Text(
-                            text = if (receipt.isEstimate) "ESTIMATE / QUOTATION (KACCHA PARCHA)"
+                            text = if (receipt.isEstimate) "ESTIMATE / QUOTATION"
+                            else if (activeGstin.isNotBlank()) "TAX / SALE RECEIPT"
                             else "CASH / SALE RECEIPT",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -144,6 +158,14 @@ fun ReceiptShareDialog(
                             )
                             Text(
                                 text = dateFormatted,
+                                fontSize = 11.sp,
+                                color = CupertinoColors.LabelSecondary
+                            )
+                        }
+
+                        if (activeGstin.isNotBlank()) {
+                            Text(
+                                text = "GSTIN: $activeGstin",
                                 fontSize = 11.sp,
                                 color = CupertinoColors.LabelSecondary
                             )
@@ -204,6 +226,36 @@ fun ReceiptShareDialog(
                                 .background(CupertinoColors.Separator)
                         )
 
+                        if (receipt.discountPaise > 0L) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Discount", fontSize = 11.sp, color = CupertinoColors.LabelSecondary)
+                                Text(
+                                    text = "-${IndianCurrencyFormatter.formatPaise(receipt.discountPaise)}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = CupertinoColors.EmeraldGreen
+                                )
+                            }
+                        }
+
+                        if (receipt.taxPaise > 0L) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("GST Tax", fontSize = 11.sp, color = CupertinoColors.LabelSecondary)
+                                Text(
+                                    text = IndianCurrencyFormatter.formatPaise(receipt.taxPaise),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = CupertinoColors.LabelPrimary
+                                )
+                            }
+                        }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -226,10 +278,40 @@ fun ReceiptShareDialog(
                                 color = bannerBgColor
                             )
                         }
+
+                        if (!receipt.isEstimate) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Mode: ${receipt.paymentMode} • Paid: ${IndianCurrencyFormatter.formatPaise(receipt.amountPaidPaise)}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = CupertinoColors.LabelSecondary
+                                )
+                                if (receipt.balanceDuePaise > 0L) {
+                                    Text(
+                                        text = "Due: ${IndianCurrencyFormatter.formatPaise(receipt.balanceDuePaise)}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = CupertinoColors.DestructiveRed
+                                    )
+                                }
+                            }
+                        }
+
+                        if (activeUpiId.isNotBlank()) {
+                            Text(
+                                text = "✓ Scannable UPI QR ($activeUpiId) embedded on shared PNG",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = CupertinoColors.EmeraldGreen
+                            )
+                        }
                     }
                 }
 
-                // Buyer's WhatsApp Number Input
                 CupertinoTextField(
                     value = buyerPhoneInput,
                     onValueChange = { buyerPhoneInput = it },
@@ -246,7 +328,6 @@ fun ReceiptShareDialog(
                     capitalization = KeyboardCapitalization.Words
                 )
 
-                // Seller's Name & WhatsApp Number (Reflected on photo & 1-tap wa.me link for the buyer)
                 CupertinoTextField(
                     value = sellerNameInput,
                     onValueChange = {
@@ -254,7 +335,7 @@ fun ReceiptShareDialog(
                         SyncManager.saveSellerName(context, it)
                     },
                     label = "Seller / Shop Name (Printed on Receipt)",
-                    placeholder = "LPS Hardware / Owner Name",
+                    placeholder = "Shop Name / Owner Name",
                     capitalization = KeyboardCapitalization.Words
                 )
 
@@ -270,20 +351,25 @@ fun ReceiptShareDialog(
                     imeAction = ImeAction.Done
                 )
 
-                // Share Receipt / Estimate Photo over WhatsApp Button
+                fun buildUpdatedReceipt(): SaleReceiptData {
+                    SyncManager.saveSellerName(context, sellerNameInput)
+                    SyncManager.saveSellerWhatsAppNumber(context, sellerWhatsAppInput)
+                    return receipt.copy(
+                        buyerName = buyerNameInput.trim(),
+                        buyerPhone = buyerPhoneInput.trim(),
+                        sellerName = sellerNameInput.trim(),
+                        sellerWhatsAppPhone = sellerWhatsAppInput.trim(),
+                        upiId = activeUpiId,
+                        gstin = activeGstin
+                    )
+                }
+
                 Button(
                     onClick = {
-                        SyncManager.saveSellerName(context, sellerNameInput)
-                        SyncManager.saveSellerWhatsAppNumber(context, sellerWhatsAppInput)
-                        val updatedReceipt = receipt.copy(
-                            buyerName = buyerNameInput.trim(),
-                            buyerPhone = buyerPhoneInput.trim(),
-                            sellerName = sellerNameInput.trim(),
-                            sellerWhatsAppPhone = sellerWhatsAppInput.trim()
-                        )
+                        val updated = buildUpdatedReceipt()
                         ReceiptShareManager.shareReceiptImageToWhatsApp(
                             context = context,
-                            receipt = updatedReceipt,
+                            receipt = updated,
                             rawBuyerPhone = buyerPhoneInput
                         )
                     },
@@ -309,6 +395,41 @@ fun ReceiptShareDialog(
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
+                    )
+                }
+
+                // 58mm Bluetooth ESC/POS Thermal Print Button
+                OutlinedButton(
+                    onClick = {
+                        if (isPrinting) return@OutlinedButton
+                        isPrinting = true
+                        val updated = buildUpdatedReceipt()
+                        coroutineScope.launch {
+                            val result = ThermalPrinterManager.printReceiptViaBluetooth(context, updated, 58)
+                            isPrinting = false
+                            result.onSuccess { printerName ->
+                                Toast.makeText(context, "Printed via $printerName", Toast.LENGTH_SHORT).show()
+                            }.onFailure { err ->
+                                Toast.makeText(context, err.localizedMessage ?: "Print failed", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.45f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Print,
+                        contentDescription = null,
+                        tint = CupertinoColors.SystemBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isPrinting) "Printing..." else "Print Thermal Receipt (58mm Bluetooth)",
+                        fontWeight = FontWeight.Bold,
+                        color = CupertinoColors.SystemBlue,
+                        fontSize = 13.sp
                     )
                 }
 

@@ -17,16 +17,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -34,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -44,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +62,9 @@ import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.DuplicateCheckResult
 import com.shopledger.pos.core.nlp.DuplicateDecisionType
+import com.shopledger.pos.core.nlp.TradeTaxonomyRegistry
+import com.shopledger.pos.core.scanner.BarcodeScannerHelper
+import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
@@ -74,6 +82,7 @@ data class VariantDraft(
     var sizeLabel: String = "",
     var materialLabel: String = "",
     var colorFinishLabel: String = "",
+    var barcode: String = "",
     var unit: String = "pcs",
     var purchasePriceInput: String = "",
     var sellingPriceInput: String = "",
@@ -125,7 +134,8 @@ fun AddEditItemSheet(
         purchasePaise: Long,
         sellingPaise: Long,
         stockQty: Double,
-        lowStockAlert: Double
+        lowStockAlert: Double,
+        barcode: String
     ) -> Unit,
     onUpdateExisting: (
         item: InventoryItemEntity,
@@ -139,7 +149,8 @@ fun AddEditItemSheet(
         newPurchasePaise: Long,
         newSellingPaise: Long,
         newStockQty: Double,
-        newLowStockAlert: Double
+        newLowStockAlert: Double,
+        newBarcode: String
     ) -> Unit,
     onDeleteItemOrVariant: (itemId: String, variantId: String?, totalVariantsCount: Int) -> Unit,
     onSwitchToManageItem: (
@@ -152,19 +163,22 @@ fun AddEditItemSheet(
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+
+    val activeVertical by SyncManager.shopVerticalFlow.collectAsState()
+    val activePack = remember(activeVertical) { TradeTaxonomyRegistry.getPack(activeVertical) }
 
     val managedItemWithVariants = (mode as? ItemEditorMode.ManageItem)?.itemWithVariants
     val variants = managedItemWithVariants?.variants.orEmpty()
     val initialStartInAdd = (mode as? ItemEditorMode.ManageItem)?.startInAddVariantMode ?: false
 
-    // Draft variants for AddNewItem mode (supports multiple variants with different purchase & sale prices)
     val draftVariants = remember(mode) {
         mutableStateListOf(
             VariantDraft(
-                unit = "pcs"
+                unit = activeVertical.defaultUnit
             )
         )
     }
@@ -198,7 +212,7 @@ fun AddEditItemSheet(
     var category by remember(mode) {
         mutableStateOf(
             when (mode) {
-                is ItemEditorMode.AddNewItem -> "Door & Window Fittings"
+                is ItemEditorMode.AddNewItem -> activePack.defaultCategories.firstOrNull() ?: "Uncategorized"
                 is ItemEditorMode.ManageItem -> mode.itemWithVariants.item.category
             }
         )
@@ -234,8 +248,16 @@ fun AddEditItemSheet(
         )
     }
 
+    var barcodeInput by remember(mode) {
+        mutableStateOf(
+            if (mode is ItemEditorMode.ManageItem && !mode.startInAddVariantMode) {
+                activeVariant?.barcode.orEmpty()
+            } else ""
+        )
+    }
+
     var unit by remember(mode) {
-        mutableStateOf(activeVariant?.unit ?: variants.firstOrNull()?.unit ?: "pcs")
+        mutableStateOf(activeVariant?.unit ?: variants.firstOrNull()?.unit ?: activeVertical.defaultUnit)
     }
 
     var purchasePriceInput by remember(mode) {
@@ -279,6 +301,7 @@ fun AddEditItemSheet(
         draft.sizeLabel = sizeLabel
         draft.materialLabel = materialLabel
         draft.colorFinishLabel = colorFinishLabel
+        draft.barcode = barcodeInput
         draft.unit = unit
         draft.purchasePriceInput = purchasePriceInput
         draft.sellingPriceInput = sellingPriceInput
@@ -290,6 +313,7 @@ fun AddEditItemSheet(
         sizeLabel = draft.sizeLabel
         materialLabel = draft.materialLabel
         colorFinishLabel = draft.colorFinishLabel
+        barcodeInput = draft.barcode
         unit = draft.unit
         purchasePriceInput = draft.purchasePriceInput
         sellingPriceInput = draft.sellingPriceInput
@@ -304,6 +328,7 @@ fun AddEditItemSheet(
         sizeLabel = v.sizeLabel
         materialLabel = v.materialLabel
         colorFinishLabel = v.colorFinishLabel
+        barcodeInput = v.barcode
         unit = v.unit
         purchasePriceInput = IndianCurrencyFormatter.paiseToEditableString(v.purchasePricePaise)
         sellingPriceInput = IndianCurrencyFormatter.paiseToEditableString(v.sellingPricePaise)
@@ -318,7 +343,8 @@ fun AddEditItemSheet(
         sizeLabel = ""
         materialLabel = ""
         colorFinishLabel = ""
-        unit = unit.ifBlank { variants.firstOrNull()?.unit ?: "pcs" }
+        barcodeInput = ""
+        unit = unit.ifBlank { variants.firstOrNull()?.unit ?: activeVertical.defaultUnit }
         purchasePriceInput = ""
         sellingPriceInput = ""
         stockQtyInput = "10"
@@ -336,20 +362,10 @@ fun AddEditItemSheet(
         }
     }
 
-    val defaultCategories = remember {
-        listOf(
-            "Door & Window Fittings",
-            "Fasteners & Screws",
-            "Plumbing & Sanitary",
-            "Tools & Blades",
-            "Paints & Adhesives",
-            "Electrical & General"
-        )
+    val categories = remember(existingCategories, activePack) {
+        (activePack.defaultCategories + existingCategories).filter { it.isNotBlank() }.distinct()
     }
-    val categories = remember(existingCategories) {
-        (defaultCategories + existingCategories).filter { it.isNotBlank() }.distinct()
-    }
-    val units = remember { listOf("pcs", "box", "kg", "mtr", "pkt", "set", "pair", "dzn") }
+    val units = remember(activePack) { activePack.defaultUnits }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -371,8 +387,8 @@ fun AddEditItemSheet(
             ) {
                 Text(
                     text = when (mode) {
-                        is ItemEditorMode.AddNewItem -> "Add Hardware Item"
-                        is ItemEditorMode.ManageItem -> "Edit Item & Variants"
+                        is ItemEditorMode.AddNewItem -> "Add Product"
+                        is ItemEditorMode.ManageItem -> "Edit Product & Variants"
                     },
                     fontSize = 19.sp,
                     fontWeight = FontWeight.ExtraBold,
@@ -403,8 +419,8 @@ fun AddEditItemSheet(
                         itemName = it
                         validationError = ""
                     },
-                    label = "Item Name",
-                    placeholder = "e.g. SS Butt Hinge, Kabza, Godrej Lock",
+                    label = "Product Name",
+                    placeholder = "e.g. Product Name, Brand, or Trade Name",
                     capitalization = KeyboardCapitalization.Words
                 )
 
@@ -462,7 +478,7 @@ fun AddEditItemSheet(
                         validationError = ""
                     },
                     label = "Category (Type custom or select below)",
-                    placeholder = "e.g. Door Fittings, Sanitary, Locks, Nails...",
+                    placeholder = "e.g. Fittings, Staples, Tablets, Cables...",
                     capitalization = KeyboardCapitalization.Words
                 )
 
@@ -828,7 +844,7 @@ fun AddEditItemSheet(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // ROW 1 (Two small named text boxes): Size / Dimension + Material
+                // ROW 1 (Two small named text boxes): Vertical Attr1 + Vertical Attr2
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -841,8 +857,8 @@ fun AddEditItemSheet(
                                 draftVariants[activeDraftIndex].sizeLabel = it
                             }
                         },
-                        label = "Size / Dimension",
-                        placeholder = "e.g. 4 inch, 100mm",
+                        label = activeVertical.attr1Label,
+                        placeholder = activeVertical.attr1Placeholder,
                         capitalization = KeyboardCapitalization.None,
                         modifier = Modifier.weight(1f)
                     )
@@ -855,8 +871,8 @@ fun AddEditItemSheet(
                                 draftVariants[activeDraftIndex].materialLabel = it
                             }
                         },
-                        label = "Material",
-                        placeholder = "e.g. SS 304, Brass",
+                        label = activeVertical.attr2Label,
+                        placeholder = activeVertical.attr2Placeholder,
                         capitalization = KeyboardCapitalization.Words,
                         modifier = Modifier.weight(1f)
                     )
@@ -864,7 +880,7 @@ fun AddEditItemSheet(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // ROW 2 (Two small named text boxes): Color / Finish + Unit of Measure
+                // ROW 2 (Two small named text boxes): Vertical Attr3 + Unit of Measure
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -877,8 +893,8 @@ fun AddEditItemSheet(
                                 draftVariants[activeDraftIndex].colorFinishLabel = it
                             }
                         },
-                        label = "Color / Finish",
-                        placeholder = "e.g. Matt Black, Chrome",
+                        label = activeVertical.attr3Label,
+                        placeholder = activeVertical.attr3Placeholder,
                         capitalization = KeyboardCapitalization.Words,
                         modifier = Modifier.weight(1f)
                     )
@@ -892,11 +908,51 @@ fun AddEditItemSheet(
                             }
                         },
                         label = "Unit of Measure",
-                        placeholder = "e.g. pcs, box, kg",
+                        placeholder = "e.g. ${activeVertical.defaultUnit}",
                         capitalization = KeyboardCapitalization.None,
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Barcode / SKU Code with 1-Tap Camera Scan button
+                CupertinoTextField(
+                    value = barcodeInput,
+                    onValueChange = {
+                        barcodeInput = it
+                        if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                            draftVariants[activeDraftIndex].barcode = it
+                        }
+                    },
+                    label = "Barcode / SKU Code (Optional)",
+                    placeholder = "Scan EAN-13 / QR or type SKU code",
+                    capitalization = KeyboardCapitalization.None,
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                BarcodeScannerHelper.scanBarcode(
+                                    context = context,
+                                    onScanned = { scanned ->
+                                        barcodeInput = scanned
+                                        if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                            draftVariants[activeDraftIndex].barcode = scanned
+                                        }
+                                    },
+                                    onError = { err ->
+                                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.QrCodeScanner,
+                                contentDescription = "Scan Product Barcode",
+                                tint = CupertinoColors.SystemBlue
+                            )
+                        }
+                    }
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -1096,7 +1152,7 @@ fun AddEditItemSheet(
                             validationError = "Please enter an item name."
                             return@Button
                         }
-                        val cleanCategory = category.trim().ifEmpty { "General Hardware" }
+                        val cleanCategory = category.trim().ifEmpty { "Uncategorized" }
 
                         when (mode) {
                             is ItemEditorMode.AddNewItem -> {
@@ -1123,11 +1179,12 @@ fun AddEditItemSheet(
                                             sizeLabel = draft.sizeLabel,
                                             materialLabel = draft.materialLabel,
                                             colorFinishLabel = draft.colorFinishLabel,
-                                            unit = draft.unit.ifBlank { "pcs" },
+                                            unit = draft.unit.ifBlank { activeVertical.defaultUnit },
                                             purchasePricePaise = finalPurchase,
                                             sellingPricePaise = finalSelling,
                                             stockQuantity = draft.stockQtyInput.toDoubleOrNull() ?: 10.0,
-                                            lowStockThreshold = draft.lowStockInput.toDoubleOrNull() ?: 5.0
+                                            lowStockThreshold = draft.lowStockInput.toDoubleOrNull() ?: 5.0,
+                                            barcode = draft.barcode
                                         )
                                     )
                                 }
@@ -1157,7 +1214,8 @@ fun AddEditItemSheet(
                                         finalPurchasePaise,
                                         finalSellingPaise,
                                         finalStock,
-                                        finalLowAlert
+                                        finalLowAlert,
+                                        barcodeInput
                                     )
                                 } else {
                                     val targetVar = activeVariant ?: mode.itemWithVariants.variants.first()
@@ -1173,7 +1231,8 @@ fun AddEditItemSheet(
                                         finalPurchasePaise,
                                         finalSellingPaise,
                                         finalStock,
-                                        finalLowAlert
+                                        finalLowAlert,
+                                        barcodeInput
                                     )
                                 }
                             }
@@ -1206,7 +1265,7 @@ fun AddEditItemSheet(
     if (showDeleteConfirm && mode is ItemEditorMode.ManageItem) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete Hardware Item?", fontWeight = FontWeight.Bold) },
+            title = { Text("Delete Product?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     "Are you sure you want to permanently delete \"${mode.itemWithVariants.item.displayName}\" and all ${mode.itemWithVariants.variants.size} variant(s) from inventory?"

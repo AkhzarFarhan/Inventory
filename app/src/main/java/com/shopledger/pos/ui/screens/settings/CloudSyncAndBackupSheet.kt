@@ -10,6 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -63,13 +67,17 @@ import androidx.compose.ui.unit.sp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.shopledger.pos.core.auth.GoogleAuthManager
+import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CipherReferenceStrip
+import com.shopledger.pos.core.cipher.CostCipherEngine
+import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.core.update.AppUpdateManager
 import com.shopledger.pos.core.update.UpdateStatus
 import com.shopledger.pos.ui.theme.CupertinoCard
 import com.shopledger.pos.ui.theme.CupertinoColors
+import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
 import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.SemanticPillBadge
 import kotlinx.coroutines.launch
@@ -100,12 +108,22 @@ fun CloudSyncAndBackupSheet(
     val updateStatus by AppUpdateManager.status.collectAsState()
     val (currentVersionName, currentVersionCode) = remember { AppUpdateManager.getCurrentVersionInfo(context) }
 
+    val activeVertical by SyncManager.shopVerticalFlow.collectAsState()
+    val activeCipherMode by SyncManager.cipherModeFlow.collectAsState()
+    val activeWord10 by SyncManager.cipherWord10Flow.collectAsState()
+    val ownerPinHash by SyncManager.ownerPinHashFlow.collectAsState()
+
     var sellerNameInput by remember {
         mutableStateOf(SyncManager.getSellerName(context))
     }
     var sellerWhatsAppInput by remember {
         mutableStateOf(SyncManager.getSellerWhatsAppNumber(context))
     }
+    var upiIdInput by remember { mutableStateOf(SyncManager.getUpiId(context)) }
+    var gstinInput by remember { mutableStateOf(SyncManager.getGstin(context)) }
+    var deviceCodeInput by remember { mutableStateOf(SyncManager.getDeviceShortCode(context)) }
+    var word10Input by remember { mutableStateOf(activeWord10) }
+    var newPinInput by remember { mutableStateOf("") }
     var importJsonText by remember { mutableStateOf("") }
     var showImportBox by remember { mutableStateOf(false) }
 
@@ -200,7 +218,7 @@ fun CloudSyncAndBackupSheet(
                                 color = CupertinoColors.LabelPrimary
                             )
                             Text(
-                                text = "Sign in with Google to automatically sync all LPS Hardware items, variants & sales across your devices.",
+                                text = "Sign in with Google to automatically sync all shop items, variants, Khata, and sales across your devices.",
                                 fontSize = 12.sp,
                                 color = CupertinoColors.LabelSecondary
                             )
@@ -360,7 +378,7 @@ fun CloudSyncAndBackupSheet(
                         SyncManager.saveSellerName(context, it)
                     },
                     label = "Seller / Shop Name",
-                    placeholder = "LPS Hardware / Owner Name",
+                    placeholder = "My Shop / Owner Name",
                     capitalization = KeyboardCapitalization.Words
                 )
 
@@ -374,9 +392,179 @@ fun CloudSyncAndBackupSheet(
                     },
                     label = "Seller WhatsApp Mobile (+91)",
                     placeholder = "e.g. 9876543210",
-                    keyboardType = KeyboardType.Phone,
+                    keyboardType = KeyboardType.Phone
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CupertinoTextField(
+                        value = upiIdInput,
+                        onValueChange = {
+                            upiIdInput = it
+                            SyncManager.saveUpiId(context, it)
+                        },
+                        label = "UPI ID (For Receipt QR)",
+                        placeholder = "merchant@upi",
+                        capitalization = KeyboardCapitalization.None,
+                        modifier = Modifier.weight(1.2f)
+                    )
+                    CupertinoTextField(
+                        value = deviceCodeInput,
+                        onValueChange = {
+                            deviceCodeInput = it
+                            SyncManager.saveDeviceShortCode(context, it)
+                        },
+                        label = "Counter Code",
+                        placeholder = "D1 / blank",
+                        capitalization = KeyboardCapitalization.Characters,
+                        modifier = Modifier.weight(0.8f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                CupertinoTextField(
+                    value = gstinInput,
+                    onValueChange = {
+                        gstinInput = it
+                        SyncManager.saveGstin(context, it)
+                    },
+                    label = "GSTIN (Optional)",
+                    placeholder = "e.g. 09AABCU9603R1ZM",
+                    capitalization = KeyboardCapitalization.Characters,
                     imeAction = ImeAction.Done
                 )
+            }
+
+            // 2B. BUSINESS VERTICAL & COST PRIVACY MODE SETUP
+            CupertinoCard {
+                Text(
+                    text = "Business Type & Trade Pack",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = CupertinoColors.LabelPrimary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Select your store type to tailor variant attributes, categories, and Hinglish/regional search synonyms.",
+                    fontSize = 12.sp,
+                    color = CupertinoColors.LabelSecondary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ShopVertical.entries.forEach { v ->
+                        val selected = v == activeVertical
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (selected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
+                            border = BorderStroke(
+                                1.dp,
+                                if (selected) CupertinoColors.SystemBlue else CupertinoColors.Separator
+                            ),
+                            modifier = Modifier.clickable {
+                                SyncManager.saveShopVertical(context, v)
+                                Toast.makeText(context, "Switched trade pack to ${v.displayName}", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text(
+                                text = v.displayName,
+                                fontSize = 11.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selected) Color.White else CupertinoColors.LabelPrimary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Cost Price Privacy Mode & Owner PIN",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = CupertinoColors.LabelPrimary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                CupertinoSegmentedControl(
+                    options = listOf("Stroke", "Word Code", "PIN Hide"),
+                    selectedIndex = when (activeCipherMode) {
+                        CipherMode.STROKE_GLYPHS -> 0
+                        CipherMode.WORD_10_LETTER -> 1
+                        CipherMode.HIDDEN_PIN -> 2
+                    },
+                    onSelect = { idx ->
+                        val nextMode = when (idx) {
+                            1 -> CipherMode.WORD_10_LETTER
+                            2 -> CipherMode.HIDDEN_PIN
+                            else -> CipherMode.STROKE_GLYPHS
+                        }
+                        SyncManager.saveCipherConfig(context, nextMode, word10Input)
+                    }
+                )
+
+                if (activeCipherMode == CipherMode.WORD_10_LETTER) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    CupertinoTextField(
+                        value = word10Input,
+                        onValueChange = { raw ->
+                            val clean = raw.uppercase(Locale.ROOT).filter { it.isLetter() }.take(10)
+                            word10Input = clean
+                            if (CostCipherEngine.isValidCipherWord10(clean)) {
+                                SyncManager.saveCipherConfig(context, CipherMode.WORD_10_LETTER, clean)
+                            }
+                        },
+                        label = "10-Unique-Letter Code Word (1..9, 0)",
+                        placeholder = CostCipherEngine.DEFAULT_WORD_10,
+                        capitalization = KeyboardCapitalization.Characters
+                    )
+                    if (!CostCipherEngine.isValidCipherWord10(word10Input)) {
+                        Text(
+                            text = "Enter 10 unique letters (defaulting to ${CostCipherEngine.DEFAULT_WORD_10})",
+                            fontSize = 10.sp,
+                            color = CupertinoColors.AmberWarning
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CupertinoTextField(
+                        value = newPinInput,
+                        onValueChange = { newPinInput = it.filter { ch -> ch.isDigit() }.take(6) },
+                        label = if (ownerPinHash.isBlank()) "Set Owner Unlock PIN (Opt)" else "Change Owner PIN (Active)",
+                        placeholder = "4-digit PIN",
+                        keyboardType = KeyboardType.NumberPassword,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            SyncManager.saveOwnerPin(context, newPinInput)
+                            val msg = if (newPinInput.isBlank()) "Owner PIN cleared" else "Owner PIN saved!"
+                            newPinInput = ""
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
+                    ) {
+                        Text(if (newPinInput.isBlank() && ownerPinHash.isNotBlank()) "Clear" else "Set PIN", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
             }
 
             // 3. IN-APP OTA UPDATES & RELEASES (Improvement #5)
@@ -428,7 +616,7 @@ fun CloudSyncAndBackupSheet(
                                 coroutineScope.launch {
                                     val result = AppUpdateManager.checkForUpdates(context)
                                     if (result is UpdateStatus.UpToDate) {
-                                        Toast.makeText(context, "LPS Hardware is up to date!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "App is up to date!", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             },
@@ -588,7 +776,7 @@ fun CloudSyncAndBackupSheet(
             if (isSellerUnlocked) {
                 CupertinoCard {
                     Text(
-                        text = "LPS Hardware Secret Purchase Price Symbol Key",
+                        text = "Secret Purchase Price Code Key (${activeCipherMode.displayName})",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = CupertinoColors.CipherIndigo
@@ -608,7 +796,7 @@ fun CloudSyncAndBackupSheet(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Export a complete snapshot of all LPS Hardware items, variants, and sales to WhatsApp or Clipboard.",
+                    text = "Export a complete snapshot of all items, variants, Khata parties, and sales to WhatsApp or Clipboard.",
                     fontSize = 12.sp,
                     color = CupertinoColors.LabelSecondary
                 )
@@ -623,7 +811,7 @@ fun CloudSyncAndBackupSheet(
                             coroutineScope.launch {
                                 val json = onExportBackupJson()
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                clipboard?.setPrimaryClip(ClipData.newPlainText("LPS_Hardware_Backup", json))
+                                clipboard?.setPrimaryClip(ClipData.newPlainText("ShopLedger_Backup", json))
                                 Toast.makeText(context, "Backup JSON copied to Clipboard!", Toast.LENGTH_SHORT).show()
                                 ReceiptShareManager.shareTextToWhatsApp(context, json)
                             }

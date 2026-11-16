@@ -101,15 +101,16 @@ jobs:
       - name: Prepare Release Artifacts
         run: |
           mkdir -p release-artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk release-artifacts/ShopLedgerPOS.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-artifacts/ShopLedgerPOS-${{ env.TAG_NAME }}.apk
           cp app/build/outputs/apk/debug/app-debug.apk release-artifacts/LPSHardware.apk
-          cp app/build/outputs/apk/debug/app-debug.apk release-artifacts/LPSHardware-${{ env.TAG_NAME }}.apk
           
           # Create inventory-version.json metadata for direct in-app parsing
           cat <<EOF > release-artifacts/inventory-version.json
           {
             "versionCode": ${{ env.VERSION_CODE }},
             "versionName": "${{ env.VERSION_NAME }}",
-            "appName": "LPS Hardware"
+            "appName": "ShopLedger POS"
           }
           EOF
 
@@ -127,11 +128,12 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.TAG_NAME }}
-          name: "LPS Hardware ${{ env.TAG_NAME }}"
-          body: ${{ github.event.inputs.release_notes || 'Over-The-Air update for LPS Hardware Inventory.' }}
+          name: "ShopLedger POS ${{ env.TAG_NAME }}"
+          body: ${{ github.event.inputs.release_notes || 'Over-The-Air update for ShopLedger POS.' }}
           files: |
+            release-artifacts/ShopLedgerPOS.apk
+            release-artifacts/ShopLedgerPOS-${{ env.TAG_NAME }}.apk
             release-artifacts/LPSHardware.apk
-            release-artifacts/LPSHardware-${{ env.TAG_NAME }}.apk
             release-artifacts/inventory-version.json
           draft: false
           prerelease: false
@@ -150,11 +152,12 @@ jobs:
           repository: AkhzarFarhan/ubiverse-releases
           token: ${{ secrets.RELEASES_PAT }}
           tag_name: ${{ env.INVENTORY_TAG }}
-          name: "LPS Hardware ${{ env.TAG_NAME }}"
-          body: ${{ github.event.inputs.release_notes || 'Over-The-Air update for LPS Hardware Inventory.' }}
+          name: "ShopLedger POS ${{ env.TAG_NAME }}"
+          body: ${{ github.event.inputs.release_notes || 'Over-The-Air update for ShopLedger POS.' }}
           files: |
+            release-artifacts/ShopLedgerPOS.apk
+            release-artifacts/ShopLedgerPOS-${{ env.TAG_NAME }}.apk
             release-artifacts/LPSHardware.apk
-            release-artifacts/LPSHardware-${{ env.TAG_NAME }}.apk
             release-artifacts/inventory-version.json
           draft: false
           prerelease: true
@@ -168,9 +171,10 @@ jobs:
           repository: AkhzarFarhan/ubiverse-releases
           token: ${{ secrets.RELEASES_PAT }}
           tag_name: inventory-latest
-          name: "LPS Hardware (Latest OTA)"
-          body: ${{ github.event.inputs.release_notes || 'Latest Over-The-Air release for LPS Hardware Inventory.' }}
+          name: "ShopLedger POS (Latest OTA)"
+          body: ${{ github.event.inputs.release_notes || 'Latest Over-The-Air release for ShopLedger POS.' }}
           files: |
+            release-artifacts/ShopLedgerPOS.apk
             release-artifacts/LPSHardware.apk
             release-artifacts/inventory-version.json
           draft: false

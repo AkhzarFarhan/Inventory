@@ -12,6 +12,7 @@ import com.shopledger.pos.core.share.ReceiptLineItem
 import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
+import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.CartLineItem
@@ -134,6 +135,13 @@ class MainViewModel(
             initialValue = 0
         )
 
+    val partiesState: StateFlow<List<PartyEntity>> =
+        repository.partiesFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     init {
         viewModelScope.launch {
             repository.seedStarterCatalogIfEmpty()
@@ -252,7 +260,8 @@ class MainViewModel(
         purchasePricePaise: Long,
         sellingPricePaise: Long,
         stockQuantity: Double,
-        lowStockThreshold: Double
+        lowStockThreshold: Double,
+        barcode: String = ""
     ) {
         viewModelScope.launch {
             repository.addVariantToExistingItem(
@@ -266,7 +275,8 @@ class MainViewModel(
                 purchasePricePaise = purchasePricePaise,
                 sellingPricePaise = sellingPricePaise,
                 stockQuantity = stockQuantity,
-                lowStockThreshold = lowStockThreshold
+                lowStockThreshold = lowStockThreshold,
+                barcode = barcode
             )
         }
     }
@@ -282,7 +292,8 @@ class MainViewModel(
         purchasePricePaise: Long,
         sellingPricePaise: Long,
         stockQuantity: Double,
-        lowStockThreshold: Double
+        lowStockThreshold: Double,
+        barcode: String = ""
     ) {
         addVariantToExistingItem(
             itemId = item.id,
@@ -295,7 +306,8 @@ class MainViewModel(
             purchasePricePaise = purchasePricePaise,
             sellingPricePaise = sellingPricePaise,
             stockQuantity = stockQuantity,
-            lowStockThreshold = lowStockThreshold
+            lowStockThreshold = lowStockThreshold,
+            barcode = barcode
         )
     }
 
@@ -311,7 +323,8 @@ class MainViewModel(
         newPurchasePricePaise: Long,
         newSellingPricePaise: Long,
         newStockQuantity: Double,
-        newLowStockThreshold: Double
+        newLowStockThreshold: Double,
+        newBarcode: String = variant.barcode
     ) {
         viewModelScope.launch {
             repository.updateItemAndVariant(
@@ -326,7 +339,8 @@ class MainViewModel(
                 newPurchasePricePaise = newPurchasePricePaise,
                 newSellingPricePaise = newSellingPricePaise,
                 newStockQuantity = newStockQuantity,
-                newLowStockThreshold = newLowStockThreshold
+                newLowStockThreshold = newLowStockThreshold,
+                newBarcode = newBarcode
             )
         }
     }
@@ -443,6 +457,9 @@ class MainViewModel(
         buyerName: String,
         buyerPhone: String,
         clearCounterCart: Boolean,
+        paymentMode: String = "CASH",
+        discountPaise: Long = 0L,
+        amountPaidPaise: Long? = null,
         onComplete: (SaleReceiptData) -> Unit = {}
     ) {
         if (itemsToSell.isEmpty()) return
@@ -450,13 +467,48 @@ class MainViewModel(
             val receipt = repository.executeCheckoutAndDeductStock(
                 cartItems = itemsToSell,
                 buyerName = buyerName,
-                buyerPhone = buyerPhone
+                buyerPhone = buyerPhone,
+                paymentMode = paymentMode,
+                discountPaise = discountPaise,
+                amountPaidPaise = amountPaidPaise
             )
             if (clearCounterCart) {
                 _cartItems.value = emptyList()
             }
             _activeReceiptForSharing.value = receipt
             onComplete(receipt)
+        }
+    }
+
+    fun addOrUpdateParty(
+        name: String,
+        phone: String,
+        partyType: String = "CUSTOMER",
+        openingBalancePaise: Long = 0L
+    ) {
+        viewModelScope.launch {
+            repository.addOrUpdateParty(
+                name = name,
+                phone = phone,
+                partyType = partyType,
+                openingBalancePaise = openingBalancePaise
+            )
+        }
+    }
+
+    fun recordPartyPaymentReceived(
+        partyId: String,
+        amountPaise: Long,
+        paymentMode: String = "CASH",
+        note: String = ""
+    ) {
+        viewModelScope.launch {
+            repository.recordPartyPaymentReceived(
+                partyId = partyId,
+                amountPaise = amountPaise,
+                paymentMode = paymentMode,
+                note = note
+            )
         }
     }
 
@@ -479,7 +531,8 @@ class MainViewModel(
                 lineTotalPaise = s.totalRevenuePaise
             )
         }
-        val grandTotal = lineItems.sumOf { it.lineTotalPaise }
+        val subtotal = lineItems.sumOf { it.lineTotalPaise }
+        val grandTotal = (subtotal - clickedSale.discountPaise + clickedSale.gstPaise).coerceAtLeast(0L)
 
         _activeReceiptForSharing.value = SaleReceiptData(
             receiptNumber = clickedSale.receiptNumber,
@@ -487,7 +540,13 @@ class MainViewModel(
             buyerName = clickedSale.buyerName,
             buyerPhone = clickedSale.buyerPhone,
             items = lineItems,
-            grandTotalPaise = grandTotal
+            grandTotalPaise = grandTotal,
+            paymentMode = clickedSale.paymentMode,
+            subtotalPaise = subtotal,
+            discountPaise = clickedSale.discountPaise,
+            taxPaise = clickedSale.gstPaise,
+            amountPaidPaise = clickedSale.amountPaidPaise,
+            balanceDuePaise = clickedSale.balanceDuePaise
         )
     }
 
