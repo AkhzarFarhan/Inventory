@@ -12,15 +12,18 @@ import androidx.room.PrimaryKey
         Index(value = ["soldAt"]),
         Index(value = ["yearInt", "monthInt", "dayInt"]),
         Index(value = ["receiptNumber"]),
-        Index(value = ["syncStatus"])
+        Index(value = ["syncStatus"]),
+        Index(value = ["shopId", "soldAt"])
     ]
 )
 data class SaleRecordEntity(
     @PrimaryKey
     val id: String,
+    val shopId: String = "default_shop",
     val receiptNumber: String,
     val buyerName: String = "",
     val buyerPhone: String = "",
+    val partyId: String? = null,
     val itemId: String,
     val variantId: String,
     val itemNameSnapshot: String,
@@ -36,6 +39,11 @@ data class SaleRecordEntity(
     val gainMarkupPercent: Double,
     /** Gross Margin % over Selling Price: ((Selling - Purchase) / Selling) * 100 */
     val grossMarginPercent: Double,
+    val paymentMode: String = "CASH",
+    val amountPaidPaise: Long = totalRevenuePaise,
+    val balanceDuePaise: Long = 0L,
+    val discountPaise: Long = 0L,
+    val gstPaise: Long = 0L,
     val soldAt: Long,
     val yearInt: Int,
     val monthInt: Int,

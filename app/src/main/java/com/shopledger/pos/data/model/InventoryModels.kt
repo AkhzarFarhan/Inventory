@@ -47,7 +47,10 @@ data class CartLineItem(
     val unitPurchasePricePaise: Long,
     val defaultSellingPricePaise: Long,
     val customSellingPricePaise: Long,
-    val quantity: Double
+    val quantity: Double,
+    val skuCode: String = "",
+    val barcode: String = "",
+    val gstRateBps: Int = 0
 ) {
     val lineCostPaise: Long
         get() = kotlin.math.round(unitPurchasePricePaise * quantity).toLong()

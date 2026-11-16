@@ -341,7 +341,24 @@ object SmartItemMatcher {
         val displayName = itemWithVariants.item.displayName.trim()
         val lowerDisplayName = displayName.lowercase()
 
-        // 1. Exact full display name match
+        // 1. Exact Barcode / SKU Code match (highest priority for instant scanner billing)
+        for (v in itemWithVariants.variants) {
+            if (v.barcode.isNotBlank() && v.barcode.equals(trimmed, ignoreCase = true)) {
+                return 12000.0
+            }
+            if (v.skuCode.isNotBlank() && v.skuCode.equals(trimmed, ignoreCase = true)) {
+                return 12000.0
+            }
+        }
+        for (v in itemWithVariants.variants) {
+            if ((v.barcode.isNotBlank() && v.barcode.lowercase().startsWith(lowerQuery)) ||
+                (v.skuCode.isNotBlank() && v.skuCode.lowercase().startsWith(lowerQuery))
+            ) {
+                return 7000.0
+            }
+        }
+
+        // 1b. Exact full display name match
         if (lowerDisplayName == lowerQuery) {
             return 10000.0
         }

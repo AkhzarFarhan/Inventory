@@ -9,13 +9,14 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "search_history",
     indices = [
-        Index(value = ["normalizedQuery"], unique = true),
+        Index(value = ["shopId", "normalizedQuery"], unique = true),
         Index(value = ["lastSearchedAt"])
     ]
 )
 data class SearchHistoryEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,
+    val shopId: String = "default_shop",
     val rawQuery: String,
     val normalizedQuery: String,
     val resultCount: Int = 0,

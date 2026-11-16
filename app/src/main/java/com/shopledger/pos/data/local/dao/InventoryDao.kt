@@ -69,6 +69,7 @@ interface InventoryDao {
         """
         UPDATE item_variants 
         SET stockQuantity = CASE WHEN (stockQuantity - :qtySold) < 0 THEN 0 ELSE (stockQuantity - :qtySold) END,
+            stockMilliUnits = CASE WHEN (stockMilliUnits - CAST(ROUND(:qtySold * 1000.0) AS INTEGER)) < 0 THEN 0 ELSE (stockMilliUnits - CAST(ROUND(:qtySold * 1000.0) AS INTEGER)) END,
             updatedAt = :now,
             syncStatus = :syncStatus
         WHERE id = :variantId
@@ -85,6 +86,7 @@ interface InventoryDao {
         """
         UPDATE item_variants 
         SET stockQuantity = stockQuantity + :qtyRestored,
+            stockMilliUnits = stockMilliUnits + CAST(ROUND(:qtyRestored * 1000.0) AS INTEGER),
             updatedAt = :now,
             syncStatus = :syncStatus
         WHERE id = :variantId
@@ -95,6 +97,21 @@ interface InventoryDao {
         qtyRestored: Double,
         now: Long = System.currentTimeMillis(),
         syncStatus: String = SyncState.PENDING_UPLOAD
+    )
+
+    @Query(
+        """
+        UPDATE item_variants
+        SET stockMilliUnits = CASE WHEN (stockMilliUnits + :deltaMilli) < 0 THEN 0 ELSE (stockMilliUnits + :deltaMilli) END,
+            stockQuantity = CASE WHEN ((stockMilliUnits + :deltaMilli) / 1000.0) < 0 THEN 0.0 ELSE ((stockMilliUnits + :deltaMilli) / 1000.0) END,
+            updatedAt = :now
+        WHERE id = :variantId
+        """
+    )
+    suspend fun applyRemoteStockDeltaMilliUnits(
+        variantId: String,
+        deltaMilli: Long,
+        now: Long = System.currentTimeMillis()
     )
 
     @Query("UPDATE inventory_items SET isDeleted = 1, updatedAt = :now, syncStatus = :syncStatus WHERE id = :itemId")

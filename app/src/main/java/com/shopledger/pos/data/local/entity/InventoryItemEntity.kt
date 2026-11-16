@@ -12,11 +12,14 @@ object SyncState {
     const val DEMO_SEED = "DEMO_SEED"
 }
 
+typealias CatalogProductEntity = InventoryItemEntity
+
 @Immutable
 @Entity(
     tableName = "inventory_items",
     indices = [
         Index(value = ["sortKey"]),
+        Index(value = ["shopId", "sortKey"]),
         Index(value = ["syncStatus"]),
         Index(value = ["isDeleted"])
     ]
@@ -24,9 +27,12 @@ object SyncState {
 data class InventoryItemEntity(
     @PrimaryKey
     val id: String,
+    val shopId: String = "default_shop",
     val displayName: String,
     val sortKey: String,
-    val category: String = "General Hardware",
+    val category: String = "Uncategorized",
+    val defaultHsnCode: String = "",
+    val defaultGstRateBps: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val isDeleted: Boolean = false,
