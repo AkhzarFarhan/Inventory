@@ -6,6 +6,17 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 
 @Immutable
+data class TaxBreakdown(
+    val taxablePaise: Long,
+    val gstRateBps: Int,
+    val cgstPaise: Long,
+    val sgstPaise: Long,
+    val igstPaise: Long,
+    val totalTaxPaise: Long,
+    val grandTotalPaise: Long
+)
+
+@Immutable
 data class ProfitAnalysis(
     val unitPurchasePaise: Long,
     val unitSellingPaise: Long,
@@ -161,6 +172,49 @@ object IndianCurrencyFormatter {
             totalProfitPaise = totalProfit,
             gainMarkupPercent = gainMarkupPercent,
             grossMarginPercent = grossMarginPercent
+        )
+    }
+
+    /**
+     * Exact integer fixed-point conversion (`1.5 kg = 1500 milliUnits`) to prevent IEEE-754 drift.
+     */
+    fun doubleToMilliUnits(qty: Double): Long = (qty * 1000.0).roundToLong()
+
+    fun milliUnitsToDouble(milli: Long): Double = milli / 1000.0
+
+    fun formatMilliUnits(milli: Long): String = formatQuantity(milliUnitsToDouble(milli))
+
+    /**
+     * Calculates Indian GST tax breakdown using basis points (`18% = 1800 bps`, `5% = 500 bps`).
+     */
+    fun computeGstBreakdown(
+        taxablePaise: Long,
+        gstRateBps: Int,
+        isInterState: Boolean = false
+    ): TaxBreakdown {
+        if (taxablePaise <= 0L || gstRateBps <= 0) {
+            return TaxBreakdown(
+                taxablePaise = taxablePaise.coerceAtLeast(0L),
+                gstRateBps = 0,
+                cgstPaise = 0L,
+                sgstPaise = 0L,
+                igstPaise = 0L,
+                totalTaxPaise = 0L,
+                grandTotalPaise = taxablePaise.coerceAtLeast(0L)
+            )
+        }
+        val totalTax = ((taxablePaise.toDouble() * gstRateBps.toDouble()) / 10000.0).roundToLong()
+        val cgst = if (isInterState) 0L else totalTax / 2L
+        val sgst = if (isInterState) 0L else totalTax - cgst
+        val igst = if (isInterState) totalTax else 0L
+        return TaxBreakdown(
+            taxablePaise = taxablePaise,
+            gstRateBps = gstRateBps,
+            cgstPaise = cgst,
+            sgstPaise = sgst,
+            igstPaise = igst,
+            totalTaxPaise = totalTax,
+            grandTotalPaise = taxablePaise + totalTax
         )
     }
 }

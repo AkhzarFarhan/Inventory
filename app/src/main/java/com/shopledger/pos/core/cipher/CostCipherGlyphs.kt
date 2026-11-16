@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -286,19 +288,31 @@ fun DrawScope.drawCipherSymbol(
 }
 
 /**
- * Displays the purchase price encoded in the shop's secret geometric symbols (`IMG_20261031_222339.jpg`).
- * When `isSellerUnlocked` is explicitly enabled by the seller, also shows the decoded ₹ value.
+ * Displays the purchase price encoded in the shop's configured privacy mode:
+ * - [CipherMode.STROKE_GLYPHS]: Geometric stroke symbols (`1`–`9`, `0`).
+ * - [CipherMode.WORD_10_LETTER]: 10-letter merchant word code (e.g., `B R K` for `BLACKHORSE`).
+ * - [CipherMode.HIDDEN_PIN]: Masked `••••` until Owner PIN / Seller Mode is unlocked.
  */
 @Composable
 fun CodedPurchasePriceBadge(
     purchasePricePaise: Long,
     modifier: Modifier = Modifier,
     isSellerUnlocked: Boolean = false,
+    cipherMode: CipherMode? = null,
+    cipherWord10: String? = null,
     glyphSize: Dp = 17.dp,
     onClick: (() -> Unit)? = null
 ) {
+    val activeModeFlow by CostCipherEngine.activeModeFlow.collectAsState()
+    val activeWordFlow by CostCipherEngine.activeWord10Flow.collectAsState()
+    val resolvedMode = cipherMode ?: activeModeFlow
+    val resolvedWord = cipherWord10 ?: activeWordFlow
+
     val symbols = remember(purchasePricePaise) {
         CostCipherEngine.encodePaiseToSymbols(purchasePricePaise)
+    }
+    val wordCode = remember(purchasePricePaise, resolvedWord) {
+        CostCipherEngine.encodePaiseToWordCode(purchasePricePaise, resolvedWord)
     }
 
     val shape = RoundedCornerShape(8.dp)
@@ -312,16 +326,39 @@ fun CodedPurchasePriceBadge(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        symbols.forEach { symbol ->
-            CipherSymbolGlyph(
-                symbol = symbol,
-                glyphSize = glyphSize,
-                tint = CupertinoColors.CipherIndigo
-            )
+        when (resolvedMode) {
+            CipherMode.STROKE_GLYPHS -> {
+                symbols.forEach { symbol ->
+                    CipherSymbolGlyph(
+                        symbol = symbol,
+                        glyphSize = glyphSize,
+                        tint = CupertinoColors.CipherIndigo
+                    )
+                }
+            }
+            CipherMode.WORD_10_LETTER -> {
+                Text(
+                    text = wordCode,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = CupertinoColors.CipherIndigo
+                )
+            }
+            CipherMode.HIDDEN_PIN -> {
+                if (!isSellerUnlocked) {
+                    Text(
+                        text = "••••",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CupertinoColors.CipherIndigo
+                    )
+                }
+            }
         }
         if (isSellerUnlocked) {
+            val formattedCost = IndianCurrencyFormatter.formatPaise(purchasePricePaise)
             Text(
-                text = " (${IndianCurrencyFormatter.formatPaise(purchasePricePaise)})",
+                text = if (resolvedMode == CipherMode.HIDDEN_PIN) formattedCost else " ($formattedCost)",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = CupertinoColors.CipherIndigo
@@ -331,13 +368,19 @@ fun CodedPurchasePriceBadge(
 }
 
 /**
- * Interactive reference legend card (only visible inside the Seller-unlocked Cipher Reference modal
- * or live preview while editing purchase prices).
+ * Interactive reference legend card adapting to the shop's active [CipherMode].
  */
 @Composable
 fun CipherReferenceStrip(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cipherMode: CipherMode? = null,
+    cipherWord10: String? = null
 ) {
+    val activeModeFlow by CostCipherEngine.activeModeFlow.collectAsState()
+    val activeWordFlow by CostCipherEngine.activeWord10Flow.collectAsState()
+    val resolvedMode = cipherMode ?: activeModeFlow
+    val resolvedWord = CostCipherEngine.normalizedWord10(cipherWord10 ?: activeWordFlow)
+
     val allDigits = remember {
         listOf(
             CipherSymbol.ONE,
@@ -353,26 +396,79 @@ fun CipherReferenceStrip(
         )
     }
 
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(CupertinoColors.CipherContainer)
-            .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(10.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        allDigits.forEach { sym ->
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+    when (resolvedMode) {
+        CipherMode.STROKE_GLYPHS -> {
+            Row(
+                modifier = modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(CupertinoColors.CipherContainer)
+                    .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                CipherSymbolGlyph(symbol = sym, glyphSize = 18.dp)
+                allDigits.forEach { sym ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        CipherSymbolGlyph(symbol = sym, glyphSize = 18.dp)
+                        Text(
+                            text = sym.digitChar.toString(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CupertinoColors.LabelSecondary
+                        )
+                    }
+                }
+            }
+        }
+        CipherMode.WORD_10_LETTER -> {
+            Row(
+                modifier = modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(CupertinoColors.CipherContainer)
+                    .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0 until 10) {
+                    val digitLabel = if (i == 9) "0" else (i + 1).toString()
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = resolvedWord[i].toString(),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = CupertinoColors.CipherIndigo
+                        )
+                        Text(
+                            text = digitLabel,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CupertinoColors.LabelSecondary
+                        )
+                    }
+                }
+            }
+        }
+        CipherMode.HIDDEN_PIN -> {
+            Box(
+                modifier = modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(CupertinoColors.CipherContainer)
+                    .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    text = sym.digitChar.toString(),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelSecondary
+                    text = "PIN-Protected Mode: Purchase cost is hidden behind •••• until Seller Mode is unlocked.",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = CupertinoColors.CipherIndigo
                 )
             }
         }
