@@ -3,7 +3,10 @@ package com.shopledger.pos.core.auth
 import android.accounts.AccountManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import androidx.compose.runtime.Immutable
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -45,7 +48,8 @@ data class SignedInGoogleUser(
 }
 
 object GoogleAuthManager {
-    private const val PREFS_NAME = "lps_google_auth_prefs"
+    private const val LEGACY_PREFS_NAME = "lps_google_auth_prefs"
+    private const val ENCRYPTED_PREFS_NAME = "shopledger_auth_encrypted"
     private const val KEY_GOOGLE_ID = "google_user_id"
     private const val KEY_EMAIL = "google_email"
     private const val KEY_DISPLAY_NAME = "google_display_name"
@@ -116,7 +120,7 @@ object GoogleAuthManager {
             .joinToString(" ") { part ->
                 part.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
             }
-            .ifBlank { "LPS Shop Owner" }
+            .ifBlank { "Shop Owner" }
 
         val config = SyncManager.getConfig(context)
         var firebaseUid = ""
@@ -165,7 +169,7 @@ object GoogleAuthManager {
     ): SignedInGoogleUser = withContext(Dispatchers.IO) {
         val email = account.email.orEmpty()
         val displayName = account.displayName?.takeIf { it.isNotBlank() }
-            ?: email.substringBefore("@").ifEmpty { "LPS Shop Owner" }
+            ?: email.substringBefore("@").ifEmpty { "Shop Owner" }
         val googleId = account.id ?: email.ifEmpty { "default_owner" }
         val photoUrl = account.photoUrl?.toString().orEmpty()
         val googleIdToken = account.idToken.orEmpty()
@@ -268,7 +272,8 @@ object GoogleAuthManager {
             getGoogleSignInClient(context, includeIdTokenRequest = false).signOut()
         } catch (_: Exception) {
         }
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        securePrefs(context).edit().clear().apply()
+        context.applicationContext.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .clear()
             .apply()
@@ -331,8 +336,44 @@ object GoogleAuthManager {
         }
     }
 
+    private fun securePrefs(context: Context): SharedPreferences {
+        val appContext = context.applicationContext
+        val encrypted = try {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                ENCRYPTED_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (_: Exception) {
+            appContext.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+        }
+
+        // One-time migration from legacy unencrypted prefs if needed
+        val legacy = appContext.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+        val legacyEmail = legacy.getString(KEY_EMAIL, "")?.trim().orEmpty()
+        if (legacyEmail.isNotEmpty() && encrypted.getString(KEY_EMAIL, "").isNullOrEmpty()) {
+            encrypted.edit()
+                .putString(KEY_GOOGLE_ID, legacy.getString(KEY_GOOGLE_ID, ""))
+                .putString(KEY_EMAIL, legacyEmail)
+                .putString(KEY_DISPLAY_NAME, legacy.getString(KEY_DISPLAY_NAME, ""))
+                .putString(KEY_PHOTO_URL, legacy.getString(KEY_PHOTO_URL, ""))
+                .putString(KEY_FIREBASE_UID, legacy.getString(KEY_FIREBASE_UID, ""))
+                .putString(KEY_FIREBASE_ID_TOKEN, legacy.getString(KEY_FIREBASE_ID_TOKEN, ""))
+                .putString(KEY_FIREBASE_REFRESH_TOKEN, legacy.getString(KEY_FIREBASE_REFRESH_TOKEN, ""))
+                .putLong(KEY_TOKEN_EXPIRES_AT, legacy.getLong(KEY_TOKEN_EXPIRES_AT, 0L))
+                .apply()
+            legacy.edit().clear().apply()
+        }
+        return encrypted
+    }
+
     private fun saveUser(context: Context, user: SignedInGoogleUser) {
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        securePrefs(context)
             .edit()
             .putString(KEY_GOOGLE_ID, user.googleUserId)
             .putString(KEY_EMAIL, user.email)
@@ -346,7 +387,7 @@ object GoogleAuthManager {
     }
 
     private fun loadSavedUser(context: Context): SignedInGoogleUser? {
-        val p = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val p = securePrefs(context)
         val email = p.getString(KEY_EMAIL, "")?.trim().orEmpty()
         val googleId = p.getString(KEY_GOOGLE_ID, "")?.trim().orEmpty()
         if (email.isEmpty() && googleId.isEmpty()) return null

@@ -1,0 +1,1473 @@
+rules_version = '2';
+
+// ===============================================================
+// ShopLedger POS — Cloud Firestore Security Rules (Prototype)
+// ===============================================================
+//
+// Multi-tenant POS, inventory, khata ledger, and billing platform
+// (formerly LPS Hardware Inventory; package com.shopledger.pos).
+//
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// 1. Collection: users
+//    Document ID: {uid} (Firebase Auth UID)
+//    Access: Strictly owner-only read/write (PII isolation).
+//    Fields:
+//      - uid: string (optional, 1..128, must equal {uid}, immutable)
+//      - googleUserId: string (optional, 0..128)
+//      - firebaseUid: string (optional, 0..128)
+//      - email: string (optional, 0..254, valid email or "")
+//      - displayName / name: string (optional, 0..120)
+//      - photoUrl / photoURL: string (optional, 0..1000, valid http(s) URL or "")
+//      - phone / phoneNumber: string (optional, 0..32)
+//      - activeShopId / defaultShopId / selectedShopId / currentShopId /
+//        lastShopId / shopId: string (optional, 0..128)
+//      - shopIds: list<string> (optional, max 20 items, each 1..128 chars)
+//      - fcmToken: string (optional, 0..512)
+//      - locale: string (optional, 0..32)
+//      - providerId: string (optional, 0..64)
+//      - isActive: bool (optional)
+//      - createdAt: int (epoch ms 0..4102444800000) | timestamp (optional, immutable)
+//      - updatedAt / lastLoginAt / lastSyncedAt: int | timestamp (optional)
+//
+// 2. Collection: shops
+//    Document ID: {shopId}
+//    Access: Shop members (OWNER/STAFF) and shop ownerUid can read;
+//            any non-anonymous authenticated user can create a shop setting
+//            ownerUid == request.auth.uid; only shop OWNER or ownerUid can
+//            update or delete.
+//    Fields:
+//      - ownerUid: string (required, 1..128; == request.auth.uid on create;
+//                  immutable except when transferred by current ownerUid)
+//      - id / shopId: string (optional, must equal {shopId} or 'default_shop', immutable)
+//      - name / shopName / displayName / businessName / title: string (optional, 1..150)
+//      - businessType / category / verticalType: string (optional, 0..100)
+//      - phone / phoneNumber / whatsappNumber / whatsappPhone /
+//        sellerWhatsAppNumber: string (optional, 0..32)
+//      - email: string (optional, 0..254, valid email or "")
+//      - address: string (optional, 0..300)
+//      - city / state: string (optional, 0..100)
+//      - stateCode / pincode / deviceShortCode: string (optional, 0..32)
+//      - gstin / gstNumber: string (optional, 0..32)
+//      - upiId: string (optional, 0..120)
+//      - taxEnabled / gstEnabled / isSetupCompleted / isActive / isDeleted: bool (optional)
+//      - currency / currencyCode: string (optional, 1..10)
+//      - receiptPrefix / invoicePrefix: string (optional, 0..20)
+//      - cipherMode / cipherWord10 / ownerPinHash: string (optional, 0..256)
+//      - logoUrl: string (optional, 0..1000, valid http(s) URL or "")
+//      - createdBy / createdByUid / updatedBy / updatedByUid: string (optional, 0..128)
+//      - createdAt: int | timestamp (optional, immutable)
+//      - updatedAt / lastSyncedAt: int | timestamp (optional)
+//
+// 3. Subcollection: shops/{shopId}/members
+//    Document ID: {memberUid} (Firebase Auth UID)
+//    Access: Shop members, shop ownerUid, or self ({memberUid}) can read;
+//            shop OWNER / ownerUid can create/update/delete members;
+//            shop creator can self-create in the same atomic batch creating
+//            /shops/{shopId} with ownerUid == request.auth.uid.
+//    Fields:
+//      - role: string (required, 'OWNER' | 'STAFF')
+//      - uid / memberUid: string (optional, must equal {memberUid}, immutable)
+//      - shopId: string (optional, must equal {shopId}, immutable)
+//      - displayName / name: string (optional, 0..120)
+//      - email: string (optional, 0..254, valid email or "")
+//      - phone / phoneNumber: string (optional, 0..32)
+//      - status / inviteStatus: string (optional, enum)
+//      - isActive / active: bool (optional)
+//      - addedBy / addedByUid / invitedBy / invitedByUid: string (optional, 0..128)
+//      - createdAt / joinedAt: int | timestamp (optional, immutable)
+//      - updatedAt: int | timestamp (optional)
+//
+// 4. Room-Synced Subcollections (from FirestoreDeltaSyncWorker.kt & ShopLedgerEntities.kt):
+//    - shops/{shopId}/items/{itemId}
+//      Required: displayName (str 1..200), sortKey (str 1..200),
+//                category (str 1..120), createdAt (int|ts, immutable),
+//                updatedAt (int|ts), isDeleted (bool)
+//      Optional: id, shopId ({shopId} or 'default_shop'), defaultHsnCode (str 0..32),
+//                defaultGstRateBps (int 0..5000), createdByUid, updatedByUid
+//    - shops/{shopId}/variants/{variantId}
+//      Required: itemId (str 1..128, immutable), sizeLabel (str 0..100),
+//                materialLabel (str 0..100), colorFinishLabel (str 0..100),
+//                unit (str 1..40), purchasePricePaise (int >= 0),
+//                sellingPricePaise (int >= 0), stockQuantity (number >= 0),
+//                lowStockThreshold (number >= 0), updatedAt (int|ts), isDeleted (bool)
+//      Optional: id, shopId ({shopId} or 'default_shop'), skuCode (str 0..64),
+//                barcode (str 0..64), mrpPaise (int >= 0), gstRateBps (int 0..5000),
+//                stockMilliUnits (int >= 0), lowStockMilliUnits (int >= 0),
+//                createdAt (immutable), createdByUid, updatedByUid
+//    - shops/{shopId}/sales/{saleId}
+//      Required: receiptNumber (str 1..64, immutable), buyerName (str 0..150),
+//                buyerPhone (str 0..32), itemId (str 1..128, immutable),
+//                variantId (str 1..128, immutable), itemNameSnapshot (str 0..200),
+//                variantSummarySnapshot (str 0..200), quantitySold (number > 0),
+//                unitSnapshot (str 1..40), unitPurchasePricePaise (int >= 0),
+//                unitSellingPricePaise (int >= 0), totalCostPaise (int >= 0),
+//                totalRevenuePaise (int >= 0), totalProfitPaise (int, may be negative),
+//                gainMarkupPercent (number), grossMarginPercent (number),
+//                soldAt (int|ts, immutable), isReturned (bool, monotonic false->true),
+//                updatedAt (int|ts)
+//      Optional: id, shopId ({shopId} or 'default_shop'), partyId (nullable str 0..128),
+//                paymentMode (str 0..32), amountPaidPaise (int >= 0),
+//                balanceDuePaise (int >= 0), discountPaise (int >= 0),
+//                gstPaise (int >= 0), yearInt, monthInt, dayInt, createdAt,
+//                createdByUid, updatedByUid
+//    - shops/{shopId}/parties/{partyId} (PartyEntity)
+//      Required: shopId ({shopId} or 'default_shop'), partyType ('CUSTOMER'|'SUPPLIER'|'BOTH'),
+//                name (str 1..150), phone (str 0..32), gstin (str 0..32),
+//                billingAddress (str 0..300), openingBalancePaise (int),
+//                currentBalancePaise (int), updatedAt (int|ts), isDeleted (bool)
+//    - shops/{shopId}/party_ledger/{entryId} (PartyTransactionEntity)
+//      Required: partyId (str 1..128, immutable) AND (amountPaise or amountDeltaPaise)
+//      Optional: shopId, refDocId, entryType ('CREDIT_BILL'|'JAMA_CASH'|'JAMA_UPI'|
+//                'SUPP_PURCHASE'|'SUPP_PAY'|'DEBIT'|'CREDIT'|...), paymentMode,
+//                note, createdAt (immutable), etc.
+//    - shops/{shopId}/stock_movements/{movementId} (StockMovementEntity, APPEND-ONLY)
+//      Required: (skuId|variantId|productId|itemId) AND
+//                (deltaMilliUnits|deltaQty|quantityDelta)
+//      Optional: shopId, deviceShortCode, movementType ('OPENING'|'SALE'|'SALE_RETURN'|
+//                'RETURN'|'PURCHASE'|'RESTOCK'|'ADJUSTMENT'|...), refDocId, note, createdAt
+//      Update & Delete: Unconditionally denied (allow update, delete: if false;)
+//
+// 5. Additional ShopLedger POS Subcollections under shops/{shopId}
+//    - products/{productId} (mutable by shop members)
+//    - skus/{skuId} (mutable by shop members)
+//    - invoices/{invoiceId} (mutable by shop members; InvoiceHeaderEntity)
+//    - invoice_lines/{lineId} (mutable by shop members; InvoiceLineEntity)
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all unmatched paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Authentication & Tenancy Helper Functions
+    // ===============================================================
+
+    // Reject unauthenticated and anonymous Firebase Auth sessions.
+    // Null-safe for synthetic emulator tokens that omit token.firebase.
+    function isAuthenticated() {
+      return request.auth != null &&
+        request.auth.uid != null &&
+        request.auth.uid.size() > 0 &&
+        request.auth.uid.size() <= 128 &&
+        (
+          !('firebase' in request.auth.token) ||
+          !('sign_in_provider' in request.auth.token.firebase) ||
+          request.auth.token.firebase.sign_in_provider != 'anonymous'
+        );
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        !('uid' in resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    function shopPath(shopId) {
+      return /databases/$(database)/documents/shops/$(shopId);
+    }
+
+    function memberPath(shopId, uid) {
+      return /databases/$(database)/documents/shops/$(shopId)/members/$(uid);
+    }
+
+    function isActiveMemberData(data) {
+      return (!('isActive' in data) || data.isActive == true) &&
+        (!('active' in data) || data.active == true) &&
+        (!('status' in data) || !(data.status in [
+          'DISABLED', 'SUSPENDED', 'REVOKED',
+          'disabled', 'suspended', 'revoked'
+        ]));
+    }
+
+    // Owner check against /shops/{shopId}.ownerUid
+    function isShopOwnerDoc(shopId) {
+      return isAuthenticated() &&
+        exists(shopPath(shopId)) &&
+        get(shopPath(shopId)).data.ownerUid == request.auth.uid;
+    }
+
+    // Write-only owner check for atomic batch creation of /shops/{shopId} + /members/{uid}
+    function isShopOwnerDocAfter(shopId) {
+      return isAuthenticated() &&
+        existsAfter(shopPath(shopId)) &&
+        getAfter(shopPath(shopId)).data.ownerUid == request.auth.uid;
+    }
+
+    // Direct resource check on /shops/{shopId} for update/delete/list
+    function isResourceShopOwner() {
+      return isAuthenticated() &&
+        resource != null &&
+        ('ownerUid' in resource.data) &&
+        resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Verified shop membership (OWNER or STAFF) with parent shop existence check
+    function isShopMember(shopId) {
+      return isAuthenticated() &&
+        exists(shopPath(shopId)) &&
+        exists(memberPath(shopId, request.auth.uid)) &&
+        isActiveMemberData(get(memberPath(shopId, request.auth.uid)).data) &&
+        get(memberPath(shopId, request.auth.uid)).data.role in ['OWNER', 'STAFF'];
+    }
+
+    // Verified shop OWNER membership with parent shop existence check
+    function isShopOwner(shopId) {
+      return isAuthenticated() &&
+        exists(shopPath(shopId)) &&
+        exists(memberPath(shopId, request.auth.uid)) &&
+        isActiveMemberData(get(memberPath(shopId, request.auth.uid)).data) &&
+        get(memberPath(shopId, request.auth.uid)).data.role == 'OWNER';
+    }
+
+    // ===============================================================
+    // Generic Schema & Validation Helpers
+    // ===============================================================
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isImmutableIfPresent(field) {
+      return !(field in resource.data) ||
+        (field in request.resource.data && request.resource.data[field] == resource.data[field]);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return (field in request.resource.data) &&
+        request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is string &&
+          request.resource.data[field].size() >= minLen &&
+          request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidOptionalNullableString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] == null ||
+        (request.resource.data[field] is string &&
+          request.resource.data[field].size() >= minLen &&
+          request.resource.data[field].size() <= maxLen);
+    }
+
+    // Allows shopId to match path {shopId} or 'default_shop' for migrated legacy Room rows
+    function isValidOptionalShopIdField(shopId) {
+      return !('shopId' in request.resource.data) ||
+        (request.resource.data.shopId is string &&
+          request.resource.data.shopId.size() >= 1 &&
+          request.resource.data.shopId.size() <= 128 &&
+          (request.resource.data.shopId == shopId || request.resource.data.shopId == 'default_shop'));
+    }
+
+    // Allows shopId to stay unchanged OR migrate once from 'default_shop' -> {shopId}
+    function isValidShopIdUpdateTransition(shopId) {
+      return !('shopId' in resource.data) ||
+        (
+          ('shopId' in request.resource.data) &&
+          (
+            request.resource.data.shopId == resource.data.shopId ||
+            (resource.data.shopId == 'default_shop' && request.resource.data.shopId == shopId)
+          )
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() <= 254 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidOptionalEmailOrEmpty(field) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is string &&
+          (request.resource.data[field].size() == 0 || isValidEmail(request.resource.data[field])));
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+        url.size() <= 1000 &&
+        (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function isValidOptionalUrlOrEmpty(field) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is string &&
+          (request.resource.data[field].size() == 0 || isValidUrl(request.resource.data[field])));
+    }
+
+    function isValidList(list, maxSize) {
+      return list is list && list.size() <= maxSize;
+    }
+
+    function isValidMap(mapData, allowedKeys) {
+      return mapData is map && mapData.keys().hasOnly(allowedKeys);
+    }
+
+    function isPositive(field) {
+      return (field in request.resource.data) &&
+        request.resource.data[field] is number &&
+        request.resource.data[field] > 0;
+    }
+
+    function isValidIntField(field, minVal, maxVal) {
+      return (field in request.resource.data) &&
+        request.resource.data[field] is int &&
+        request.resource.data[field] >= minVal &&
+        request.resource.data[field] <= maxVal;
+    }
+
+    function isValidOptionalInt(field, minVal, maxVal) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is int &&
+          request.resource.data[field] >= minVal &&
+          request.resource.data[field] <= maxVal);
+    }
+
+    function isValidNumberField(field, minVal, maxVal) {
+      return (field in request.resource.data) &&
+        request.resource.data[field] is number &&
+        request.resource.data[field] >= minVal &&
+        request.resource.data[field] <= maxVal;
+    }
+
+    function isValidOptionalNumber(field, minVal, maxVal) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is number &&
+          request.resource.data[field] >= minVal &&
+          request.resource.data[field] <= maxVal);
+    }
+
+    function isValidBoolField(field) {
+      return (field in request.resource.data) && request.resource.data[field] is bool;
+    }
+
+    function isValidOptionalBool(field) {
+      return !(field in request.resource.data) || request.resource.data[field] is bool;
+    }
+
+    function isValidTimestampOrEpochValue(val) {
+      return (val is int && val >= 0 && val <= 4102444800000) || (val is timestamp);
+    }
+
+    function isValidTimestampOrEpochField(field) {
+      return (field in request.resource.data) &&
+        isValidTimestampOrEpochValue(request.resource.data[field]);
+    }
+
+    function isValidOptionalTimestampOrEpoch(field) {
+      return !(field in request.resource.data) ||
+        isValidTimestampOrEpochValue(request.resource.data[field]);
+    }
+
+    function isValidOptionalIdMatch(field, expectedId) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is string &&
+          request.resource.data[field].size() >= 1 &&
+          request.resource.data[field].size() <= 128 &&
+          request.resource.data[field] == expectedId);
+    }
+
+    function isValidIdListElem(list, idx) {
+      return list.size() <= idx ||
+        (list[idx] is string && list[idx].size() >= 1 && list[idx].size() <= 128);
+    }
+
+    function isValidOptionalShopIdList(field) {
+      return !(field in request.resource.data) ||
+        (
+          isValidList(request.resource.data[field], 20) &&
+          isValidIdListElem(request.resource.data[field], 0) &&
+          isValidIdListElem(request.resource.data[field], 1) &&
+          isValidIdListElem(request.resource.data[field], 2) &&
+          isValidIdListElem(request.resource.data[field], 3) &&
+          isValidIdListElem(request.resource.data[field], 4) &&
+          isValidIdListElem(request.resource.data[field], 5) &&
+          isValidIdListElem(request.resource.data[field], 6) &&
+          isValidIdListElem(request.resource.data[field], 7) &&
+          isValidIdListElem(request.resource.data[field], 8) &&
+          isValidIdListElem(request.resource.data[field], 9) &&
+          isValidIdListElem(request.resource.data[field], 10) &&
+          isValidIdListElem(request.resource.data[field], 11) &&
+          isValidIdListElem(request.resource.data[field], 12) &&
+          isValidIdListElem(request.resource.data[field], 13) &&
+          isValidIdListElem(request.resource.data[field], 14) &&
+          isValidIdListElem(request.resource.data[field], 15) &&
+          isValidIdListElem(request.resource.data[field], 16) &&
+          isValidIdListElem(request.resource.data[field], 17) &&
+          isValidIdListElem(request.resource.data[field], 18) &&
+          isValidIdListElem(request.resource.data[field], 19)
+        );
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update)
+    // ===============================================================
+
+    // --- 1. /users/{uid} ---
+    function isValidUserFields(uid) {
+      return request.resource.data.keys().size() >= 1 &&
+        hasOnlyAllowedFields([
+          'uid', 'googleUserId', 'firebaseUid', 'email', 'displayName', 'name',
+          'photoUrl', 'photoURL', 'phone', 'phoneNumber',
+          'activeShopId', 'defaultShopId', 'selectedShopId', 'currentShopId',
+          'lastShopId', 'shopId', 'shopIds', 'fcmToken', 'locale',
+          'providerId', 'isActive', 'createdAt', 'updatedAt',
+          'lastLoginAt', 'lastSyncedAt'
+        ]) &&
+        uidUnchanged() &&
+        isValidOptionalIdMatch('uid', uid) &&
+        isValidOptionalString('googleUserId', 0, 128) &&
+        isValidOptionalString('firebaseUid', 0, 128) &&
+        isValidOptionalEmailOrEmpty('email') &&
+        isValidOptionalString('displayName', 0, 120) &&
+        isValidOptionalString('name', 0, 120) &&
+        isValidOptionalUrlOrEmpty('photoUrl') &&
+        isValidOptionalUrlOrEmpty('photoURL') &&
+        isValidOptionalString('phone', 0, 32) &&
+        isValidOptionalString('phoneNumber', 0, 32) &&
+        isValidOptionalString('activeShopId', 0, 128) &&
+        isValidOptionalString('defaultShopId', 0, 128) &&
+        isValidOptionalString('selectedShopId', 0, 128) &&
+        isValidOptionalString('currentShopId', 0, 128) &&
+        isValidOptionalString('lastShopId', 0, 128) &&
+        isValidOptionalString('shopId', 0, 128) &&
+        isValidOptionalShopIdList('shopIds') &&
+        isValidOptionalString('fcmToken', 0, 512) &&
+        isValidOptionalString('locale', 0, 32) &&
+        isValidOptionalString('providerId', 0, 64) &&
+        isValidOptionalBool('isActive') &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt') &&
+        isValidOptionalTimestampOrEpoch('lastLoginAt') &&
+        isValidOptionalTimestampOrEpoch('lastSyncedAt');
+    }
+
+    function isValidUserCreate(uid) {
+      return isValidUserFields(uid);
+    }
+
+    function isValidUserUpdate(uid) {
+      return isValidUserFields(uid) &&
+        uidNotModified() &&
+        isImmutableIfPresent('createdAt');
+    }
+
+    // --- 2. /shops/{shopId} ---
+    function isValidShopFields(shopId) {
+      return hasRequiredFields(['ownerUid']) &&
+        hasOnlyAllowedFields([
+          'id', 'shopId', 'ownerUid', 'name', 'shopName', 'displayName',
+          'businessName', 'title', 'businessType', 'category', 'verticalType',
+          'phone', 'phoneNumber', 'whatsappNumber', 'whatsappPhone',
+          'sellerWhatsAppNumber', 'email', 'address', 'city', 'state',
+          'stateCode', 'pincode', 'gstin', 'gstNumber',
+          'taxEnabled', 'gstEnabled', 'upiId', 'deviceShortCode',
+          'currency', 'currencyCode', 'receiptPrefix', 'invoicePrefix',
+          'cipherMode', 'cipherWord10', 'ownerPinHash', 'isSetupCompleted',
+          'logoUrl', 'isActive', 'isDeleted',
+          'createdBy', 'createdByUid', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt', 'lastSyncedAt'
+        ]) &&
+        validStringLength('ownerUid', 1, 128) &&
+        isValidOptionalIdMatch('id', shopId) &&
+        isValidOptionalShopIdField(shopId) &&
+        isValidOptionalString('name', 1, 150) &&
+        isValidOptionalString('shopName', 1, 150) &&
+        isValidOptionalString('displayName', 1, 150) &&
+        isValidOptionalString('businessName', 1, 150) &&
+        isValidOptionalString('title', 1, 150) &&
+        isValidOptionalString('businessType', 0, 100) &&
+        isValidOptionalString('category', 0, 100) &&
+        isValidOptionalString('verticalType', 0, 64) &&
+        isValidOptionalString('phone', 0, 32) &&
+        isValidOptionalString('phoneNumber', 0, 32) &&
+        isValidOptionalString('whatsappNumber', 0, 32) &&
+        isValidOptionalString('whatsappPhone', 0, 32) &&
+        isValidOptionalString('sellerWhatsAppNumber', 0, 32) &&
+        isValidOptionalEmailOrEmpty('email') &&
+        isValidOptionalString('address', 0, 300) &&
+        isValidOptionalString('city', 0, 100) &&
+        isValidOptionalString('state', 0, 100) &&
+        isValidOptionalString('stateCode', 0, 16) &&
+        isValidOptionalString('pincode', 0, 20) &&
+        isValidOptionalString('gstin', 0, 32) &&
+        isValidOptionalString('gstNumber', 0, 32) &&
+        isValidOptionalBool('taxEnabled') &&
+        isValidOptionalBool('gstEnabled') &&
+        isValidOptionalString('upiId', 0, 120) &&
+        isValidOptionalString('deviceShortCode', 0, 32) &&
+        isValidOptionalString('currency', 1, 10) &&
+        isValidOptionalString('currencyCode', 1, 10) &&
+        isValidOptionalString('receiptPrefix', 0, 20) &&
+        isValidOptionalString('invoicePrefix', 0, 20) &&
+        isValidOptionalString('cipherMode', 0, 64) &&
+        isValidOptionalString('cipherWord10', 0, 32) &&
+        isValidOptionalString('ownerPinHash', 0, 256) &&
+        isValidOptionalBool('isSetupCompleted') &&
+        isValidOptionalUrlOrEmpty('logoUrl') &&
+        isValidOptionalBool('isActive') &&
+        isValidOptionalBool('isDeleted') &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt') &&
+        isValidOptionalTimestampOrEpoch('lastSyncedAt');
+    }
+
+    function isValidShopCreate(shopId) {
+      return isValidShopFields(shopId) &&
+        request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    function isValidShopUpdate(shopId) {
+      return isValidShopFields(shopId) &&
+        // Co-owner members cannot hijack ownerUid from the original ownerUid
+        ('ownerUid' in resource.data) &&
+        (
+          request.resource.data.ownerUid == resource.data.ownerUid ||
+          resource.data.ownerUid == request.auth.uid
+        ) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdBy') &&
+        isImmutableIfPresent('createdByUid') &&
+        isImmutableIfPresent('createdAt');
+    }
+
+    // --- 3. /shops/{shopId}/members/{memberUid} ---
+    function isValidMemberFields(shopId, memberUid) {
+      return hasRequiredFields(['role']) &&
+        hasOnlyAllowedFields([
+          'uid', 'memberUid', 'shopId', 'role',
+          'displayName', 'name', 'email', 'phone', 'phoneNumber',
+          'status', 'inviteStatus', 'isActive', 'active',
+          'addedBy', 'addedByUid', 'invitedBy', 'invitedByUid',
+          'createdAt', 'joinedAt', 'updatedAt'
+        ]) &&
+        request.resource.data.role is string &&
+        request.resource.data.role in ['OWNER', 'STAFF'] &&
+        isValidOptionalIdMatch('uid', memberUid) &&
+        isValidOptionalIdMatch('memberUid', memberUid) &&
+        isValidOptionalIdMatch('shopId', shopId) &&
+        isValidOptionalString('displayName', 0, 120) &&
+        isValidOptionalString('name', 0, 120) &&
+        isValidOptionalEmailOrEmpty('email') &&
+        isValidOptionalString('phone', 0, 32) &&
+        isValidOptionalString('phoneNumber', 0, 32) &&
+        (
+          !('status' in request.resource.data) ||
+          (request.resource.data.status is string &&
+            request.resource.data.status in [
+              'ACTIVE', 'INVITED', 'DISABLED', 'SUSPENDED', 'REVOKED',
+              'active', 'invited', 'disabled', 'suspended', 'revoked'
+            ])
+        ) &&
+        (
+          !('inviteStatus' in request.resource.data) ||
+          (request.resource.data.inviteStatus is string &&
+            request.resource.data.inviteStatus in [
+              'ACTIVE', 'INVITED', 'PENDING', 'ACCEPTED', 'REVOKED',
+              'active', 'invited', 'pending', 'accepted', 'revoked'
+            ])
+        ) &&
+        isValidOptionalBool('isActive') &&
+        isValidOptionalBool('active') &&
+        isValidOptionalString('addedBy', 0, 128) &&
+        isValidOptionalString('addedByUid', 0, 128) &&
+        isValidOptionalString('invitedBy', 0, 128) &&
+        isValidOptionalString('invitedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('joinedAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt');
+    }
+
+    function isValidMemberCreate(shopId, memberUid) {
+      return isValidMemberFields(shopId, memberUid);
+    }
+
+    function isValidMemberUpdate(shopId, memberUid) {
+      return isValidMemberFields(shopId, memberUid) &&
+        isImmutableIfPresent('uid') &&
+        isImmutableIfPresent('memberUid') &&
+        isImmutableIfPresent('shopId') &&
+        isImmutableIfPresent('createdAt') &&
+        isImmutableIfPresent('joinedAt');
+    }
+
+    // --- 4. /shops/{shopId}/items/{itemId} (Room Sync v1/v2) ---
+    function isValidItemFields(shopId, itemId) {
+      return hasRequiredFields([
+          'displayName', 'sortKey', 'category',
+          'createdAt', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'shopId', 'displayName', 'sortKey', 'category',
+          'defaultHsnCode', 'defaultGstRateBps',
+          'createdAt', 'updatedAt', 'isDeleted',
+          'createdByUid', 'updatedByUid'
+        ]) &&
+        isValidOptionalIdMatch('id', itemId) &&
+        isValidOptionalShopIdField(shopId) &&
+        validStringLength('displayName', 1, 200) &&
+        validStringLength('sortKey', 1, 200) &&
+        validStringLength('category', 1, 120) &&
+        isValidOptionalString('defaultHsnCode', 0, 32) &&
+        isValidOptionalInt('defaultGstRateBps', 0, 5000) &&
+        isValidTimestampOrEpochField('createdAt') &&
+        isValidTimestampOrEpochField('updatedAt') &&
+        isValidBoolField('isDeleted') &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128);
+    }
+
+    function isValidItemCreate(shopId, itemId) {
+      return isValidItemFields(shopId, itemId);
+    }
+
+    function isValidItemUpdate(shopId, itemId) {
+      return isValidItemFields(shopId, itemId) &&
+        areImmutableFieldsUnchanged(['createdAt']) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdByUid');
+    }
+
+    // --- 5. /shops/{shopId}/variants/{variantId} (Room Sync v1/v2) ---
+    function isValidVariantFields(shopId, variantId) {
+      return hasRequiredFields([
+          'itemId', 'sizeLabel', 'materialLabel', 'colorFinishLabel',
+          'unit', 'purchasePricePaise', 'sellingPricePaise',
+          'stockQuantity', 'lowStockThreshold', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'shopId', 'itemId', 'skuCode', 'barcode',
+          'sizeLabel', 'materialLabel', 'colorFinishLabel', 'unit',
+          'mrpPaise', 'purchasePricePaise', 'sellingPricePaise',
+          'gstRateBps', 'stockQuantity', 'lowStockThreshold',
+          'stockMilliUnits', 'lowStockMilliUnits',
+          'createdAt', 'updatedAt', 'isDeleted',
+          'createdByUid', 'updatedByUid'
+        ]) &&
+        isValidOptionalIdMatch('id', variantId) &&
+        isValidOptionalShopIdField(shopId) &&
+        validStringLength('itemId', 1, 128) &&
+        isValidOptionalString('skuCode', 0, 64) &&
+        isValidOptionalString('barcode', 0, 64) &&
+        validStringLength('sizeLabel', 0, 100) &&
+        validStringLength('materialLabel', 0, 100) &&
+        validStringLength('colorFinishLabel', 0, 100) &&
+        validStringLength('unit', 1, 40) &&
+        isValidOptionalInt('mrpPaise', 0, 1000000000000) &&
+        isValidIntField('purchasePricePaise', 0, 1000000000000) &&
+        isValidIntField('sellingPricePaise', 0, 1000000000000) &&
+        isValidOptionalInt('gstRateBps', 0, 5000) &&
+        isValidNumberField('stockQuantity', 0, 100000000) &&
+        isValidNumberField('lowStockThreshold', 0, 100000000) &&
+        isValidOptionalInt('stockMilliUnits', 0, 100000000000) &&
+        isValidOptionalInt('lowStockMilliUnits', 0, 100000000000) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidTimestampOrEpochField('updatedAt') &&
+        isValidBoolField('isDeleted') &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128);
+    }
+
+    function isValidVariantCreate(shopId, variantId) {
+      return isValidVariantFields(shopId, variantId);
+    }
+
+    function isValidVariantUpdate(shopId, variantId) {
+      return isValidVariantFields(shopId, variantId) &&
+        areImmutableFieldsUnchanged(['itemId']) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdAt') &&
+        isImmutableIfPresent('createdByUid');
+    }
+
+    // --- 6. /shops/{shopId}/sales/{saleId} (Room Sync v1/v2) ---
+    function isValidSaleFields(shopId, saleId) {
+      return hasRequiredFields([
+          'receiptNumber', 'buyerName', 'buyerPhone', 'itemId', 'variantId',
+          'itemNameSnapshot', 'variantSummarySnapshot', 'quantitySold',
+          'unitSnapshot', 'unitPurchasePricePaise', 'unitSellingPricePaise',
+          'totalCostPaise', 'totalRevenuePaise', 'totalProfitPaise',
+          'gainMarkupPercent', 'grossMarginPercent', 'soldAt',
+          'isReturned', 'updatedAt'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'shopId', 'partyId', 'receiptNumber', 'buyerName', 'buyerPhone',
+          'itemId', 'variantId', 'itemNameSnapshot', 'variantSummarySnapshot',
+          'quantitySold', 'unitSnapshot', 'unitPurchasePricePaise',
+          'unitSellingPricePaise', 'totalCostPaise', 'totalRevenuePaise',
+          'totalProfitPaise', 'gainMarkupPercent', 'grossMarginPercent',
+          'paymentMode', 'amountPaidPaise', 'balanceDuePaise',
+          'discountPaise', 'gstPaise',
+          'soldAt', 'yearInt', 'monthInt', 'dayInt',
+          'isReturned', 'createdAt', 'updatedAt',
+          'createdByUid', 'updatedByUid'
+        ]) &&
+        isValidOptionalIdMatch('id', saleId) &&
+        isValidOptionalShopIdField(shopId) &&
+        isValidOptionalNullableString('partyId', 0, 128) &&
+        validStringLength('receiptNumber', 1, 64) &&
+        validStringLength('buyerName', 0, 150) &&
+        validStringLength('buyerPhone', 0, 32) &&
+        validStringLength('itemId', 1, 128) &&
+        validStringLength('variantId', 1, 128) &&
+        validStringLength('itemNameSnapshot', 0, 200) &&
+        validStringLength('variantSummarySnapshot', 0, 200) &&
+        isPositive('quantitySold') &&
+        request.resource.data.quantitySold <= 100000000 &&
+        validStringLength('unitSnapshot', 1, 40) &&
+        isValidIntField('unitPurchasePricePaise', 0, 1000000000000) &&
+        isValidIntField('unitSellingPricePaise', 0, 1000000000000) &&
+        isValidIntField('totalCostPaise', 0, 1000000000000) &&
+        isValidIntField('totalRevenuePaise', 0, 1000000000000) &&
+        // Bargaining can sell below purchase price, so profit/margin may be negative
+        isValidIntField('totalProfitPaise', -1000000000000, 1000000000000) &&
+        isValidNumberField('gainMarkupPercent', -1000000, 1000000) &&
+        isValidNumberField('grossMarginPercent', -1000000, 1000000) &&
+        isValidOptionalString('paymentMode', 0, 32) &&
+        isValidOptionalInt('amountPaidPaise', 0, 1000000000000) &&
+        isValidOptionalInt('balanceDuePaise', 0, 1000000000000) &&
+        isValidOptionalInt('discountPaise', 0, 1000000000000) &&
+        isValidOptionalInt('gstPaise', 0, 1000000000000) &&
+        isValidTimestampOrEpochField('soldAt') &&
+        isValidOptionalInt('yearInt', 1970, 2100) &&
+        isValidOptionalInt('monthInt', 1, 12) &&
+        isValidOptionalInt('dayInt', 1, 31) &&
+        isValidBoolField('isReturned') &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidTimestampOrEpochField('updatedAt') &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128);
+    }
+
+    function isValidSaleCreate(shopId, saleId) {
+      return isValidSaleFields(shopId, saleId);
+    }
+
+    function isValidSaleUpdate(shopId, saleId) {
+      return isValidSaleFields(shopId, saleId) &&
+        areImmutableFieldsUnchanged(['receiptNumber', 'itemId', 'variantId', 'soldAt']) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdAt') &&
+        isImmutableIfPresent('createdByUid') &&
+        // Returned sales cannot be un-returned
+        (resource.data.isReturned == false || request.resource.data.isReturned == true);
+    }
+
+    // --- 7. /shops/{shopId}/products/{productId} (v2 Catalog) ---
+    function isValidProductFields(shopId, productId) {
+      return hasOnlyAllowedFields([
+          'id', 'shopId', 'name', 'displayName', 'title', 'sortKey',
+          'category', 'brand', 'description', 'notes',
+          'hsnCode', 'defaultHsnCode', 'gstPercent', 'defaultGstRateBps',
+          'taxRatePercent', 'taxRate', 'defaultUnit', 'unit',
+          'isActive', 'isDeleted',
+          'createdBy', 'createdByUid', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        (validStringLength('name', 1, 200) || validStringLength('displayName', 1, 200) || validStringLength('title', 1, 200)) &&
+        isValidOptionalIdMatch('id', productId) &&
+        isValidOptionalShopIdField(shopId) &&
+        isValidOptionalString('name', 1, 200) &&
+        isValidOptionalString('displayName', 1, 200) &&
+        isValidOptionalString('title', 1, 200) &&
+        isValidOptionalString('sortKey', 0, 200) &&
+        isValidOptionalString('category', 0, 120) &&
+        isValidOptionalString('brand', 0, 120) &&
+        isValidOptionalString('description', 0, 1000) &&
+        isValidOptionalString('notes', 0, 500) &&
+        isValidOptionalString('hsnCode', 0, 32) &&
+        isValidOptionalString('defaultHsnCode', 0, 32) &&
+        isValidOptionalNumber('gstPercent', 0, 100) &&
+        isValidOptionalInt('defaultGstRateBps', 0, 5000) &&
+        isValidOptionalNumber('taxRatePercent', 0, 100) &&
+        isValidOptionalNumber('taxRate', 0, 100) &&
+        isValidOptionalString('defaultUnit', 1, 40) &&
+        isValidOptionalString('unit', 1, 40) &&
+        isValidOptionalBool('isActive') &&
+        isValidOptionalBool('isDeleted') &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt');
+    }
+
+    function isValidProductCreate(shopId, productId) {
+      return isValidProductFields(shopId, productId);
+    }
+
+    function isValidProductUpdate(shopId, productId) {
+      return isValidProductFields(shopId, productId) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdBy') &&
+        isImmutableIfPresent('createdByUid') &&
+        isImmutableIfPresent('createdAt');
+    }
+
+    // --- 8. /shops/{shopId}/skus/{skuId} (v2 SKUs) ---
+    function isValidSkuFields(shopId, skuId) {
+      return hasOnlyAllowedFields([
+          'id', 'shopId', 'productId', 'itemId', 'skuCode', 'code', 'barcode',
+          'name', 'label', 'variantName', 'sizeLabel', 'materialLabel',
+          'colorFinishLabel', 'unit', 'purchasePricePaise', 'costPricePaise',
+          'sellingPricePaise', 'mrpPaise', 'gstRateBps',
+          'stockQuantity', 'quantityOnHand', 'lowStockThreshold', 'reorderLevel',
+          'stockMilliUnits', 'lowStockMilliUnits', 'isActive', 'isDeleted',
+          'createdBy', 'createdByUid', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.keys().size() >= 2 &&
+        (validStringLength('productId', 1, 128) || validStringLength('itemId', 1, 128)) &&
+        isValidOptionalIdMatch('id', skuId) &&
+        isValidOptionalShopIdField(shopId) &&
+        isValidOptionalString('productId', 1, 128) &&
+        isValidOptionalString('itemId', 1, 128) &&
+        isValidOptionalString('skuCode', 0, 64) &&
+        isValidOptionalString('code', 0, 64) &&
+        isValidOptionalString('barcode', 0, 64) &&
+        isValidOptionalString('name', 0, 150) &&
+        isValidOptionalString('label', 0, 150) &&
+        isValidOptionalString('variantName', 0, 150) &&
+        isValidOptionalString('sizeLabel', 0, 100) &&
+        isValidOptionalString('materialLabel', 0, 100) &&
+        isValidOptionalString('colorFinishLabel', 0, 100) &&
+        isValidOptionalString('unit', 1, 40) &&
+        isValidOptionalInt('purchasePricePaise', 0, 1000000000000) &&
+        isValidOptionalInt('costPricePaise', 0, 1000000000000) &&
+        isValidOptionalInt('sellingPricePaise', 0, 1000000000000) &&
+        isValidOptionalInt('mrpPaise', 0, 1000000000000) &&
+        isValidOptionalInt('gstRateBps', 0, 5000) &&
+        isValidOptionalNumber('stockQuantity', 0, 100000000) &&
+        isValidOptionalNumber('quantityOnHand', 0, 100000000) &&
+        isValidOptionalNumber('lowStockThreshold', 0, 100000000) &&
+        isValidOptionalNumber('reorderLevel', 0, 100000000) &&
+        isValidOptionalInt('stockMilliUnits', 0, 100000000000) &&
+        isValidOptionalInt('lowStockMilliUnits', 0, 100000000000) &&
+        isValidOptionalBool('isActive') &&
+        isValidOptionalBool('isDeleted') &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt');
+    }
+
+    function isValidSkuCreate(shopId, skuId) {
+      return isValidSkuFields(shopId, skuId);
+    }
+
+    function isValidSkuUpdate(shopId, skuId) {
+      return isValidSkuFields(shopId, skuId) &&
+        isImmutableIfPresent('productId') &&
+        isImmutableIfPresent('itemId') &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdBy') &&
+        isImmutableIfPresent('createdByUid') &&
+        isImmutableIfPresent('createdAt');
+    }
+
+    // --- 9. /shops/{shopId}/parties/{partyId} (Customers & Suppliers - PartyEntity) ---
+    function isValidPartyFields(shopId, partyId) {
+      return hasRequiredFields([
+          'shopId', 'partyType', 'name', 'phone', 'gstin', 'billingAddress',
+          'openingBalancePaise', 'currentBalancePaise', 'updatedAt', 'isDeleted'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id', 'shopId', 'name', 'displayName', 'partyType', 'type',
+          'phone', 'phoneNumber', 'whatsappNumber', 'email',
+          'billingAddress', 'address', 'city', 'state', 'pincode', 'gstin',
+          'openingBalancePaise', 'currentBalancePaise', 'balancePaise',
+          'creditLimitPaise', 'notes', 'isActive', 'isDeleted',
+          'createdBy', 'createdByUid', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidOptionalIdMatch('id', partyId) &&
+        isValidOptionalShopIdField(shopId) &&
+        validStringLength('name', 1, 150) &&
+        isValidOptionalString('displayName', 1, 150) &&
+        request.resource.data.partyType is string &&
+        request.resource.data.partyType in [
+          'CUSTOMER', 'SUPPLIER', 'BOTH',
+          'customer', 'supplier', 'both'
+        ] &&
+        (
+          !('type' in request.resource.data) ||
+          (request.resource.data.type is string &&
+            request.resource.data.type in [
+              'CUSTOMER', 'SUPPLIER', 'BOTH',
+              'customer', 'supplier', 'both'
+            ])
+        ) &&
+        validStringLength('phone', 0, 32) &&
+        isValidOptionalString('phoneNumber', 0, 32) &&
+        isValidOptionalString('whatsappNumber', 0, 32) &&
+        isValidOptionalEmailOrEmpty('email') &&
+        validStringLength('billingAddress', 0, 300) &&
+        isValidOptionalString('address', 0, 300) &&
+        isValidOptionalString('city', 0, 100) &&
+        isValidOptionalString('state', 0, 100) &&
+        isValidOptionalString('pincode', 0, 20) &&
+        validStringLength('gstin', 0, 32) &&
+        isValidIntField('openingBalancePaise', -1000000000000, 1000000000000) &&
+        isValidIntField('currentBalancePaise', -1000000000000, 1000000000000) &&
+        isValidOptionalInt('balancePaise', -1000000000000, 1000000000000) &&
+        isValidOptionalInt('creditLimitPaise', 0, 1000000000000) &&
+        isValidOptionalString('notes', 0, 500) &&
+        isValidOptionalBool('isActive') &&
+        isValidBoolField('isDeleted') &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidTimestampOrEpochField('updatedAt');
+    }
+
+    function isValidPartyCreate(shopId, partyId) {
+      return isValidPartyFields(shopId, partyId);
+    }
+
+    function isValidPartyUpdate(shopId, partyId) {
+      return isValidPartyFields(shopId, partyId) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdBy') &&
+        isImmutableIfPresent('createdByUid') &&
+        isImmutableIfPresent('createdAt');
+    }
+
+    // --- 10. /shops/{shopId}/invoices/{invoiceId} (InvoiceHeaderEntity) ---
+    function isValidInvoiceFields(shopId, invoiceId) {
+      return hasOnlyAllowedFields([
+          'id', 'shopId', 'deviceShortCode', 'invoiceNumber', 'receiptNumber',
+          'docType', 'invoiceType', 'type', 'status',
+          'partyId', 'partyName', 'partyNameSnapshot',
+          'partyPhone', 'partyPhoneSnapshot', 'buyerName', 'buyerPhone',
+          'subtotalPaise', 'discountPaise', 'taxPaise', 'cgstPaise',
+          'sgstPaise', 'igstPaise', 'roundOffPaise', 'totalPaise',
+          'grandTotalPaise', 'totalCostPaise', 'totalProfitPaise',
+          'paidPaise', 'amountPaidPaise', 'balanceDuePaise', 'duePaise',
+          'paymentMode', 'paymentMethod', 'paymentStatus', 'notes',
+          'isEstimate', 'isReturned', 'isDeleted', 'issuedAt', 'soldAt',
+          'yearInt', 'monthInt', 'dayInt',
+          'createdBy', 'createdByUid', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.keys().size() >= 2 &&
+        (
+          ('invoiceNumber' in request.resource.data) ||
+          ('receiptNumber' in request.resource.data) ||
+          ('totalPaise' in request.resource.data) ||
+          ('grandTotalPaise' in request.resource.data) ||
+          ('subtotalPaise' in request.resource.data)
+        ) &&
+        isValidOptionalIdMatch('id', invoiceId) &&
+        isValidOptionalShopIdField(shopId) &&
+        isValidOptionalString('deviceShortCode', 0, 32) &&
+        isValidOptionalString('invoiceNumber', 1, 64) &&
+        isValidOptionalString('receiptNumber', 1, 64) &&
+        (
+          !('docType' in request.resource.data) ||
+          (request.resource.data.docType is string &&
+            request.resource.data.docType in [
+              'SALE', 'SALE_RETURN', 'RETURN', 'ESTIMATE', 'PURCHASE',
+              'sale', 'sale_return', 'return', 'estimate', 'purchase'
+            ])
+        ) &&
+        (
+          !('invoiceType' in request.resource.data) ||
+          (request.resource.data.invoiceType is string &&
+            request.resource.data.invoiceType in [
+              'SALE', 'SALE_RETURN', 'RETURN', 'ESTIMATE', 'PURCHASE',
+              'sale', 'sale_return', 'return', 'estimate', 'purchase'
+            ])
+        ) &&
+        (
+          !('type' in request.resource.data) ||
+          (request.resource.data.type is string &&
+            request.resource.data.type in [
+              'SALE', 'SALE_RETURN', 'RETURN', 'ESTIMATE', 'PURCHASE',
+              'sale', 'sale_return', 'return', 'estimate', 'purchase'
+            ])
+        ) &&
+        (
+          !('status' in request.resource.data) ||
+          (request.resource.data.status is string &&
+            request.resource.data.status in [
+              'DRAFT', 'ISSUED', 'PAID', 'PARTIAL', 'UNPAID',
+              'RETURNED', 'VOID', 'CANCELLED', 'COMPLETED',
+              'draft', 'issued', 'paid', 'partial', 'unpaid',
+              'returned', 'void', 'cancelled', 'completed'
+            ])
+        ) &&
+        isValidOptionalNullableString('partyId', 0, 128) &&
+        isValidOptionalString('partyName', 0, 150) &&
+        isValidOptionalString('partyNameSnapshot', 0, 150) &&
+        isValidOptionalString('partyPhone', 0, 32) &&
+        isValidOptionalString('partyPhoneSnapshot', 0, 32) &&
+        isValidOptionalString('buyerName', 0, 150) &&
+        isValidOptionalString('buyerPhone', 0, 32) &&
+        isValidOptionalInt('subtotalPaise', 0, 1000000000000) &&
+        isValidOptionalInt('discountPaise', 0, 1000000000000) &&
+        isValidOptionalInt('taxPaise', 0, 1000000000000) &&
+        isValidOptionalInt('cgstPaise', 0, 1000000000000) &&
+        isValidOptionalInt('sgstPaise', 0, 1000000000000) &&
+        isValidOptionalInt('igstPaise', 0, 1000000000000) &&
+        isValidOptionalInt('roundOffPaise', -1000000, 1000000) &&
+        isValidOptionalInt('totalPaise', 0, 1000000000000) &&
+        isValidOptionalInt('grandTotalPaise', 0, 1000000000000) &&
+        isValidOptionalInt('totalCostPaise', 0, 1000000000000) &&
+        isValidOptionalInt('totalProfitPaise', -1000000000000, 1000000000000) &&
+        isValidOptionalInt('paidPaise', 0, 1000000000000) &&
+        isValidOptionalInt('amountPaidPaise', 0, 1000000000000) &&
+        isValidOptionalInt('balanceDuePaise', 0, 1000000000000) &&
+        isValidOptionalInt('duePaise', 0, 1000000000000) &&
+        isValidOptionalString('paymentMode', 0, 40) &&
+        isValidOptionalString('paymentMethod', 0, 40) &&
+        (
+          !('paymentStatus' in request.resource.data) ||
+          (request.resource.data.paymentStatus is string &&
+            request.resource.data.paymentStatus in [
+              'PAID', 'PARTIAL', 'UNPAID', 'REFUNDED',
+              'paid', 'partial', 'unpaid', 'refunded'
+            ])
+        ) &&
+        isValidOptionalString('notes', 0, 500) &&
+        isValidOptionalBool('isEstimate') &&
+        isValidOptionalBool('isReturned') &&
+        isValidOptionalBool('isDeleted') &&
+        isValidOptionalTimestampOrEpoch('issuedAt') &&
+        isValidOptionalTimestampOrEpoch('soldAt') &&
+        isValidOptionalInt('yearInt', 1970, 2100) &&
+        isValidOptionalInt('monthInt', 1, 12) &&
+        isValidOptionalInt('dayInt', 1, 31) &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt');
+    }
+
+    function isValidInvoiceCreate(shopId, invoiceId) {
+      return isValidInvoiceFields(shopId, invoiceId);
+    }
+
+    function isValidInvoiceUpdate(shopId, invoiceId) {
+      return isValidInvoiceFields(shopId, invoiceId) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('invoiceNumber') &&
+        isImmutableIfPresent('receiptNumber') &&
+        isImmutableIfPresent('issuedAt') &&
+        isImmutableIfPresent('soldAt') &&
+        isImmutableIfPresent('createdBy') &&
+        isImmutableIfPresent('createdByUid') &&
+        isImmutableIfPresent('createdAt') &&
+        (
+          !('isReturned' in resource.data) ||
+          resource.data.isReturned == false ||
+          (
+            ('isReturned' in request.resource.data) &&
+            request.resource.data.isReturned == true
+          )
+        );
+    }
+
+    // --- 11. /shops/{shopId}/invoice_lines/{lineId} (InvoiceLineEntity) ---
+    function isValidInvoiceLineFields(shopId, lineId) {
+      return hasRequiredFields(['invoiceId']) &&
+        hasOnlyAllowedFields([
+          'id', 'shopId', 'invoiceId', 'productId', 'skuId',
+          'itemId', 'variantId', 'itemNameSnapshot', 'productNameSnapshot',
+          'skuLabelSnapshot', 'variantSummarySnapshot',
+          'hsnCode', 'hsnSnapshot', 'unit', 'unitSnapshot',
+          'quantity', 'qtyMilliUnits',
+          'unitCostPaise', 'unitPurchasePricePaise',
+          'unitPricePaise', 'unitSellPaise', 'unitSellingPricePaise',
+          'discountPaise', 'gstRateBps', 'taxRatePercent', 'taxRate',
+          'taxPaise', 'lineTaxPaise',
+          'lineCostPaise', 'lineTotalPaise', 'lineProfitPaise',
+          'isReturned', 'isDeleted',
+          'createdBy', 'createdByUid', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.keys().size() >= 2 &&
+        isValidOptionalIdMatch('id', lineId) &&
+        isValidOptionalShopIdField(shopId) &&
+        validStringLength('invoiceId', 1, 128) &&
+        isValidOptionalString('productId', 0, 128) &&
+        isValidOptionalString('skuId', 0, 128) &&
+        isValidOptionalString('itemId', 0, 128) &&
+        isValidOptionalString('variantId', 0, 128) &&
+        isValidOptionalString('itemNameSnapshot', 0, 200) &&
+        isValidOptionalString('productNameSnapshot', 0, 200) &&
+        isValidOptionalString('skuLabelSnapshot', 0, 200) &&
+        isValidOptionalString('variantSummarySnapshot', 0, 200) &&
+        isValidOptionalString('hsnCode', 0, 32) &&
+        isValidOptionalString('hsnSnapshot', 0, 32) &&
+        isValidOptionalString('unit', 1, 40) &&
+        isValidOptionalString('unitSnapshot', 1, 40) &&
+        (
+          !('quantity' in request.resource.data) ||
+          (request.resource.data.quantity is number &&
+            request.resource.data.quantity > 0 &&
+            request.resource.data.quantity <= 100000000)
+        ) &&
+        isValidOptionalInt('qtyMilliUnits', 1, 100000000000) &&
+        isValidOptionalInt('unitCostPaise', 0, 1000000000000) &&
+        isValidOptionalInt('unitPurchasePricePaise', 0, 1000000000000) &&
+        isValidOptionalInt('unitPricePaise', 0, 1000000000000) &&
+        isValidOptionalInt('unitSellPaise', 0, 1000000000000) &&
+        isValidOptionalInt('unitSellingPricePaise', 0, 1000000000000) &&
+        isValidOptionalInt('discountPaise', 0, 1000000000000) &&
+        isValidOptionalInt('gstRateBps', 0, 5000) &&
+        isValidOptionalNumber('taxRatePercent', 0, 100) &&
+        isValidOptionalNumber('taxRate', 0, 100) &&
+        isValidOptionalInt('taxPaise', 0, 1000000000000) &&
+        isValidOptionalInt('lineTaxPaise', 0, 1000000000000) &&
+        isValidOptionalInt('lineCostPaise', 0, 1000000000000) &&
+        isValidOptionalInt('lineTotalPaise', 0, 1000000000000) &&
+        isValidOptionalInt('lineProfitPaise', -1000000000000, 1000000000000) &&
+        isValidOptionalBool('isReturned') &&
+        isValidOptionalBool('isDeleted') &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt');
+    }
+
+    function isValidInvoiceLineCreate(shopId, lineId) {
+      return isValidInvoiceLineFields(shopId, lineId);
+    }
+
+    function isValidInvoiceLineUpdate(shopId, lineId) {
+      return isValidInvoiceLineFields(shopId, lineId) &&
+        areImmutableFieldsUnchanged(['invoiceId']) &&
+        isImmutableIfPresent('id') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('createdBy') &&
+        isImmutableIfPresent('createdByUid') &&
+        isImmutableIfPresent('createdAt');
+    }
+
+    // --- 12. /shops/{shopId}/party_ledger/{entryId} (PartyTransactionEntity) ---
+    function isValidPartyLedgerFields(shopId, entryId) {
+      return hasRequiredFields(['partyId']) &&
+        (
+          ('amountPaise' in request.resource.data) ||
+          ('amountDeltaPaise' in request.resource.data)
+        ) &&
+        hasOnlyAllowedFields([
+          'id', 'entryId', 'shopId', 'partyId', 'invoiceId', 'refDocId',
+          'entryType', 'type', 'direction',
+          'amountPaise', 'amountDeltaPaise', 'balanceAfterPaise',
+          'paymentMode', 'paymentMethod', 'referenceNo', 'referenceId',
+          'note', 'notes', 'description', 'occurredAt', 'isDeleted',
+          'createdBy', 'createdByUid', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidOptionalIdMatch('id', entryId) &&
+        isValidOptionalIdMatch('entryId', entryId) &&
+        isValidOptionalShopIdField(shopId) &&
+        validStringLength('partyId', 1, 128) &&
+        isValidOptionalString('invoiceId', 0, 128) &&
+        isValidOptionalString('refDocId', 0, 128) &&
+        (
+          !('entryType' in request.resource.data) ||
+          (request.resource.data.entryType is string &&
+            request.resource.data.entryType in [
+              'CREDIT_BILL', 'JAMA_CASH', 'JAMA_UPI', 'SUPP_PURCHASE', 'SUPP_PAY',
+              'DEBIT', 'CREDIT', 'PAYMENT_IN', 'PAYMENT_OUT',
+              'INVOICE', 'RETURN', 'ADJUSTMENT', 'OPENING',
+              'credit_bill', 'jama_cash', 'jama_upi', 'supp_purchase', 'supp_pay',
+              'debit', 'credit', 'payment_in', 'payment_out',
+              'invoice', 'return', 'adjustment', 'opening'
+            ])
+        ) &&
+        (
+          !('type' in request.resource.data) ||
+          (request.resource.data.type is string &&
+            request.resource.data.type in [
+              'CREDIT_BILL', 'JAMA_CASH', 'JAMA_UPI', 'SUPP_PURCHASE', 'SUPP_PAY',
+              'DEBIT', 'CREDIT', 'PAYMENT_IN', 'PAYMENT_OUT',
+              'INVOICE', 'RETURN', 'ADJUSTMENT', 'OPENING',
+              'credit_bill', 'jama_cash', 'jama_upi', 'supp_purchase', 'supp_pay',
+              'debit', 'credit', 'payment_in', 'payment_out',
+              'invoice', 'return', 'adjustment', 'opening'
+            ])
+        ) &&
+        (
+          !('direction' in request.resource.data) ||
+          (request.resource.data.direction is string &&
+            request.resource.data.direction in ['DEBIT', 'CREDIT', 'debit', 'credit'])
+        ) &&
+        isValidOptionalInt('amountPaise', -1000000000000, 1000000000000) &&
+        isValidOptionalInt('amountDeltaPaise', -1000000000000, 1000000000000) &&
+        isValidOptionalInt('balanceAfterPaise', -1000000000000, 1000000000000) &&
+        isValidOptionalString('paymentMode', 0, 40) &&
+        isValidOptionalString('paymentMethod', 0, 40) &&
+        isValidOptionalString('referenceNo', 0, 80) &&
+        isValidOptionalString('referenceId', 0, 128) &&
+        isValidOptionalString('note', 0, 500) &&
+        isValidOptionalString('notes', 0, 500) &&
+        isValidOptionalString('description', 0, 500) &&
+        isValidOptionalTimestampOrEpoch('occurredAt') &&
+        isValidOptionalBool('isDeleted') &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        isValidOptionalString('updatedByUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt') &&
+        isValidOptionalTimestampOrEpoch('updatedAt');
+    }
+
+    function isValidPartyLedgerCreate(shopId, entryId) {
+      return isValidPartyLedgerFields(shopId, entryId);
+    }
+
+    function isValidPartyLedgerUpdate(shopId, entryId) {
+      return isValidPartyLedgerFields(shopId, entryId) &&
+        areImmutableFieldsUnchanged(['partyId']) &&
+        isImmutableIfPresent('id') &&
+        isImmutableIfPresent('entryId') &&
+        isValidShopIdUpdateTransition(shopId) &&
+        isImmutableIfPresent('invoiceId') &&
+        isImmutableIfPresent('refDocId') &&
+        isImmutableIfPresent('occurredAt') &&
+        isImmutableIfPresent('createdBy') &&
+        isImmutableIfPresent('createdByUid') &&
+        isImmutableIfPresent('createdAt');
+    }
+
+    // --- 13. /shops/{shopId}/stock_movements/{movementId} (StockMovementEntity, Immutable Append-Only) ---
+    function isValidStockMovementCreate(shopId, movementId) {
+      return hasOnlyAllowedFields([
+          'id', 'movementId', 'shopId', 'productId', 'skuId', 'itemId', 'variantId',
+          'deviceShortCode', 'deltaMilliUnits', 'deltaQty', 'quantityDelta',
+          'delta', 'quantity', 'balanceAfter', 'stockAfter',
+          'movementType', 'type', 'reason',
+          'referenceType', 'referenceId', 'refDocId', 'invoiceId',
+          'note', 'notes', 'occurredAt',
+          'createdBy', 'createdByUid', 'actorUid', 'createdAt'
+        ]) &&
+        (
+          validStringLength('skuId', 1, 128) ||
+          validStringLength('variantId', 1, 128) ||
+          validStringLength('productId', 1, 128) ||
+          validStringLength('itemId', 1, 128)
+        ) &&
+        (
+          ('deltaMilliUnits' in request.resource.data) ||
+          ('deltaQty' in request.resource.data) ||
+          ('quantityDelta' in request.resource.data)
+        ) &&
+        isValidOptionalIdMatch('id', movementId) &&
+        isValidOptionalIdMatch('movementId', movementId) &&
+        isValidOptionalShopIdField(shopId) &&
+        isValidOptionalString('productId', 1, 128) &&
+        isValidOptionalString('skuId', 1, 128) &&
+        isValidOptionalString('itemId', 1, 128) &&
+        isValidOptionalString('variantId', 1, 128) &&
+        isValidOptionalString('deviceShortCode', 0, 32) &&
+        isValidOptionalInt('deltaMilliUnits', -100000000000, 100000000000) &&
+        isValidOptionalNumber('deltaQty', -100000000, 100000000) &&
+        isValidOptionalNumber('quantityDelta', -100000000, 100000000) &&
+        isValidOptionalNumber('delta', -100000000, 100000000) &&
+        isValidOptionalNumber('quantity', -100000000, 100000000) &&
+        isValidOptionalNumber('balanceAfter', 0, 100000000) &&
+        isValidOptionalNumber('stockAfter', 0, 100000000) &&
+        (
+          !('movementType' in request.resource.data) ||
+          (request.resource.data.movementType is string &&
+            request.resource.data.movementType in [
+              'SALE', 'SALE_RETURN', 'RETURN', 'PURCHASE', 'RESTOCK',
+              'ADJUSTMENT', 'OPENING', 'DAMAGE', 'LOSS', 'TRANSFER', 'INITIAL',
+              'sale', 'sale_return', 'return', 'purchase', 'restock',
+              'adjustment', 'opening', 'damage', 'loss', 'transfer', 'initial'
+            ])
+        ) &&
+        (
+          !('type' in request.resource.data) ||
+          (request.resource.data.type is string &&
+            request.resource.data.type in [
+              'SALE', 'SALE_RETURN', 'RETURN', 'PURCHASE', 'RESTOCK',
+              'ADJUSTMENT', 'OPENING', 'DAMAGE', 'LOSS', 'TRANSFER', 'INITIAL',
+              'sale', 'sale_return', 'return', 'purchase', 'restock',
+              'adjustment', 'opening', 'damage', 'loss', 'transfer', 'initial'
+            ])
+        ) &&
+        isValidOptionalString('reason', 0, 100) &&
+        isValidOptionalString('referenceType', 0, 40) &&
+        isValidOptionalString('referenceId', 0, 128) &&
+        isValidOptionalString('refDocId', 0, 128) &&
+        isValidOptionalString('invoiceId', 0, 128) &&
+        isValidOptionalString('note', 0, 500) &&
+        isValidOptionalString('notes', 0, 500) &&
+        isValidOptionalTimestampOrEpoch('occurredAt') &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalString('createdByUid', 0, 128) &&
+        isValidOptionalString('actorUid', 0, 128) &&
+        isValidOptionalTimestampOrEpoch('createdAt');
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // User profile documents: strict per-user PII isolation
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidUserCreate(uid);
+      allow update: if isOwner(uid) && isValidUserUpdate(uid);
+      allow delete: if isOwner(uid);
+    }
+
+    // Multi-tenant Shops collection
+    match /shops/{shopId} {
+      allow get: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      allow list: if isAuthenticated() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isAuthenticated() && isValidShopCreate(shopId);
+      allow update: if (isShopOwner(shopId) || isResourceShopOwner()) && isValidShopUpdate(shopId);
+      allow delete: if isShopOwner(shopId) || isResourceShopOwner();
+
+      // Shop role-based membership documents (/shops/{shopId}/members/{memberUid})
+      match /members/{memberUid} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId) || isOwner(memberUid);
+        allow create: if isAuthenticated() &&
+          isValidMemberCreate(shopId, memberUid) &&
+          (
+            isShopOwner(shopId) ||
+            isShopOwnerDoc(shopId) ||
+            (request.auth.uid == memberUid && isShopOwnerDocAfter(shopId))
+          );
+        allow update: if isAuthenticated() &&
+          (isShopOwner(shopId) || isShopOwnerDoc(shopId)) &&
+          isValidMemberUpdate(shopId, memberUid);
+        allow delete: if isAuthenticated() &&
+          (isShopOwner(shopId) || isShopOwnerDoc(shopId));
+      }
+
+      // v1 Room-synced inventory items
+      match /items/{itemId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidItemCreate(shopId, itemId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidItemUpdate(shopId, itemId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v1 Room-synced item variants
+      match /variants/{variantId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidVariantCreate(shopId, variantId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidVariantUpdate(shopId, variantId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v1 Room-synced sale records
+      match /sales/{saleId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidSaleCreate(shopId, saleId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidSaleUpdate(shopId, saleId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v2 Multi-tenant catalog products
+      match /products/{productId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidProductCreate(shopId, productId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidProductUpdate(shopId, productId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v2 Multi-tenant SKUs
+      match /skus/{skuId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidSkuCreate(shopId, skuId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidSkuUpdate(shopId, skuId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v2 Multi-tenant customers & suppliers
+      match /parties/{partyId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidPartyCreate(shopId, partyId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidPartyUpdate(shopId, partyId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v2 Multi-tenant invoices
+      match /invoices/{invoiceId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidInvoiceCreate(shopId, invoiceId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidInvoiceUpdate(shopId, invoiceId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v2 Multi-tenant invoice line items
+      match /invoice_lines/{lineId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidInvoiceLineCreate(shopId, lineId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidInvoiceLineUpdate(shopId, lineId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v2 Multi-tenant party khata ledger
+      match /party_ledger/{entryId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidPartyLedgerCreate(shopId, entryId);
+        allow update: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidPartyLedgerUpdate(shopId, entryId);
+        allow delete: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+      }
+
+      // v2 Immutable append-only stock movement log
+      match /stock_movements/{movementId} {
+        allow read: if isShopMember(shopId) || isShopOwnerDoc(shopId);
+        allow create: if (isShopMember(shopId) || isShopOwnerDoc(shopId)) && isValidStockMovementCreate(shopId, movementId);
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -9,16 +9,21 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.shopledger.pos.core.auth.GoogleAuthManager
+import com.shopledger.pos.core.cipher.CipherMode
+import com.shopledger.pos.core.cipher.CostCipherEngine
+import com.shopledger.pos.core.nlp.ShopVertical
+import com.shopledger.pos.core.nlp.TradeTaxonomyRegistry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 data class CloudSyncConfig(
     val firebaseProjectId: String,
     val firebaseApiKey: String,
     val webClientId: String = "",
-    val shopCollectionId: String = "lps_hardware",
+    val shopCollectionId: String = "default_shop",
     val sellerWhatsAppNumber: String = "",
     val lastSyncedEpochMs: Long = 0L
 ) {
@@ -27,14 +32,24 @@ data class CloudSyncConfig(
 }
 
 object SyncManager {
-    private const val PREFS_NAME = "lps_hardware_sync_prefs"
+    private const val LEGACY_PREFS_NAME = "lps_hardware_sync_prefs"
+    private const val PREFS_NAME = "shopledger_sync_prefs"
     private const val KEY_SHOP_ID = "shop_collection_id"
     private const val KEY_SELLER_NAME = "seller_name"
     private const val KEY_SELLER_WHATSAPP = "seller_whatsapp_number"
     private const val KEY_LAST_SYNC = "last_synced_epoch_ms"
-    private const val WORK_NAME = "lps_firestore_delta_sync"
+    private const val KEY_VERTICAL = "shop_vertical"
+    private const val KEY_CIPHER_MODE = "cipher_mode"
+    private const val KEY_CIPHER_WORD_10 = "cipher_word_10"
+    private const val KEY_OWNER_PIN_HASH = "owner_pin_hash"
+    private const val KEY_UPI_ID = "upi_id"
+    private const val KEY_GSTIN = "gstin"
+    private const val KEY_GST_ENABLED = "gst_enabled"
+    private const val KEY_DEVICE_SHORT_CODE = "device_short_code"
+    private const val KEY_SETUP_COMPLETED = "setup_completed"
+    private const val WORK_NAME = "shopledger_firestore_delta_sync"
 
-    // Built-in credentials from C:\GitHub\Inventory\app\google-services.json (package: com.shopledger.pos)
+    // Built-in Firebase web client config from google-services.json
     private const val BUILTIN_PROJECT_ID = "ubiverse-app"
     private const val BUILTIN_API_KEY = "AIzaSyB2eAYFX0LJ6irFyg4S4j-ULfHkAl3W_uY"
     private const val BUILTIN_WEB_CLIENT_ID = "94340852366-9jsh9b504m6ahf0s694umo5b4pc7k773.apps.googleusercontent.com"
@@ -45,25 +60,85 @@ object SyncManager {
     private val _lastSyncMessage = MutableStateFlow("Cloud Ready")
     val lastSyncMessage: StateFlow<String> = _lastSyncMessage.asStateFlow()
 
-    private val _sellerNameFlow = MutableStateFlow("LPS Hardware")
+    private val _sellerNameFlow = MutableStateFlow("ShopLedger POS")
     val sellerNameFlow: StateFlow<String> = _sellerNameFlow.asStateFlow()
 
     private val _sellerWhatsAppFlow = MutableStateFlow("")
     val sellerWhatsAppFlow: StateFlow<String> = _sellerWhatsAppFlow.asStateFlow()
 
-    private fun prefs(context: Context): SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val _shopVerticalFlow = MutableStateFlow(ShopVertical.HARDWARE)
+    val shopVerticalFlow: StateFlow<ShopVertical> = _shopVerticalFlow.asStateFlow()
+
+    private val _cipherModeFlow = MutableStateFlow(CipherMode.STROKE_GLYPHS)
+    val cipherModeFlow: StateFlow<CipherMode> = _cipherModeFlow.asStateFlow()
+
+    private val _cipherWord10Flow = MutableStateFlow(CostCipherEngine.DEFAULT_WORD_10)
+    val cipherWord10Flow: StateFlow<String> = _cipherWord10Flow.asStateFlow()
+
+    private val _ownerPinHashFlow = MutableStateFlow("")
+    val ownerPinHashFlow: StateFlow<String> = _ownerPinHashFlow.asStateFlow()
+
+    private val _upiIdFlow = MutableStateFlow("")
+    val upiIdFlow: StateFlow<String> = _upiIdFlow.asStateFlow()
+
+    private val _gstinFlow = MutableStateFlow("")
+    val gstinFlow: StateFlow<String> = _gstinFlow.asStateFlow()
+
+    private val _gstEnabledFlow = MutableStateFlow(false)
+    val gstEnabledFlow: StateFlow<Boolean> = _gstEnabledFlow.asStateFlow()
+
+    private val _deviceShortCodeFlow = MutableStateFlow("")
+    val deviceShortCodeFlow: StateFlow<String> = _deviceShortCodeFlow.asStateFlow()
+
+    private val _isSetupCompletedFlow = MutableStateFlow(true)
+    val isSetupCompletedFlow: StateFlow<Boolean> = _isSetupCompletedFlow.asStateFlow()
+
+    private fun prefs(context: Context): SharedPreferences {
+        val appContext = context.applicationContext
+        val p = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (!p.contains(KEY_SELLER_NAME)) {
+            val legacy = appContext.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+            if (legacy.all.isNotEmpty()) {
+                p.edit().apply {
+                    putString(KEY_SHOP_ID, legacy.getString(KEY_SHOP_ID, "default_shop"))
+                    putString(KEY_SELLER_NAME, legacy.getString(KEY_SELLER_NAME, "ShopLedger POS"))
+                    putString(KEY_SELLER_WHATSAPP, legacy.getString(KEY_SELLER_WHATSAPP, ""))
+                    putLong(KEY_LAST_SYNC, legacy.getLong(KEY_LAST_SYNC, 0L))
+                }.apply()
+            }
+        }
+        return p
+    }
 
     fun init(context: Context) {
+        val p = prefs(context)
         _sellerNameFlow.value = getSellerName(context)
         _sellerWhatsAppFlow.value = getSellerWhatsAppNumber(context)
+
+        val vertical = ShopVertical.fromNameOrDefault(p.getString(KEY_VERTICAL, ShopVertical.HARDWARE.name))
+        _shopVerticalFlow.value = vertical
+        TradeTaxonomyRegistry.setActiveVertical(vertical)
+
+        val cipherModeName = p.getString(KEY_CIPHER_MODE, CipherMode.STROKE_GLYPHS.name)
+        val cipherMode = CipherMode.entries.firstOrNull { it.name == cipherModeName } ?: CipherMode.STROKE_GLYPHS
+        val word10 = CostCipherEngine.normalizedWord10(p.getString(KEY_CIPHER_WORD_10, CostCipherEngine.DEFAULT_WORD_10).orEmpty())
+        _cipherModeFlow.value = cipherMode
+        _cipherWord10Flow.value = word10
+        CostCipherEngine.setActiveConfig(cipherMode, word10)
+
+        _ownerPinHashFlow.value = p.getString(KEY_OWNER_PIN_HASH, "").orEmpty()
+        _upiIdFlow.value = p.getString(KEY_UPI_ID, "").orEmpty()
+        _gstinFlow.value = p.getString(KEY_GSTIN, "").orEmpty()
+        _gstEnabledFlow.value = p.getBoolean(KEY_GST_ENABLED, false)
+        _deviceShortCodeFlow.value = p.getString(KEY_DEVICE_SHORT_CODE, "").orEmpty()
+        _isSetupCompletedFlow.value = p.getBoolean(KEY_SETUP_COMPLETED, true)
     }
 
     fun getSellerName(context: Context): String =
-        prefs(context).getString(KEY_SELLER_NAME, "LPS Hardware")?.trim().orEmpty().ifBlank { "LPS Hardware" }
+        prefs(context).getString(KEY_SELLER_NAME, "ShopLedger POS")?.trim().orEmpty().ifBlank { "ShopLedger POS" }
 
     fun saveSellerName(context: Context, rawName: String) {
-        val cleaned = rawName.trim().ifBlank { "LPS Hardware" }
+        val cleaned = rawName.trim().ifBlank { "ShopLedger POS" }
         prefs(context).edit().putString(KEY_SELLER_NAME, cleaned).apply()
         _sellerNameFlow.value = cleaned
     }
@@ -77,11 +152,74 @@ object SyncManager {
         _sellerWhatsAppFlow.value = cleaned
     }
 
+    fun saveShopVertical(context: Context, vertical: ShopVertical) {
+        prefs(context).edit().putString(KEY_VERTICAL, vertical.name).apply()
+        _shopVerticalFlow.value = vertical
+        TradeTaxonomyRegistry.setActiveVertical(vertical)
+    }
+
+    fun getActiveVertical(): ShopVertical = _shopVerticalFlow.value
+
+    fun saveCipherConfig(context: Context, mode: CipherMode, word10: String = _cipherWord10Flow.value) {
+        val normalizedWord = CostCipherEngine.normalizedWord10(word10)
+        prefs(context).edit()
+            .putString(KEY_CIPHER_MODE, mode.name)
+            .putString(KEY_CIPHER_WORD_10, normalizedWord)
+            .apply()
+        _cipherModeFlow.value = mode
+        _cipherWord10Flow.value = normalizedWord
+        CostCipherEngine.setActiveConfig(mode, normalizedWord)
+    }
+
+    fun saveOwnerPin(context: Context, rawPin: String) {
+        val hash = if (rawPin.isBlank()) "" else CostCipherEngine.hashPin(rawPin)
+        prefs(context).edit().putString(KEY_OWNER_PIN_HASH, hash).apply()
+        _ownerPinHashFlow.value = hash
+    }
+
+    fun verifyOwnerPin(candidatePin: String): Boolean {
+        return CostCipherEngine.verifyPin(candidatePin, _ownerPinHashFlow.value)
+    }
+
+    fun hasOwnerPin(): Boolean = _ownerPinHashFlow.value.isNotBlank()
+
+    fun saveUpiId(context: Context, upiId: String) {
+        val cleaned = upiId.trim()
+        prefs(context).edit().putString(KEY_UPI_ID, cleaned).apply()
+        _upiIdFlow.value = cleaned
+    }
+
+    fun getUpiId(context: Context): String =
+        prefs(context).getString(KEY_UPI_ID, "")?.trim().orEmpty()
+
+    fun saveGstin(context: Context, gstin: String) {
+        val cleaned = gstin.trim().uppercase(Locale.ROOT)
+        prefs(context).edit().putString(KEY_GSTIN, cleaned).apply()
+        _gstinFlow.value = cleaned
+    }
+
+    fun getGstin(context: Context): String =
+        prefs(context).getString(KEY_GSTIN, "")?.trim().orEmpty()
+
+    fun saveGstEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_GST_ENABLED, enabled).apply()
+        _gstEnabledFlow.value = enabled
+    }
+
+    fun saveDeviceShortCode(context: Context, code: String) {
+        val cleaned = code.trim().uppercase(Locale.ROOT).take(4)
+        prefs(context).edit().putString(KEY_DEVICE_SHORT_CODE, cleaned).apply()
+        _deviceShortCodeFlow.value = cleaned
+    }
+
+    fun getDeviceShortCode(context: Context): String =
+        prefs(context).getString(KEY_DEVICE_SHORT_CODE, "")?.trim().orEmpty()
+
     fun getConfig(context: Context): CloudSyncConfig {
         val p = prefs(context)
         val signedInUser = GoogleAuthManager.currentUser.value
         val activeShopNamespace = signedInUser?.cloudAccountDocumentId
-            ?: p.getString(KEY_SHOP_ID, "lps_hardware")?.trim().orEmpty().ifEmpty { "lps_hardware" }
+            ?: p.getString(KEY_SHOP_ID, "default_shop")?.trim().orEmpty().ifEmpty { "default_shop" }
 
         return CloudSyncConfig(
             firebaseProjectId = BUILTIN_PROJECT_ID,
