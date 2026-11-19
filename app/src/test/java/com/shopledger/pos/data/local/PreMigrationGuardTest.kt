@@ -68,7 +68,7 @@ class PreMigrationGuardTest {
         val file = context.getDatabasePath(name)
         file.parentFile?.mkdirs()
         val garbage = ByteArray(4096).also { java.util.Random(7).nextBytes(it) }
-        // user_version (offset 60) = 0 so the cheap header check cannot short-circuit to NotNeeded.
+        // user_version (offset 60) = 0 (the random magic is rejected regardless; kept for clarity).
         for (i in 60..63) garbage[i] = 0
         file.writeBytes(garbage)
 
@@ -122,5 +122,35 @@ class PreMigrationGuardTest {
         assertTrue("fresh mtime", again.lastModified() > 1_000L)
         assertEquals(context.getDatabasePath(name).length(), again.length())
         assertFalse(java.io.File(copy.path + ".tmp").exists())
+    }
+
+    @Test
+    fun repeatedPrepareOnCorruptFile_reusesOneEvidenceCopy() {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val garbage = ByteArray(4096).also { java.util.Random(11).nextBytes(it) }
+        file.writeBytes(garbage)
+        repeat(3) { PreMigrationGuard.prepare(context, name, 3) }
+        val copies = file.parentFile!!.listFiles { f -> f.name.startsWith("guard-test.corrupt-") && f.name.endsWith(".db") }!!
+        assertEquals(1, copies.size)
+        assertTrue(garbage.contentEquals(file.readBytes()))
+    }
+
+    @Test
+    fun nonSqliteMagicWithHighUserVersion_isCorruptNotNeeded() {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val bytes = ByteArray(4096) { 1 }
+        bytes[63] = 5 // bytes 60..63 encode user_version 5 (>= 3)
+        file.writeBytes(bytes)
+        val outcome = PreMigrationGuard.prepare(context, name, 3)
+        assertTrue(outcome.toString(), outcome is PreMigrationGuard.Outcome.Corrupt || outcome is PreMigrationGuard.Outcome.Failed)
+        val evidence = when (outcome) {
+            is PreMigrationGuard.Outcome.Failed -> outcome.evidenceCopy
+            is PreMigrationGuard.Outcome.Corrupt -> outcome.evidenceCopy
+            else -> null
+        }
+        assertTrue(evidence != null && evidence.exists())
+        assertTrue(bytes.contentEquals(file.readBytes()))
     }
 }

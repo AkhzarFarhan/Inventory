@@ -274,6 +274,8 @@ class Migration2To3Test {
             }
         } catch (t: Throwable) {
             threw = true
+            val chain = generateSequence(t) { it.cause }.mapNotNull { it.message }.joinToString(" | ")
+            assertTrue("expected injected POST_MIGRATE fault, got: $chain", chain.contains("injected"))
         }
         assertTrue("migration must throw", threw)
         val file = InstrumentationRegistry.getInstrumentation().targetContext.getDatabasePath(name)
