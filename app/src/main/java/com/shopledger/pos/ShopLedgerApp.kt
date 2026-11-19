@@ -45,6 +45,9 @@ class ShopLedgerApp : Application() {
         if (PendingRestore.takeDiscardedNotice()) {
             AppErrorManager.reportWarning("Restore cancelled", "An unfinished restore was discarded. Your data was not changed.")
         }
+        if (PendingRestore.takeRollbackResumedNotice()) {
+            AppErrorManager.reportWarning("Restore cancelled", "An interrupted restore was undone. Your previous data was put back.")
+        }
         if (restoring) {
             // Always resolve a pending restore first: any failure caused by the restored file (open, migration,
             // health flagged by the guard or the corruption handler) rolls back to the original data.

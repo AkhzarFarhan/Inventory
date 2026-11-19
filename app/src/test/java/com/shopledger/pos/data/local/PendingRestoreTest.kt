@@ -439,6 +439,8 @@ class PendingRestoreTest {
         }
         assertTrue(preBytes.contentEquals(file(".pre-restore").readBytes()))
         assertTrue(walBytes.contentEquals(file(".pre-restore-wal").readBytes()))
+        val leftovers = live.parentFile!!.listFiles { f -> f.name.startsWith("pending-test.db.pre-restore-support.tmp") }!!
+        assertTrue(leftovers.joinToString { it.name }, leftovers.isEmpty())
     }
 
     @Test
@@ -448,5 +450,222 @@ class PendingRestoreTest {
         apply()
 
         assertEquals(file(".pre-restore").name, PreMigrationGuard.latestSafetyCopy(context)?.name)
+    }
+
+    /** Writes a WAL-mode database whose only row lives in the WAL into [main] and [wal] (both copies of the open pair). */
+    private fun writeWalPair(main: File, wal: File) {
+        live.parentFile?.mkdirs()
+        val scratch = File(live.parentFile, "pending-test-scratch2.db")
+        val sqlite = android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(scratch, null)
+        try {
+            sqlite.enableWriteAheadLogging()
+            sqlite.rawQuery("PRAGMA wal_autocheckpoint=0", null).use { it.moveToFirst() }
+            sqlite.execSQL("CREATE TABLE t (v TEXT)")
+            sqlite.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+            sqlite.execSQL("INSERT INTO t VALUES ('only-in-wal')")
+            scratch.copyTo(main)
+            File(scratch.path + "-wal").copyTo(wal)
+        } finally {
+            sqlite.close()
+        }
+    }
+
+    private fun assertFoldedHasWalRow(copy: File) {
+        assertFalse(File(copy.path + "-wal").exists())
+        val folded = android.database.sqlite.SQLiteDatabase.openDatabase(
+            copy.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+        )
+        try {
+            folded.rawQuery("SELECT v FROM t", null).use {
+                assertTrue(it.moveToFirst())
+                assertEquals("only-in-wal", it.getString(0))
+            }
+        } finally {
+            folded.close()
+        }
+    }
+
+    /** Kill inside rollBack after the original main moved back but before its WAL did. */
+    private fun simulateKillInsideRollBackBetweenMainAndWal() {
+        writeOriginal()
+        file(".restore-pending").writeText("rolling-back")
+        file(".pre-restore-wal").writeText("original-wal")
+        file(".pre-restore-shm").writeText("original-shm")
+        file("-wal").delete()
+        file("-shm").delete()
+        assertEquals("original", live.readText())
+    }
+
+    @Test
+    fun killInsideRollBackBetweenTheMainAndWalMoves_isResumedOnNextStart_andNeverReportedAsRestored() {
+        simulateKillInsideRollBackBetweenMainAndWal()
+
+        // Nothing may open Room (and so nothing may report a restore) while the rollback is unfinished.
+        val before = PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+        assertTrue(before is PendingRestore.Outcome.NeedsSupport)
+        assertTrue(file(".restore-pending").exists())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        DatabaseHealth.reset()
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertEquals("original-shm", file("-shm").readText())
+        assertFalse(file(".pre-restore").exists())
+        assertFalse(file(".pre-restore-wal").exists())
+        assertFalse(file(".pre-restore-shm").exists())
+        assertFalse(file(".restore-pending").exists())
+        assertTrue(PendingRestore.takeRollbackResumedNotice())
+        val after = PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+        assertEquals(PendingRestore.Outcome.NotPending, after)
+    }
+
+    @Test
+    fun killInsideRollBackBeforeAnyMove_replacesTheRestoredFileAndItsSidecarsWithTheOriginalSet() {
+        writeOriginal()
+        stage("restored")
+        assertTrue(apply())
+        file("-wal").writeText("restored-wal")
+        file("-shm").writeText("restored-shm")
+        file(".restore-pending").writeText("rolling-back")
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertEquals("original-shm", file("-shm").readText())
+        assertFalse(file(".pre-restore").exists())
+        assertFalse(file(".restore-pending").exists())
+    }
+
+    @Test
+    fun killInsideRollBackAfterAllMovesButBeforeTheMarkerDelete_justClearsTheMarker() {
+        writeOriginal()
+        file(".restore-pending").writeText("rolling-back")
+
+        val before = PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+        assertTrue(before is PendingRestore.Outcome.NeedsSupport)
+        DatabaseHealth.reset()
+
+        assertFalse(apply())
+
+        assertFalse(file(".restore-pending").exists())
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertEquals("original-shm", file("-shm").readText())
+        val after = PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+        assertTrue(after !is PendingRestore.Outcome.Restored)
+        assertEquals(PendingRestore.Outcome.NotPending, after)
+    }
+
+    @Test
+    fun aRollingBackMarkerThatCannotBeResumed_keepsEverythingAndTheMarker() {
+        simulateKillInsideRollBackBetweenMainAndWal()
+        // A non-empty directory where the WAL must go makes the move fail even through the copy fallback.
+        file("-wal").mkdirs()
+        File(file("-wal"), "x").writeText("x")
+
+        assertFalse(apply())
+
+        assertEquals("rolling-back", file(".restore-pending").readText())
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        file("-wal").deleteRecursively()
+    }
+
+    @Test
+    fun emptyMarkerInApplyStaged_withNothingMoved_behavesLikeSwapping() {
+        writeOriginal()
+        stage("restored")
+        file(".restore-pending").writeText("")
+
+        assertTrue(apply())
+
+        assertEquals("restored", live.readText())
+        assertEquals("original", file(".pre-restore").readText())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        assertEquals("pending", file(".restore-pending").readText())
+    }
+
+    @Test
+    fun emptyMarkerInApplyStaged_withStagedAlreadyInPlace_behavesLikeSwapping() {
+        writeOriginal()
+        file(".restore-pending").writeText("")
+        file(".pre-restore").writeText("original")
+        live.writeText("restored")
+        file("-wal").delete()
+        file("-shm").delete()
+
+        apply()
+
+        assertEquals("pending", file(".restore-pending").readText())
+        assertEquals("restored", live.readText())
+        assertEquals("original", file(".pre-restore").readText())
+    }
+
+    @Test
+    fun supportCopy_whenOnlyTheMainMovedAside_foldsTheOriginalLiveWal() {
+        live.parentFile?.mkdirs()
+        writeWalPair(file(".pre-restore"), file("-wal")) // main moved to .pre-restore, its WAL still live
+        file(".restore-pending").writeText("swapping")
+        assertFalse(live.exists())
+        val preBytes = file(".pre-restore").readBytes()
+        val walBytes = file("-wal").readBytes()
+
+        val copy = PendingRestore.supportCopy(context, dbName)!!
+
+        assertFoldedHasWalRow(copy)
+        assertTrue(preBytes.contentEquals(file(".pre-restore").readBytes()))
+        assertTrue(walBytes.contentEquals(file("-wal").readBytes()))
+    }
+
+    @Test
+    fun supportCopy_whenRollbackMovedOnlyTheMainBack_foldsTheLiveMainWithPreRestoreWal() {
+        live.parentFile?.mkdirs()
+        writeWalPair(live, file(".pre-restore-wal")) // original main already live again, its WAL still aside
+        file(".restore-pending").writeText("rolling-back")
+
+        val copy = PendingRestore.supportCopy(context, dbName)!!
+
+        assertTrue(copy.name != live.name)
+        assertFoldedHasWalRow(copy)
+        assertTrue(live.exists())
+        assertTrue(file(".pre-restore-wal").exists())
+    }
+
+    @Test
+    fun cleanup_removesOldLeftoverTemps_butNeverTheLiveFileStagedFileMarkerTokenOrEvidence() {
+        writeOriginal()
+        val old = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
+        val temps = listOf(".tmp", "-wal.tmp", ".restore-staged.go.tmp", ".restore-pending.tmp")
+            .map { file(it).apply { writeText("x"); setLastModified(old) } }
+        val keep = listOf(".restore-staged", ".restore-staged.go", ".restore-staged.tmp")
+            .map { file(it).apply { writeText("x"); setLastModified(old) } }
+        val evidence = File(live.parentFile, "pending-test.corrupt-1.db").apply { writeText("x"); setLastModified(old) }
+        live.setLastModified(old)
+
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
+
+        temps.forEach { assertFalse(it.name, it.exists()) }
+        keep.forEach { assertTrue(it.name, it.exists()) }
+        assertTrue(live.exists())
+        assertTrue(file("-wal").exists())
+        assertTrue(evidence.exists())
+    }
+
+    @Test
+    fun cleanup_keepsFreshLeftoverTemps_andKeepsThemWhileTheLiveDbIsMissing() {
+        live.parentFile?.mkdirs()
+        val old = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
+        val tmp = file(".tmp").apply { writeText("only complete copy"); setLastModified(old) }
+
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
+
+        assertTrue(tmp.exists())
+        writeOriginal()
+        val fresh = file("-wal.tmp").apply { writeText("x") }
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
+        assertTrue(fresh.exists())
     }
 }

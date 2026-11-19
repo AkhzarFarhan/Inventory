@@ -54,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -141,8 +142,9 @@ private suspend fun stageRestore(app: ShopLedgerApp, stage: () -> Int): String? 
         } catch (e: BackupException) {
             runCatching { PendingRestore.discardStaged(app, dbName) }
             e.message ?: "The backup could not be read"
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             runCatching { PendingRestore.discardStaged(app, dbName) }
+            if (e is CancellationException) throw e
             if (staged) "The restore could not start. Please open the app again." else "The backup could not be read"
         }
     }

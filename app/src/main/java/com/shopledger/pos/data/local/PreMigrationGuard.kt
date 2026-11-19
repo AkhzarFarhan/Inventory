@@ -146,9 +146,23 @@ object PreMigrationGuard {
     }
 
     /** Only `.pre-v` safety copies and `.pre-restore` undo sets are removed; `.corrupt-` evidence copies and the live db are never touched. */
-    fun deleteSafetyCopiesOlderThan(context: Context, maxAgeMs: Long, now: Long = System.currentTimeMillis()) {
+    fun deleteSafetyCopiesOlderThan(
+        context: Context,
+        maxAgeMs: Long,
+        now: Long = System.currentTimeMillis(),
+        dbName: String = LpsDatabase.DB_NAME
+    ) {
+        // Leftover temp files of interrupted moves/marker writes (exact names only). `<db>.tmp` / `<db>-wal.tmp` can be the
+        // only complete copy after a failed move, so they are kept unless the live database exists and no restore is open.
+        val tempsSafeToDelete = context.getDatabasePath(dbName).exists() && !PendingRestore.isPending(context, dbName)
+        val leftoverTemps = setOf(
+            "$dbName.tmp", "$dbName-wal.tmp", "$dbName.restore-staged.go.tmp", "$dbName.restore-pending.tmp"
+        )
         databaseDir(context)?.listFiles { f ->
-            (f.name.contains(MARKER) || f.name.contains(PendingRestore.PRE_RESTORE_MARKER)) && !f.name.contains(CORRUPT_MARKER)
+            !f.name.contains(CORRUPT_MARKER) && (
+                f.name.contains(MARKER) || f.name.contains(PendingRestore.PRE_RESTORE_MARKER) ||
+                    (tempsSafeToDelete && f.name in leftoverTemps)
+                )
         }
             ?.filter { now - it.lastModified() > maxAgeMs }
             ?.forEach { it.delete() }

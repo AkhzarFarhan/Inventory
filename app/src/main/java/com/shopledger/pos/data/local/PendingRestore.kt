@@ -20,6 +20,7 @@ object PendingRestore {
     private const val MARKER = ".restore-pending"
     private const val STATE_SWAPPING = "swapping"
     private const val STATE_PENDING = "pending"
+    private const val STATE_ROLLING_BACK = "rolling-back"
     private val SUFFIXES = listOf("", "-wal", "-shm")
 
     /** A staged file is only applied if the user's restart happened within this long of staging. */
@@ -27,6 +28,7 @@ object PendingRestore {
     private const val CLOCK_SKEW_MS = 60 * 1000L
 
     private val discardedNotice = AtomicBoolean(false)
+    private val rollbackResumedNotice = AtomicBoolean(false)
 
     sealed interface Outcome {
         data object NotPending : Outcome
@@ -65,6 +67,9 @@ object PendingRestore {
     /** True once if an unfinished (token-less or expired) restore was discarded; the app reports it to the user. */
     fun takeDiscardedNotice(): Boolean = discardedNotice.getAndSet(false)
 
+    /** True once if [applyStaged] finished an interrupted rollback (the original data is back; this is never a restore). */
+    fun takeRollbackResumedNotice(): Boolean = rollbackResumedNotice.getAndSet(false)
+
     /**
      * Swaps a staged backup in. Returns true if it did. On any failure the original files are put back, the staged file
      * is left for a later attempt and false is returned; the live data is never lost.
@@ -80,6 +85,22 @@ object PendingRestore {
         val marker = File(live.path + MARKER)
         val preMain = File(live.path + PRE_RESTORE)
 
+        // An empty/unreadable marker is read as `swapping`, exactly like finishOrRollback does.
+        val state = if (marker.exists()) markerState(marker) else null
+
+        // 0. An interrupted rollback is resumed first: the original's files go back over the live names, then the
+        // marker goes. Nothing else happens in this launch, and it is never reported as a restore.
+        if (state == STATE_ROLLING_BACK) {
+            return try {
+                completeRollback(live)
+                marker.delete()
+                rollbackResumedNotice.set(true)
+                false
+            } catch (t: Throwable) {
+                false // everything stays exactly where it is, marker included
+            }
+        }
+
         // 1. Finish or undo an earlier interrupted swap before anything else.
         if (!live.exists() && preMain.exists()) {
             // The original was moved aside and the swap never completed: put it back (this also drops the marker).
@@ -89,8 +110,7 @@ object PendingRestore {
             } catch (t: Throwable) {
                 return false // both sets stay exactly where they are
             }
-        } else if (marker.exists()) {
-            val state = runCatching { marker.readText().trim() }.getOrDefault("")
+        } else if (state != null) {
             if (state != STATE_SWAPPING) return false // unconfirmed restore: .pre-restore is the only original copy
             if (live.exists() && !staged.exists() && preMain.exists()) {
                 // The staged file did get into place; only the marker update was missed.
@@ -168,7 +188,8 @@ object PendingRestore {
         val marker = File(live.path + MARKER)
         if (!marker.exists()) return Outcome.NotPending
         // Never open Room over a missing original or an unfinished swap: Room would create an empty database next to
-        // the only copy of the books. An empty/unreadable marker counts as `swapping`.
+        // the only copy of the books. Any marker state other than `pending` (swapping, rolling-back, empty or
+        // unreadable) means files may be half-moved.
         if (!live.exists() || markerState(marker) != STATE_PENDING) {
             val reason = if (!live.exists()) {
                 "The data file is missing while a restore is unfinished. Nothing was deleted."
@@ -237,9 +258,10 @@ object PendingRestore {
             return false
         }
         return try {
-            // The restored sidecars belong to the restored file; they must not be paired with the original.
-            listOf("-wal", "-shm", "-journal").forEach { deleteIfExists(File(live.path + it)) }
-            restoreFromPre(live)
+            // Durable intent first: from here on a kill leaves `rolling-back`, which the next start resumes. Without it
+            // a kill after the main file moved back would look like a healthy `pending` restore with the WAL stranded.
+            writeDurably(marker, STATE_ROLLING_BACK)
+            completeRollback(live)
             marker.delete()
             DatabaseHealth.reset()
             true
@@ -252,6 +274,18 @@ object PendingRestore {
             )
             false
         }
+    }
+
+    /**
+     * Does (or finishes) a rollback. While `.pre-restore` still exists the main file has not moved back yet, so every
+     * live sidecar belongs to the restored file and is removed first; once it is gone the live sidecars are the
+     * original's own and are never deleted.
+     */
+    private fun completeRollback(live: File) {
+        if (File(live.path + PRE_RESTORE).exists()) {
+            listOf("-wal", "-shm", "-journal").forEach { deleteIfExists(File(live.path + it)) }
+        }
+        restoreFromPre(live)
     }
 
     /** Moves the `.pre-restore` set over the live names, main file first. Throws, leaving the sources, on failure. */
@@ -267,15 +301,36 @@ object PendingRestore {
         }
     }
 
-    /** `swapping` unless the marker is readable and says `pending`; an empty or unreadable marker is the safe reading. */
+    /** `pending` or `rolling-back` only when the marker says so; an empty, unreadable or unknown marker is the safe reading `swapping`. */
     private fun markerState(marker: File): String =
-        if (runCatching { marker.readText().trim() }.getOrDefault("") == STATE_PENDING) STATE_PENDING else STATE_SWAPPING
+        when (runCatching { marker.readText().trim() }.getOrDefault("")) {
+            STATE_PENDING -> STATE_PENDING
+            STATE_ROLLING_BACK -> STATE_ROLLING_BACK
+            else -> STATE_SWAPPING
+        }
 
     /** Best copy of the original data to offer to support: the folded `.pre-restore` set, else the latest safety copy, else the live file. */
     fun supportCopy(context: Context, dbName: String): File? {
         val live = context.getDatabasePath(dbName)
         val pre = File(live.path + PRE_RESTORE)
-        if (pre.exists()) return preRestoreSupportCopy(pre)
+        val preWal = File(pre.path + "-wal")
+        val liveWal = File(live.path + "-wal")
+        val marker = File(live.path + MARKER)
+        if (pre.exists()) {
+            // A move may be half-done. The WAL that belongs to the original main is `.pre-restore-wal` or, when the
+            // main moved aside first and the WAL did not follow, the live `-wal` (only while no live main exists, so it
+            // cannot be the restored file's). The restored file's own WAL is never used.
+            val wal = when {
+                preWal.exists() -> preWal
+                !live.exists() && liveWal.exists() -> liveWal
+                else -> null
+            }
+            return foldedSupportCopy(pre, wal, pre)
+        }
+        // Rollback got as far as moving the original main back but not its WAL: fold live main + `.pre-restore-wal`.
+        if (marker.exists() && markerState(marker) == STATE_ROLLING_BACK && live.exists() && preWal.exists()) {
+            return foldedSupportCopy(live, preWal, pre)
+        }
         return PreMigrationGuard.latestSafetyCopy(context) ?: live.takeIf { it.exists() }
     }
 
@@ -284,14 +339,21 @@ object PendingRestore {
      * WAL into the copy and returns `<pre>-support.db`. The `.pre-restore` set itself is never modified. If anything
      * fails the main `.pre-restore` file is returned instead.
      */
-    fun preRestoreSupportCopy(preMain: File): File {
-        val preWal = File(preMain.path + "-wal")
-        if (!preWal.exists() || preWal.length() == 0L) return preMain
-        val finalCopy = File(preMain.path + "-support.db")
-        val tmp = File(preMain.path + "-support.tmp")
+    fun preRestoreSupportCopy(preMain: File): File = foldedSupportCopy(preMain, File(preMain.path + "-wal"), preMain)
+
+    /**
+     * Folds [preMain] + [preWal] into `<namePrefix>-support.db` (a name the 14-day cleanup removes). The inputs are only
+     * read. Returns [preMain] when there is no WAL to fold or anything fails (limitation: that file then lacks the
+     * WAL's recent changes).
+     */
+    private fun foldedSupportCopy(preMain: File, preWal: File?, namePrefix: File): File {
+        if (preWal == null || !preWal.exists() || preWal.length() == 0L) return preMain
+        val finalCopy = File(namePrefix.path + "-support.db")
+        val tmp = File(namePrefix.path + "-support.tmp")
         val tmpWal = File(tmp.path + "-wal")
         val tmpShm = File(tmp.path + "-shm")
-        fun clean() = listOf(tmp, tmpWal, tmpShm).forEach { runCatching { it.delete() } }
+        val tmpJournal = File(tmp.path + "-journal")
+        fun clean() = listOf(tmp, tmpWal, tmpShm, tmpJournal).forEach { runCatching { it.delete() } }
         return try {
             clean()
             copyFile(preMain, tmp)
