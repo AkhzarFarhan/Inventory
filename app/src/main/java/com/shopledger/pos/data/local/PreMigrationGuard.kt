@@ -142,6 +142,7 @@ object PreMigrationGuard {
         val dir = databaseDir(context) ?: return null
         return dir.listFiles { f -> f.name.contains(MARKER) && f.name.endsWith(".db") }?.maxByOrNull { it.lastModified() }
             ?: dir.listFiles { f -> f.isFile && f.name.endsWith(PendingRestore.PRE_RESTORE_MARKER) }?.maxByOrNull { it.lastModified() }
+                ?.let { PendingRestore.preRestoreSupportCopy(it) }
     }
 
     /** Only `.pre-v` safety copies and `.pre-restore` undo sets are removed; `.corrupt-` evidence copies and the live db are never touched. */

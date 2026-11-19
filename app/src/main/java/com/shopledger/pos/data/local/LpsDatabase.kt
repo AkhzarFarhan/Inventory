@@ -363,7 +363,7 @@ abstract class LpsDatabase : RoomDatabase() {
             runCatching { PendingRestore.applyStaged(appContext, DB_NAME) }
             val legacyDbFile = appContext.getDatabasePath(LEGACY_DB_NAME)
             val targetDbFile = appContext.getDatabasePath(DB_NAME)
-            if (legacyDbFile.exists() && !targetDbFile.exists()) {
+            if (legacyDbFile.exists() && !targetDbFile.exists() && !PendingRestore.isPending(appContext, DB_NAME)) {
                 runCatching {
                     targetDbFile.parentFile?.mkdirs()
                     legacyDbFile.copyTo(targetDbFile, overwrite = false)

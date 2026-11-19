@@ -127,8 +127,10 @@ class MainActivity : ComponentActivity() {
 private suspend fun stageRestore(app: ShopLedgerApp, stage: () -> Int): String? =
     withContext(NonCancellable + Dispatchers.IO) {
         val dbName = LpsDatabase.DB_NAME
+        var staged = false
         try {
             stage()
+            staged = true
             PendingRestore.armStaged(app, dbName)
             if (!AppRestarter.restart(app)) {
                 PendingRestore.discardStaged(app, dbName)
@@ -141,7 +143,7 @@ private suspend fun stageRestore(app: ShopLedgerApp, stage: () -> Int): String? 
             e.message ?: "The backup could not be read"
         } catch (e: Exception) {
             runCatching { PendingRestore.discardStaged(app, dbName) }
-            "The backup could not be read"
+            if (staged) "The restore could not start. Please open the app again." else "The backup could not be read"
         }
     }
 

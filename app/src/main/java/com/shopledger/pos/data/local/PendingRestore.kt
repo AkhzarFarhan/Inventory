@@ -34,6 +34,12 @@ object PendingRestore {
 
         /** [originalBack] is false only when putting the previous files back failed; then health is Failed. */
         data class RolledBack(val reason: String, val originalBack: Boolean = true) : Outcome
+
+        /**
+         * The restore state is ambiguous (live database missing, or the swap marker still says `swapping`). Room was NOT
+         * opened, nothing was deleted or moved, the marker stays and [DatabaseHealth] is Failed with the best copy for support.
+         */
+        data class NeedsSupport(val reason: String) : Outcome
     }
 
     /** True while a swapped-in backup has not yet been confirmed by [finishOrRollback]. */
@@ -161,6 +167,17 @@ object PendingRestore {
         val live = context.getDatabasePath(dbName)
         val marker = File(live.path + MARKER)
         if (!marker.exists()) return Outcome.NotPending
+        // Never open Room over a missing original or an unfinished swap: Room would create an empty database next to
+        // the only copy of the books. An empty/unreadable marker counts as `swapping`.
+        if (!live.exists() || markerState(marker) != STATE_PENDING) {
+            val reason = if (!live.exists()) {
+                "The data file is missing while a restore is unfinished. Nothing was deleted."
+            } else {
+                "A restore was interrupted part-way. Nothing was deleted."
+            }
+            DatabaseHealth.markFailed(reason, supportCopy(context, dbName))
+            return Outcome.NeedsSupport(reason)
+        }
         return try {
             val database = open()
             failIfUnhealthy()
@@ -183,6 +200,7 @@ object PendingRestore {
                 sqlite.endTransaction()
             }
             val violations = IntegrityChecker.findViolations(sqlite)
+            failIfUnhealthy()
             marker.delete()
             Outcome.Restored(violations)
         } catch (t: Throwable) {
@@ -230,7 +248,7 @@ object PendingRestore {
             DatabaseHealth.markFailed(
                 "Your previous data could not be put back (${t.message ?: t.javaClass.simpleName}). " +
                     "It was kept safely; please send the data file to support.",
-                preMain.takeIf { it.exists() } ?: live.takeIf { it.exists() }
+                if (preMain.exists()) preRestoreSupportCopy(preMain) else live.takeIf { it.exists() }
             )
             false
         }
@@ -243,41 +261,110 @@ object PendingRestore {
         listOf("-wal", "-shm").forEach { suffix ->
             val pre = File(live.path + PRE_RESTORE + suffix)
             val target = File(live.path + suffix)
-            if (pre.exists()) moveReplacing(pre, target) else deleteIfExists(target)
+            // A sidecar with no `.pre-restore` counterpart is left alone: after an interrupted swap it is the
+            // original's own WAL. (rollBack has already removed the restored file's sidecars.)
+            if (pre.exists()) moveReplacing(pre, target)
+        }
+    }
+
+    /** `swapping` unless the marker is readable and says `pending`; an empty or unreadable marker is the safe reading. */
+    private fun markerState(marker: File): String =
+        if (runCatching { marker.readText().trim() }.getOrDefault("") == STATE_PENDING) STATE_PENDING else STATE_SWAPPING
+
+    /** Best copy of the original data to offer to support: the folded `.pre-restore` set, else the latest safety copy, else the live file. */
+    fun supportCopy(context: Context, dbName: String): File? {
+        val live = context.getDatabasePath(dbName)
+        val pre = File(live.path + PRE_RESTORE)
+        if (pre.exists()) return preRestoreSupportCopy(pre)
+        return PreMigrationGuard.latestSafetyCopy(context) ?: live.takeIf { it.exists() }
+    }
+
+    /**
+     * A single self-contained file for support: copies `.pre-restore` and its `-wal` (if any) to a temp pair, folds the
+     * WAL into the copy and returns `<pre>-support.db`. The `.pre-restore` set itself is never modified. If anything
+     * fails the main `.pre-restore` file is returned instead.
+     */
+    fun preRestoreSupportCopy(preMain: File): File {
+        val preWal = File(preMain.path + "-wal")
+        if (!preWal.exists() || preWal.length() == 0L) return preMain
+        val finalCopy = File(preMain.path + "-support.db")
+        val tmp = File(preMain.path + "-support.tmp")
+        val tmpWal = File(tmp.path + "-wal")
+        val tmpShm = File(tmp.path + "-shm")
+        fun clean() = listOf(tmp, tmpWal, tmpShm).forEach { runCatching { it.delete() } }
+        return try {
+            clean()
+            copyFile(preMain, tmp)
+            copyFile(preWal, tmpWal)
+            val sqlite = android.database.sqlite.SQLiteDatabase.openDatabase(
+                tmp.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE, android.database.DatabaseErrorHandler { }
+            )
+            try {
+                sqlite.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use {
+                    check(it.moveToFirst() && it.getInt(0) == 0) { "WAL checkpoint did not complete" }
+                }
+            } finally {
+                runCatching { sqlite.close() }
+            }
+            tmpWal.delete()
+            tmpShm.delete()
+            check(tmp.length() > 0) { "Folded copy is empty" }
+            if (finalCopy.exists()) check(finalCopy.delete()) { "Could not replace the old support copy" }
+            check(tmp.renameTo(finalCopy)) { "Could not finalise the support copy" }
+            finalCopy
+        } catch (t: Throwable) {
+            clean()
+            preMain
+        }
+    }
+
+    private fun copyFile(source: File, target: File) {
+        FileInputStream(source).use { input ->
+            FileOutputStream(target).use { output ->
+                input.copyTo(output)
+                output.flush()
+                output.fd.sync()
+            }
         }
     }
 
     /**
      * Rename first (atomic, replaces the target on Android). Where that is refused, copy to a temp file next to the
-     * target, fsync, verify the size and only then replace the target; the source is deleted last.
+     * target, fsync, verify the size and only then replace the target; the source is deleted last. Once the target has
+     * been deleted the verified temp copy is never removed, even if the final rename fails: it is then the only
+     * complete copy and its path is reported in the exception.
      */
-    private fun moveReplacing(source: File, target: File) {
-        if (source.renameTo(target)) return
+    internal fun moveReplacing(source: File, target: File, rename: (File, File) -> Boolean = { a, b -> a.renameTo(b) }) {
+        if (rename(source, target)) return
         val tmp = File(target.path + ".tmp")
         tmp.delete()
+        var targetGone = false
         try {
-            FileInputStream(source).use { input ->
-                FileOutputStream(tmp).use { output ->
-                    input.copyTo(output)
-                    output.flush()
-                    output.fd.sync()
-                }
-            }
+            copyFile(source, tmp)
             check(tmp.length() == source.length()) { "Copy of ${source.name} is incomplete" }
-            if (target.exists()) check(target.delete()) { "Could not replace ${target.name}" }
-            check(tmp.renameTo(target)) { "Could not put ${target.name} in place" }
+            if (target.exists()) {
+                check(target.delete()) { "Could not replace ${target.name}" }
+                targetGone = true
+            }
+            check(rename(tmp, target)) { "Could not put ${target.name} in place; the complete copy was kept at ${tmp.path}" }
         } catch (t: Throwable) {
-            tmp.delete()
+            if (!targetGone) tmp.delete()
             throw t
         }
         source.delete()
     }
 
+    /** Temp file + fsync + rename, so the file is never truncated in place: it holds either the old or the new content. */
     private fun writeDurably(file: File, text: String) {
-        FileOutputStream(file).use { out ->
+        val tmp = File(file.path + ".tmp")
+        FileOutputStream(tmp).use { out ->
             out.write(text.toByteArray(Charsets.UTF_8))
             out.flush()
             out.fd.sync()
+        }
+        if (!tmp.renameTo(file)) {
+            // Platforms whose rename will not replace (never Android): fall back to delete + rename.
+            check(file.delete() && tmp.renameTo(file)) { "Could not write ${file.name}" }
         }
     }
 

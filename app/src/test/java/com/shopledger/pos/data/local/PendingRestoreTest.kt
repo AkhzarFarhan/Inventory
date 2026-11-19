@@ -297,6 +297,151 @@ class PendingRestoreTest {
     }
 
     @Test
+    fun killedAfterTheMainFileMovedAside_butBeforeTheWal_keepsTheOriginalWal_withoutAToken() {
+        writeOriginal()
+        file(".restore-pending").writeText("swapping")
+        assertTrue(live.renameTo(file(".pre-restore")))
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertEquals("original-shm", file("-shm").readText())
+        assertFalse(file(".pre-restore").exists())
+        assertFalse(file(".restore-pending").exists())
+    }
+
+    @Test
+    fun killedAfterTheMainFileMovedAside_butBeforeTheWal_keepsTheOriginalWal_withAValidStagedBackup() {
+        writeOriginal()
+        stage("restored")
+        file(".restore-pending").writeText("swapping")
+        assertTrue(live.renameTo(file(".pre-restore")))
+
+        assertTrue(apply())
+
+        assertEquals("restored", live.readText())
+        assertEquals("original", file(".pre-restore").readText())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        assertEquals("original-shm", file(".pre-restore-shm").readText())
+    }
+
+    private fun assertNeedsSupportWithoutOpening(markerText: String?) {
+        file(".pre-restore").writeText("original")
+        file(".pre-restore-wal").writeText("original-wal")
+        file(".restore-pending").writeText(markerText ?: "")
+        assertFalse(live.exists())
+
+        val outcome = PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+
+        assertTrue(outcome is PendingRestore.Outcome.NeedsSupport)
+        assertFalse(live.exists())
+        assertTrue(file(".restore-pending").exists())
+        assertEquals("original", file(".pre-restore").readText())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        val health = DatabaseHealth.state.value
+        assertTrue(health is DatabaseHealth.State.Failed)
+        assertTrue((health as DatabaseHealth.State.Failed).safetyCopy != null)
+    }
+
+    @Test
+    fun finishOrRollback_swappingMarkerWithLiveMissing_neverOpensAndNeedsSupport() = assertNeedsSupportWithoutOpening("swapping")
+
+    @Test
+    fun finishOrRollback_emptyMarkerWithLiveMissing_neverOpensAndNeedsSupport() = assertNeedsSupportWithoutOpening("")
+
+    @Test
+    fun finishOrRollback_swappingMarkerWithLivePresent_neverOpens() {
+        writeOriginal()
+        file(".restore-pending").writeText("swapping")
+
+        val outcome = PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+
+        assertTrue(outcome is PendingRestore.Outcome.NeedsSupport)
+        assertEquals("original", live.readText())
+        assertTrue(file(".restore-pending").exists())
+        assertTrue(DatabaseHealth.state.value is DatabaseHealth.State.Failed)
+    }
+
+    @Test
+    fun moveReplacing_whenTheFinalRenameFails_keepsTheVerifiedTempCopy() {
+        live.parentFile?.mkdirs()
+        val source = file(".pre-restore").apply { writeText("original") }
+        val target = live.apply { writeText("restored") }
+
+        // Every rename is refused (as on a filesystem that will not rename over an existing file): the fallback
+        // copies, deletes the target and then cannot rename the temp copy into place.
+        val failure = runCatching { PendingRestore.moveReplacing(source, target) { _, _ -> false } }.exceptionOrNull()
+
+        assertTrue(failure != null)
+        val tmp = File(target.path + ".tmp")
+        assertTrue(tmp.exists())
+        assertEquals("original", tmp.readText())
+        assertEquals("original", source.readText())
+        assertTrue(failure!!.message!!.contains(tmp.path))
+    }
+
+    @Test
+    fun moveReplacing_whenTheTargetCannotBeDeleted_removesTheTempAndKeepsTheTarget() {
+        live.parentFile?.mkdirs()
+        val source = file(".pre-restore").apply { writeText("original") }
+        val target = live
+        val tmpPath = File(target.path + ".tmp").path
+
+        // A non-empty directory cannot be deleted as a file, so the target is never lost and the temp is cleaned up.
+        target.mkdirs()
+        File(target, "x").writeText("x")
+        val failure = runCatching { PendingRestore.moveReplacing(source, target) { _, _ -> false } }.exceptionOrNull()
+
+        assertTrue(failure != null)
+        assertFalse(File(tmpPath).exists())
+        assertTrue(File(target, "x").exists())
+        assertEquals("original", source.readText())
+        target.deleteRecursively()
+    }
+
+    @Test
+    fun supportCopy_foldsThePreRestoreWalIntoASingleFile_andLeavesTheUndoSetUntouched() {
+        live.parentFile?.mkdirs()
+        val scratch = File(live.parentFile, "pending-test-scratch.db")
+        val sqlite = android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(scratch, null)
+        try {
+            sqlite.enableWriteAheadLogging()
+            sqlite.rawQuery("PRAGMA wal_autocheckpoint=0", null).use { it.moveToFirst() }
+            sqlite.execSQL("CREATE TABLE t (v TEXT)")
+            sqlite.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+            sqlite.execSQL("INSERT INTO t VALUES ('only-in-wal')")
+            val wal = File(scratch.path + "-wal")
+            assertTrue(wal.length() > 0)
+            // Snapshot the pair while the database is still open, so the row exists only in the WAL.
+            scratch.copyTo(file(".pre-restore"))
+            wal.copyTo(file(".pre-restore-wal"))
+        } finally {
+            sqlite.close()
+        }
+        val preBytes = file(".pre-restore").readBytes()
+        val walBytes = file(".pre-restore-wal").readBytes()
+
+        val copy = PendingRestore.supportCopy(context, dbName)!!
+
+        assertTrue(copy.name != file(".pre-restore").name)
+        assertFalse(File(copy.path + "-wal").exists())
+        val folded = android.database.sqlite.SQLiteDatabase.openDatabase(
+            copy.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+        )
+        try {
+            folded.rawQuery("SELECT v FROM t", null).use {
+                assertTrue(it.moveToFirst())
+                assertEquals("only-in-wal", it.getString(0))
+            }
+        } finally {
+            folded.close()
+        }
+        assertTrue(preBytes.contentEquals(file(".pre-restore").readBytes()))
+        assertTrue(walBytes.contentEquals(file(".pre-restore-wal").readBytes()))
+    }
+
+    @Test
     fun latestSafetyCopy_fallsBackToThePreRestoreFile() {
         writeOriginal()
         stage("restored")

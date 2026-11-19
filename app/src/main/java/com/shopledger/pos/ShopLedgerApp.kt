@@ -65,7 +65,7 @@ class ShopLedgerApp : Application() {
                 is PendingRestore.Outcome.RolledBack -> {
                     // Health was reset when the original came back; only a failure of the original shows recovery.
                     database = LpsDatabase.getInstance(this)
-                    if (outcome.originalBack) {
+                    if (outcome.originalBack && DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
                         runCatching { database.openHelper.writableDatabase }.onFailure { markUpgradeFailed(it) }
                         AppErrorManager.reportError(
                             "Restore failed",
@@ -73,6 +73,8 @@ class ShopLedgerApp : Application() {
                         )
                     }
                 }
+                // Room was not opened and health is Failed with a support copy; the recovery screen takes over.
+                is PendingRestore.Outcome.NeedsSupport -> Unit
                 PendingRestore.Outcome.NotPending -> Unit
             }
             database = LpsDatabase.getInstance(this)

@@ -51,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -145,7 +146,7 @@ fun CloudSyncAndBackupSheet(
     var showImportBox by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var showSnapshotRestoreConfirm by remember { mutableStateOf(false) }
-    var checkingBackup by remember { mutableStateOf(false) }
+    var checkingBackup by rememberSaveable { mutableStateOf(false) }
     val lastSnapshotMillis = remember { latestSnapshotTime() }
     val lastSnapshotLabel = remember(lastSnapshotMillis) {
         lastSnapshotMillis?.let { SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(Date(it)) }
