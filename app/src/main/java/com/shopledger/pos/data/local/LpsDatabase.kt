@@ -37,7 +37,7 @@ typealias ShopDatabase = LpsDatabase
         PartyTransactionEntity::class
     ],
     version = 2,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class LpsDatabase : RoomDatabase() {
 

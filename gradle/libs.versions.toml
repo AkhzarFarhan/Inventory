@@ -18,6 +18,10 @@ mediapipeGenai = "0.10.22"
 securityCrypto = "1.1.0-alpha06"
 zxingCore = "3.5.3"
 junit = "4.13.2"
+robolectric = "4.13"
+androidxTestCore = "1.6.1"
+androidxTestExtJunit = "1.2.1"
+coroutinesTest = "1.8.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +48,11 @@ play-services-mlkit-document-scanner = { group = "com.google.android.gms", name 
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit-ktx", version.ref = "androidxTestExtJunit" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

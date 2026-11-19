@@ -94,6 +94,9 @@ jobs:
             cp debug.keystore ~/.android/debug.keystore
           fi
 
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --console=plain
+
       - name: Fast Build Debug APK
         run: |
           ./gradlew assembleDebug -PversionCode=${{ env.VERSION_CODE }} -PversionName=${{ env.VERSION_NAME }} --parallel --build-cache

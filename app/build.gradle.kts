@@ -5,6 +5,10 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.shopledger.pos"
     compileSdk = 34
@@ -86,6 +90,16 @@ android {
         resources.excludes += "META-INF/DEPENDENCIES"
         resources.excludes += "META-INF/INDEX.LIST"
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+    sourceSets {
+        getByName("test") {
+            assets.srcDir("$projectDir/schemas")
+        }
+    }
 }
 
 dependencies {
@@ -116,5 +130,9 @@ dependencies {
     implementation(libs.zxing.core)
 
     testImplementation(libs.junit)
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.room.testing)
 }
