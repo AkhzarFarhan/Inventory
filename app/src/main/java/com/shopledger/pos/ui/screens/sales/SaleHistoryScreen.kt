@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,6 +62,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 @Composable
 fun SaleHistoryScreen(
@@ -66,7 +70,7 @@ fun SaleHistoryScreen(
     isSellerUnlocked: Boolean,
     onToggleSellerUnlocked: () -> Unit,
     onOpenReceiptShare: (SaleRecordEntity) -> Unit,
-    onReturnSale: (SaleRecordEntity) -> Unit,
+    onReturnSale: (sale: SaleRecordEntity, qtyMilli: Long, actionId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedPeriodIndex by remember { mutableIntStateOf(2) } // 0 = Today, 1 = This Month, 2 = All Time
@@ -384,26 +388,43 @@ fun SaleHistoryScreen(
     }
 
     saleToReturnConfirm?.let { target ->
+        val remainingMilli = (target.quantitySoldMilli - target.returnedMilliUnits).coerceAtLeast(0L)
+        val returnActionId = remember(target.id) { UUID.randomUUID().toString() }
+        var qtyText by remember(target.id) { mutableStateOf(IndianCurrencyFormatter.formatMilliUnits(remainingMilli)) }
+        val qtyMilli = qtyText.trim().toDoubleOrNull()?.let { IndianCurrencyFormatter.doubleToMilliUnits(it) }
+        val qtyValid = qtyMilli != null && qtyMilli in 1L..remainingMilli
         AlertDialog(
             onDismissRequest = { saleToReturnConfirm = null },
             title = { Text("Return Sale (Wapsi)?", fontWeight = FontWeight.Bold) },
             text = {
-                Text(
-                    "Mark \"${target.itemNameSnapshot} (${target.variantSummarySnapshot})\" as returned and restore ${
-                        IndianCurrencyFormatter.formatQuantity(target.quantitySold)
-                    } ${target.unitSnapshot} back into inventory?"
-                )
+                Column {
+                    Text(
+                        "\"${target.itemNameSnapshot} (${target.variantSummarySnapshot})\": up to " +
+                            "${IndianCurrencyFormatter.formatMilliUnits(remainingMilli)} ${target.unitSnapshot} can be returned. " +
+                            "Stock is restored and a credit note is created."
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = qtyText,
+                        onValueChange = { qtyText = it },
+                        label = { Text("Quantity to return (${target.unitSnapshot})") },
+                        singleLine = true,
+                        isError = !qtyValid,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
+                    enabled = qtyValid,
                     onClick = {
-                        onReturnSale(target)
+                        onReturnSale(target, qtyMilli!!, returnActionId)
                         saleToReturnConfirm = null
                     }
                 ) {
                     Text(
                         text = "Confirm Return & Restore Stock",
-                        color = CupertinoColors.DestructiveRed,
+                        color = if (qtyValid) CupertinoColors.DestructiveRed else CupertinoColors.LabelMuted,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -549,6 +570,12 @@ private fun SaleRecordCard(
             if (sale.isReturned) {
                 SemanticPillBadge(
                     text = "Returned (Wapsi)",
+                    containerColor = CupertinoColors.DestructiveTint,
+                    contentColor = CupertinoColors.DestructiveRed
+                )
+            } else if (sale.returnedMilliUnits > 0L) {
+                SemanticPillBadge(
+                    text = "Returned ${IndianCurrencyFormatter.formatMilliUnits(sale.returnedMilliUnits)} ${sale.unitSnapshot}",
                     containerColor = CupertinoColors.DestructiveTint,
                     contentColor = CupertinoColors.DestructiveRed
                 )

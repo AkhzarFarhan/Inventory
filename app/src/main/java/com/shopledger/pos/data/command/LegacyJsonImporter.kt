@@ -1,10 +1,13 @@
 package com.shopledger.pos.data.command
 
+import com.shopledger.pos.core.ledger.CalendarParts
 import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.entity.DeviceEntity
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
+import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
+import com.shopledger.pos.data.local.entity.InvoiceLineEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
-import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -121,49 +124,86 @@ class LegacyJsonImporter(private val db: LpsDatabase, private val env: CommandEn
                 parties++
             }
 
-            val sales = importSales(root.optJSONArray("sales"), shopId, now)
+            val sales = importSales(root.optJSONArray("sales"), writer, device, shopId, now)
             Report(items, variants, parties, sales) to "imported"
         }
     }
 
-    /** INTERIM (Task 3): writes the v2 sale_records table. Task 4 rewrites this to build immutable invoices. */
-    private suspend fun importSales(sales: JSONArray?, shopId: String, now: Long): Int {
-        val saleDao = db.saleDao()
-        val existing = saleDao.getAllRawSales().map { it.id }.toHashSet()
-        val rows = ArrayList<SaleRecordEntity>()
+    /**
+     * Groups legacy per-line sales into immutable invoices. No stock movements are written: the
+     * exported stock is already net of these sales. Returned lines become a cash credit note.
+     */
+    private suspend fun importSales(
+        sales: JSONArray?,
+        writer: LedgerWriter,
+        device: DeviceEntity,
+        shopId: String,
+        now: Long
+    ): Int {
+        val ledger = db.shopPartyAndLedgerDao()
+        val existingLineIds = ledger.getAllInvoiceLines().map { it.id }.toHashSet()
+        val takenNumbers = ledger.getInvoiceNumbers(shopId).toHashSet()
+        val byReceipt = LinkedHashMap<String, MutableList<JSONObject>>()
         sales.forEachObject { o ->
-            val id = o.getString("id")
-            if (id in existing) return@forEachObject
-            val revenue = o.getLong("totalRevenuePaise")
-            rows += SaleRecordEntity(
-                id = id,
-                shopId = o.optString("shopId", shopId),
-                receiptNumber = o.optString("receiptNumber", "IMPORTED"),
-                buyerName = o.optString("buyerName", ""),
-                buyerPhone = o.optString("buyerPhone", ""),
-                itemId = o.getString("itemId"),
-                variantId = o.getString("variantId"),
-                itemNameSnapshot = o.getString("itemNameSnapshot"),
-                variantSummarySnapshot = o.optString("variantSummarySnapshot", "Standard"),
-                quantitySold = o.getDouble("quantitySold"),
-                unitSnapshot = o.optString("unitSnapshot", "pcs"),
-                unitPurchasePricePaise = o.getLong("unitPurchasePricePaise"),
-                unitSellingPricePaise = o.getLong("unitSellingPricePaise"),
-                totalCostPaise = o.optLong("totalCostPaise", 0L),
-                totalRevenuePaise = revenue,
-                totalProfitPaise = o.optLong("totalProfitPaise", 0L),
-                gainMarkupPercent = o.optDouble("gainMarkupPercent", 0.0),
-                grossMarginPercent = o.optDouble("grossMarginPercent", 0.0),
-                paymentMode = o.optString("paymentMode", "CASH"),
-                soldAt = o.optLong("soldAt", now),
-                yearInt = o.optInt("yearInt", 2026),
-                monthInt = o.optInt("monthInt", 1),
-                dayInt = o.optInt("dayInt", 1),
-                isReturned = o.optBoolean("isReturned", false)
-            )
+            if (o.getString("id") !in existingLineIds) {
+                byReceipt.getOrPut(o.optString("receiptNumber", "IMPORTED")) { ArrayList() }.add(o)
+            }
         }
-        if (rows.isNotEmpty()) saleDao.insertSales(rows)
-        return rows.size
+        var imported = 0
+        for ((receipt, rows) in byReceipt) {
+            val number = generateSequence(receipt) { "$it-I" }.first { it !in takenNumbers }
+            takenNumbers += number
+            val invoiceId = env.newId()
+            val issuedAt = rows.maxOf { it.optLong("soldAt", now) }
+            val parts = CalendarParts.of(issuedAt)
+            val first = rows.first()
+            val lines = rows.map { o ->
+                InvoiceLineEntity(
+                    id = o.getString("id"),
+                    shopId = shopId,
+                    invoiceId = invoiceId,
+                    productId = o.getString("itemId"),
+                    skuId = o.getString("variantId"),
+                    itemNameSnapshot = o.getString("itemNameSnapshot"),
+                    variantSummarySnapshot = o.optString("variantSummarySnapshot", "Standard"),
+                    qtyMilliUnits = (o.getDouble("quantitySold") * 1000.0).roundToLong(),
+                    unitSnapshot = o.optString("unitSnapshot", "pcs"),
+                    unitCostPaise = o.getLong("unitPurchasePricePaise"),
+                    unitSellPaise = o.getLong("unitSellingPricePaise"),
+                    lineTotalPaise = o.getLong("totalRevenuePaise"),
+                    lineProfitPaise = o.optLong("totalProfitPaise", 0L)
+                )
+            }
+            val total = lines.sumOf { it.lineTotalPaise }
+            fun header(id: String, docNumber: String, docType: String, originalId: String?, amount: Long) = InvoiceHeaderEntity(
+                id = id, shopId = shopId, deviceId = device.deviceId, deviceShortCode = device.deviceCode,
+                invoiceNumber = docNumber, docType = docType, originalInvoiceId = originalId,
+                buyerName = first.optString("buyerName", ""), buyerPhone = first.optString("buyerPhone", ""),
+                paymentMode = first.optString("paymentMode", "CASH"), subtotalPaise = amount, grandTotalPaise = amount,
+                amountPaidPaise = amount, balanceDuePaise = 0L, issuedAt = issuedAt, yearInt = parts.year,
+                monthInt = parts.month, dayInt = parts.day, createdByUid = env.actor().uid
+            )
+            ledger.insertInvoiceHeader(header(invoiceId, number, DocType.SALE, null, total))
+            ledger.insertInvoiceLines(lines)
+            writer.enqueue(OutboxDocType.INVOICE, invoiceId, OutboxOp.APPEND)
+
+            val returnedIds = rows.filter { it.optBoolean("isReturned", false) }.map { it.getString("id") }.toSet()
+            val returned = lines.filter { it.id in returnedIds }
+            if (returned.isNotEmpty()) {
+                val creditNoteId = env.newId()
+                val creditLines = returned.map { l ->
+                    l.copy(id = env.newId(), invoiceId = creditNoteId, originalLineId = l.id, qtyMilliUnits = -l.qtyMilliUnits,
+                        lineTotalPaise = -l.lineTotalPaise, lineProfitPaise = -l.lineProfitPaise)
+                }
+                val creditNumber = generateSequence("$number-R") { "$it-R" }.first { it !in takenNumbers }
+                takenNumbers += creditNumber
+                ledger.insertInvoiceHeader(header(creditNoteId, creditNumber, DocType.CREDIT_NOTE, invoiceId, creditLines.sumOf { it.lineTotalPaise }))
+                ledger.insertInvoiceLines(creditLines)
+                writer.enqueue(OutboxDocType.INVOICE, creditNoteId, OutboxOp.APPEND)
+            }
+            imported += rows.size
+        }
+        return imported
     }
 
     private inline fun JSONArray?.forEachObject(block: (JSONObject) -> Unit) {

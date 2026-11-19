@@ -41,7 +41,8 @@ data class CustomerCartSession(
     val buyerName: String = "",
     val buyerPhone: String = "",
     val items: List<CartLineItem> = emptyList(),
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val checkoutActionId: String = UUID.randomUUID().toString()
 )
 
 class MainViewModel(
@@ -64,6 +65,7 @@ class MainViewModel(
     val filterMode: StateFlow<InventoryFilterMode> = _filterMode.asStateFlow()
 
     private var nextCartSequence = 2
+    private var quickSellActionId: String = UUID.randomUUID().toString()
     private val _carts = MutableStateFlow(
         listOf(CustomerCartSession(cartId = "cart-1", label = "Cart 1"))
     )
@@ -558,7 +560,7 @@ class MainViewModel(
 
     fun clearCart() {
         updateActiveCart { cart ->
-            cart.copy(items = emptyList())
+            cart.copy(items = emptyList(), checkoutActionId = UUID.randomUUID().toString())
         }
     }
 
@@ -634,8 +636,16 @@ class MainViewModel(
         onComplete: (SaleReceiptData) -> Unit = {}
     ) {
         if (itemsToSell.isEmpty()) return
+        // Captured before launching: a double tap reuses the same id and the second call is a no-op replay.
+        val checkedOutCartId = _activeCartId.value
+        val actionId = if (clearCounterCart) {
+            _carts.value.firstOrNull { it.cartId == checkedOutCartId }?.checkoutActionId ?: UUID.randomUUID().toString()
+        } else {
+            quickSellActionId
+        }
         launchSafe("Checkout Failed") {
-            val receipt = repository.executeCheckoutAndDeductStock(
+            val outcome = repository.executeCheckoutAndDeductStock(
+                actionId = actionId,
                 cartItems = itemsToSell,
                 buyerName = buyerName,
                 buyerPhone = buyerPhone,
@@ -643,8 +653,9 @@ class MainViewModel(
                 discountPaise = discountPaise,
                 amountPaidPaise = amountPaidPaise
             )
+            if (outcome.replayed) return@launchSafe
+            if (!clearCounterCart) quickSellActionId = UUID.randomUUID().toString()
             if (clearCounterCart) {
-                val checkedOutCartId = _activeCartId.value
                 if (_carts.value.size > 1) {
                     closeCart(checkedOutCartId)
                 } else {
@@ -652,8 +663,14 @@ class MainViewModel(
                     updateActiveCartBuyer("", "")
                 }
             }
-            _activeReceiptForSharing.value = receipt
-            onComplete(receipt)
+            if (outcome.oversoldItemNames.isNotEmpty()) {
+                AppErrorManager.reportWarning(
+                    "Stock below zero",
+                    "Sold more than recorded stock: ${outcome.oversoldItemNames.distinct().joinToString()}. Please recount."
+                )
+            }
+            _activeReceiptForSharing.value = outcome.receipt
+            onComplete(outcome.receipt)
         }
     }
 
@@ -731,10 +748,10 @@ class MainViewModel(
         _activeReceiptForSharing.value = null
     }
 
-    fun returnSaleAndRestoreStock(sale: SaleRecordEntity) {
+    fun returnSaleLine(sale: SaleRecordEntity, qtyMilli: Long, actionId: String) {
         launchSafe("Failed to Return Sale") {
-            repository.returnSaleAndRestoreStock(sale)
-            AppErrorManager.reportSuccess("Sale Returned", "Stock restored for #${sale.receiptNumber}.")
+            repository.returnSaleLine(actionId, sale, qtyMilli)
+            AppErrorManager.reportSuccess("Return Recorded", "Stock restored for #${sale.receiptNumber}.")
         }
     }
 

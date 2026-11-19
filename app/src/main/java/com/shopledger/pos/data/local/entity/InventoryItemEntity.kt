@@ -7,12 +7,6 @@ import androidx.room.PrimaryKey
 
 const val DEFAULT_SHOP_ID = "default_shop"
 
-/** Only the v2-shaped invoice and sale tables still use this; Task 4 deletes it. */
-object SyncState {
-    const val SYNCED = "SYNCED"
-    const val PENDING_UPLOAD = "PENDING_UPLOAD"
-}
-
 typealias CatalogProductEntity = InventoryItemEntity
 
 @Immutable

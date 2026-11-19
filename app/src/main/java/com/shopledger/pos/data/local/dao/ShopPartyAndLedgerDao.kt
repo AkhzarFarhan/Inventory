@@ -73,15 +73,41 @@ interface ShopPartyAndLedgerDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertLedgerEntry(entry: PartyTransactionEntity)
 
-    // Invoices. INTERIM: REPLACE inserts survive only until Task 4 makes invoices immutable.
+    // Invoices (immutable)
     @Query("SELECT * FROM invoice_headers ORDER BY issuedAt DESC")
     fun observeAllInvoiceHeaders(): Flow<List<InvoiceHeaderEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertInvoiceHeader(header: InvoiceHeaderEntity)
+    @Query("SELECT * FROM invoice_headers WHERE id = :id LIMIT 1")
+    suspend fun getInvoiceById(id: String): InvoiceHeaderEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertInvoiceLines(lines: List<InvoiceLineEntity>)
+    @Query("SELECT * FROM invoice_lines WHERE invoiceId = :invoiceId")
+    suspend fun getInvoiceLines(invoiceId: String): List<InvoiceLineEntity>
+
+    @Query("SELECT * FROM invoice_headers")
+    suspend fun getAllInvoiceHeaders(): List<InvoiceHeaderEntity>
+
+    @Query("SELECT * FROM invoice_lines")
+    suspend fun getAllInvoiceLines(): List<InvoiceLineEntity>
+
+    @Query("SELECT invoiceNumber FROM invoice_headers WHERE shopId = :shopId")
+    suspend fun getInvoiceNumbers(shopId: String): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertInvoiceHeader(header: InvoiceHeaderEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertInvoiceLines(lines: List<InvoiceLineEntity>)
+
+    /** Total already returned (positive milli-units) against one sale line. */
+    @Query("SELECT COALESCE(-SUM(qtyMilliUnits), 0) FROM invoice_lines WHERE originalLineId = :lineId")
+    suspend fun sumReturnedMilliForLine(lineId: String): Long
+
+    /** Khata credit (positive paise) already given by earlier credit notes against [invoiceId]. */
+    @Query(
+        "SELECT COALESCE(-SUM(e.amountDeltaPaise), 0) FROM party_ledger_entries e WHERE e.entryType = 'CREDIT_NOTE' " +
+            "AND e.refDocId IN (SELECT h.id FROM invoice_headers h WHERE h.originalInvoiceId = :invoiceId)"
+    )
+    suspend fun sumKhataCreditedForInvoice(invoiceId: String): Long
 
     // Stock movements (append-only)
     @Query("SELECT * FROM stock_movements WHERE skuId = :skuId ORDER BY createdAt DESC")

@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.shopledger.pos.data.command.Actor
+import com.shopledger.pos.data.command.CatalogCommands
 import com.shopledger.pos.data.command.CommandEnvironment
 import com.shopledger.pos.data.command.Role
 import com.shopledger.pos.data.command.VariantEdit
+import com.shopledger.pos.data.command.VariantSpec
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.DEFAULT_SHOP_ID
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
@@ -75,3 +77,17 @@ fun ItemVariantEntity.toEdit(targetStockMilli: Long? = null) = VariantEdit(
     gstRateBps = gstRateBps,
     targetStockMilli = targetStockMilli
 )
+
+/** Creates "Butt Hinge" (cost Rs 48, price Rs 75) with the given opening stock; returns the variant id. */
+suspend fun seedHinge(
+    db: LpsDatabase,
+    env: CommandEnvironment,
+    openingMilli: Long = 10_000L,
+    actionId: String = "seed-hinge"
+): String {
+    val itemId = CatalogCommands(db, env).createItem(
+        actionId, "Butt Hinge", "Fittings",
+        listOf(VariantSpec(sizeLabel = "4 inch", purchasePricePaise = 4_800L, sellingPricePaise = 7_500L, openingStockMilli = openingMilli))
+    )
+    return db.inventoryDao().getVariantsForItem(itemId).single().id
+}

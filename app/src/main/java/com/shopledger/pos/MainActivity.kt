@@ -445,7 +445,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSellerUnlocked = requestToggleSeller,
                         onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
-                        onReturnSale = viewModel::returnSaleAndRestoreStock
+                        onReturnSale = viewModel::returnSaleLine
                     )
                 }
                 else -> {

@@ -9,6 +9,8 @@ import com.shopledger.pos.core.draft.SavedItemDraft
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.MessageSeverity
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.core.ledger.CalendarParts
+import com.shopledger.pos.core.ledger.ReceiptNumbers
 import com.shopledger.pos.core.nlp.DuplicateDecisionType
 import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.nlp.SmartItemMatcher
@@ -23,7 +25,6 @@ import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
-import com.shopledger.pos.data.repository.LpsRepository
 import com.shopledger.pos.ui.screens.inventory.VariantDraft
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -350,10 +351,9 @@ class LpsHardwareDomainTest {
     }
 
     @Test
-    fun smartReceiptId_formatsDateAndDailyCounterAsYYYYMMDDCCCC() {
-        assertEquals("202611010001", LpsRepository.formatSmartReceiptId(2026, 11, 1, 1))
-        assertEquals("202611010015", LpsRepository.formatSmartReceiptId(2026, 11, 1, 15))
-        assertEquals("202604090108", LpsRepository.formatSmartReceiptId(2026, 4, 9, 108))
+    fun smartReceiptId_formatsDeviceDayAndSequence() {
+        assertEquals("L-261101-0015", ReceiptNumbers.format("L", CalendarParts(2026, 11, 1).dayKey, 15))
+        assertEquals("A-260409-0108", ReceiptNumbers.format("A", CalendarParts(2026, 4, 9).dayKey, 108))
     }
 
     @Test
@@ -565,13 +565,6 @@ class LpsHardwareDomainTest {
         assertEquals(18000L, inter.igstPaise)
         assertEquals(18000L, inter.totalTaxPaise)
         assertEquals(118000L, inter.grandTotalPaise)
-    }
-
-    @Test
-    fun smartReceiptId_supportsMultiDevicePrefixAndLegacyFormat() {
-        assertEquals("202611160007", LpsRepository.formatSmartReceiptId(2026, 11, 16, 7, ""))
-        assertEquals("D1-20261116-0007", LpsRepository.formatSmartReceiptId(2026, 11, 16, 7, "d1"))
-        assertEquals("C2-20261116-0123", LpsRepository.formatSmartReceiptId(2026, 11, 16, 123, " C2 "))
     }
 
     @Test

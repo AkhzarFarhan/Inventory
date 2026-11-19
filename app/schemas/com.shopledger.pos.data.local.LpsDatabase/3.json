@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "8fa38fda439e30c05713e17a69d159bc",
+    "identityHash": "3b1e5895c6336b71b316edb7c1458177",
     "entities": [
       {
         "tableName": "inventory_items",
@@ -305,255 +305,6 @@
             ]
           }
         ]
-      },
-      {
-        "tableName": "sale_records",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `receiptNumber` TEXT NOT NULL, `buyerName` TEXT NOT NULL, `buyerPhone` TEXT NOT NULL, `partyId` TEXT, `itemId` TEXT NOT NULL, `variantId` TEXT NOT NULL, `itemNameSnapshot` TEXT NOT NULL, `variantSummarySnapshot` TEXT NOT NULL, `quantitySold` REAL NOT NULL, `unitSnapshot` TEXT NOT NULL, `unitPurchasePricePaise` INTEGER NOT NULL, `unitSellingPricePaise` INTEGER NOT NULL, `totalCostPaise` INTEGER NOT NULL, `totalRevenuePaise` INTEGER NOT NULL, `totalProfitPaise` INTEGER NOT NULL, `gainMarkupPercent` REAL NOT NULL, `grossMarginPercent` REAL NOT NULL, `paymentMode` TEXT NOT NULL, `amountPaidPaise` INTEGER NOT NULL, `balanceDuePaise` INTEGER NOT NULL, `discountPaise` INTEGER NOT NULL, `gstPaise` INTEGER NOT NULL, `soldAt` INTEGER NOT NULL, `yearInt` INTEGER NOT NULL, `monthInt` INTEGER NOT NULL, `dayInt` INTEGER NOT NULL, `isReturned` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))",
-        "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "shopId",
-            "columnName": "shopId",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "receiptNumber",
-            "columnName": "receiptNumber",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "buyerName",
-            "columnName": "buyerName",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "buyerPhone",
-            "columnName": "buyerPhone",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "partyId",
-            "columnName": "partyId",
-            "affinity": "TEXT",
-            "notNull": false
-          },
-          {
-            "fieldPath": "itemId",
-            "columnName": "itemId",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "variantId",
-            "columnName": "variantId",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "itemNameSnapshot",
-            "columnName": "itemNameSnapshot",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "variantSummarySnapshot",
-            "columnName": "variantSummarySnapshot",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "quantitySold",
-            "columnName": "quantitySold",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "unitSnapshot",
-            "columnName": "unitSnapshot",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "unitPurchasePricePaise",
-            "columnName": "unitPurchasePricePaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "unitSellingPricePaise",
-            "columnName": "unitSellingPricePaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "totalCostPaise",
-            "columnName": "totalCostPaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "totalRevenuePaise",
-            "columnName": "totalRevenuePaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "totalProfitPaise",
-            "columnName": "totalProfitPaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "gainMarkupPercent",
-            "columnName": "gainMarkupPercent",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "grossMarginPercent",
-            "columnName": "grossMarginPercent",
-            "affinity": "REAL",
-            "notNull": true
-          },
-          {
-            "fieldPath": "paymentMode",
-            "columnName": "paymentMode",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "amountPaidPaise",
-            "columnName": "amountPaidPaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "balanceDuePaise",
-            "columnName": "balanceDuePaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "discountPaise",
-            "columnName": "discountPaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "gstPaise",
-            "columnName": "gstPaise",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "soldAt",
-            "columnName": "soldAt",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "yearInt",
-            "columnName": "yearInt",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "monthInt",
-            "columnName": "monthInt",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "dayInt",
-            "columnName": "dayInt",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "isReturned",
-            "columnName": "isReturned",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "updatedAt",
-            "columnName": "updatedAt",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "syncStatus",
-            "columnName": "syncStatus",
-            "affinity": "TEXT",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_sale_records_soldAt",
-            "unique": false,
-            "columnNames": [
-              "soldAt"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_soldAt` ON `${TABLE_NAME}` (`soldAt`)"
-          },
-          {
-            "name": "index_sale_records_yearInt_monthInt_dayInt",
-            "unique": false,
-            "columnNames": [
-              "yearInt",
-              "monthInt",
-              "dayInt"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_yearInt_monthInt_dayInt` ON `${TABLE_NAME}` (`yearInt`, `monthInt`, `dayInt`)"
-          },
-          {
-            "name": "index_sale_records_receiptNumber",
-            "unique": false,
-            "columnNames": [
-              "receiptNumber"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_receiptNumber` ON `${TABLE_NAME}` (`receiptNumber`)"
-          },
-          {
-            "name": "index_sale_records_syncStatus",
-            "unique": false,
-            "columnNames": [
-              "syncStatus"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_syncStatus` ON `${TABLE_NAME}` (`syncStatus`)"
-          },
-          {
-            "name": "index_sale_records_shopId_soldAt",
-            "unique": false,
-            "columnNames": [
-              "shopId",
-              "soldAt"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_shopId_soldAt` ON `${TABLE_NAME}` (`shopId`, `soldAt`)"
-          }
-        ],
-        "foreignKeys": []
       },
       {
         "tableName": "search_history",
@@ -862,7 +613,7 @@
       },
       {
         "tableName": "invoice_headers",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `deviceShortCode` TEXT NOT NULL, `invoiceNumber` TEXT NOT NULL, `docType` TEXT NOT NULL, `partyId` TEXT, `buyerName` TEXT NOT NULL, `buyerPhone` TEXT NOT NULL, `paymentMode` TEXT NOT NULL, `subtotalPaise` INTEGER NOT NULL, `discountPaise` INTEGER NOT NULL, `cgstPaise` INTEGER NOT NULL, `sgstPaise` INTEGER NOT NULL, `igstPaise` INTEGER NOT NULL, `grandTotalPaise` INTEGER NOT NULL, `amountPaidPaise` INTEGER NOT NULL, `balanceDuePaise` INTEGER NOT NULL, `issuedAt` INTEGER NOT NULL, `yearInt` INTEGER NOT NULL, `monthInt` INTEGER NOT NULL, `dayInt` INTEGER NOT NULL, `isReturned` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `deviceShortCode` TEXT NOT NULL, `invoiceNumber` TEXT NOT NULL, `docType` TEXT NOT NULL, `originalInvoiceId` TEXT, `partyId` TEXT, `buyerName` TEXT NOT NULL, `buyerPhone` TEXT NOT NULL, `paymentMode` TEXT NOT NULL, `subtotalPaise` INTEGER NOT NULL, `discountPaise` INTEGER NOT NULL, `cgstPaise` INTEGER NOT NULL, `sgstPaise` INTEGER NOT NULL, `igstPaise` INTEGER NOT NULL, `grandTotalPaise` INTEGER NOT NULL, `amountPaidPaise` INTEGER NOT NULL, `balanceDuePaise` INTEGER NOT NULL, `issuedAt` INTEGER NOT NULL, `yearInt` INTEGER NOT NULL, `monthInt` INTEGER NOT NULL, `dayInt` INTEGER NOT NULL, `createdByUid` TEXT NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -873,6 +624,12 @@
           {
             "fieldPath": "shopId",
             "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -893,6 +650,12 @@
             "columnName": "docType",
             "affinity": "TEXT",
             "notNull": true
+          },
+          {
+            "fieldPath": "originalInvoiceId",
+            "columnName": "originalInvoiceId",
+            "affinity": "TEXT",
+            "notNull": false
           },
           {
             "fieldPath": "partyId",
@@ -991,20 +754,8 @@
             "notNull": true
           },
           {
-            "fieldPath": "isReturned",
-            "columnName": "isReturned",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "updatedAt",
-            "columnName": "updatedAt",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "syncStatus",
-            "columnName": "syncStatus",
+            "fieldPath": "createdByUid",
+            "columnName": "createdByUid",
             "affinity": "TEXT",
             "notNull": true
           }
@@ -1047,20 +798,20 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_headers_shopId_docType` ON `${TABLE_NAME}` (`shopId`, `docType`)"
           },
           {
-            "name": "index_invoice_headers_syncStatus",
+            "name": "index_invoice_headers_originalInvoiceId",
             "unique": false,
             "columnNames": [
-              "syncStatus"
+              "originalInvoiceId"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_headers_syncStatus` ON `${TABLE_NAME}` (`syncStatus`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_headers_originalInvoiceId` ON `${TABLE_NAME}` (`originalInvoiceId`)"
           }
         ],
         "foreignKeys": []
       },
       {
         "tableName": "invoice_lines",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `invoiceId` TEXT NOT NULL, `productId` TEXT NOT NULL, `skuId` TEXT NOT NULL, `itemNameSnapshot` TEXT NOT NULL, `variantSummarySnapshot` TEXT NOT NULL, `hsnSnapshot` TEXT NOT NULL, `qtyMilliUnits` INTEGER NOT NULL, `unitSnapshot` TEXT NOT NULL, `unitCostPaise` INTEGER NOT NULL, `unitSellPaise` INTEGER NOT NULL, `gstRateBps` INTEGER NOT NULL, `lineTaxPaise` INTEGER NOT NULL, `lineTotalPaise` INTEGER NOT NULL, `lineProfitPaise` INTEGER NOT NULL, `isReturned` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`invoiceId`) REFERENCES `invoice_headers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `invoiceId` TEXT NOT NULL, `originalLineId` TEXT, `productId` TEXT NOT NULL, `skuId` TEXT NOT NULL, `itemNameSnapshot` TEXT NOT NULL, `variantSummarySnapshot` TEXT NOT NULL, `hsnSnapshot` TEXT NOT NULL, `qtyMilliUnits` INTEGER NOT NULL, `unitSnapshot` TEXT NOT NULL, `unitCostPaise` INTEGER NOT NULL, `unitSellPaise` INTEGER NOT NULL, `gstRateBps` INTEGER NOT NULL, `lineTaxPaise` INTEGER NOT NULL, `lineTotalPaise` INTEGER NOT NULL, `lineProfitPaise` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`invoiceId`) REFERENCES `invoice_headers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -1079,6 +830,12 @@
             "columnName": "invoiceId",
             "affinity": "TEXT",
             "notNull": true
+          },
+          {
+            "fieldPath": "originalLineId",
+            "columnName": "originalLineId",
+            "affinity": "TEXT",
+            "notNull": false
           },
           {
             "fieldPath": "productId",
@@ -1157,12 +914,6 @@
             "columnName": "lineProfitPaise",
             "affinity": "INTEGER",
             "notNull": true
-          },
-          {
-            "fieldPath": "isReturned",
-            "columnName": "isReturned",
-            "affinity": "INTEGER",
-            "notNull": true
           }
         ],
         "primaryKey": {
@@ -1190,6 +941,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_lines_shopId_invoiceId` ON `${TABLE_NAME}` (`shopId`, `invoiceId`)"
+          },
+          {
+            "name": "index_invoice_lines_originalLineId",
+            "unique": false,
+            "columnNames": [
+              "originalLineId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_lines_originalLineId` ON `${TABLE_NAME}` (`originalLineId`)"
           }
         ],
         "foreignKeys": [
@@ -1585,10 +1345,15 @@
         "foreignKeys": []
       }
     ],
-    "views": [],
+    "views": [
+      {
+        "viewName": "sale_records",
+        "createSql": "CREATE VIEW `${VIEW_NAME}` AS SELECT l.id AS id, h.id AS invoiceId, h.shopId AS shopId, h.invoiceNumber AS receiptNumber, h.buyerName AS buyerName, h.buyerPhone AS buyerPhone, h.partyId AS partyId, l.productId AS itemId, l.skuId AS variantId, l.itemNameSnapshot AS itemNameSnapshot, l.variantSummarySnapshot AS variantSummarySnapshot, l.qtyMilliUnits / 1000.0 AS quantitySold, l.qtyMilliUnits AS quantitySoldMilli, l.unitSnapshot AS unitSnapshot, l.unitCostPaise AS unitPurchasePricePaise, l.unitSellPaise AS unitSellingPricePaise, l.lineTotalPaise - l.lineProfitPaise AS totalCostPaise, l.lineTotalPaise AS totalRevenuePaise, l.lineProfitPaise AS totalProfitPaise, CASE WHEN l.lineTotalPaise - l.lineProfitPaise > 0 THEN l.lineProfitPaise * 100.0 / (l.lineTotalPaise - l.lineProfitPaise) ELSE 0.0 END AS gainMarkupPercent, CASE WHEN l.lineTotalPaise > 0 THEN l.lineProfitPaise * 100.0 / l.lineTotalPaise ELSE 0.0 END AS grossMarginPercent, h.paymentMode AS paymentMode, h.amountPaidPaise AS amountPaidPaise, h.balanceDuePaise AS balanceDuePaise, h.discountPaise AS discountPaise, h.cgstPaise + h.sgstPaise + h.igstPaise AS gstPaise, h.issuedAt AS soldAt, h.yearInt AS yearInt, h.monthInt AS monthInt, h.dayInt AS dayInt, COALESCE((SELECT -SUM(r.qtyMilliUnits) FROM invoice_lines r WHERE r.originalLineId = l.id), 0) AS returnedMilliUnits, CASE WHEN COALESCE((SELECT -SUM(r2.qtyMilliUnits) FROM invoice_lines r2 WHERE r2.originalLineId = l.id), 0) >= l.qtyMilliUnits THEN 1 ELSE 0 END AS isReturned, h.issuedAt AS updatedAt FROM invoice_lines l INNER JOIN invoice_headers h ON h.id = l.invoiceId WHERE h.docType = 'SALE'"
+      }
+    ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8fa38fda439e30c05713e17a69d159bc')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3b1e5895c6336b71b316edb7c1458177')"
     ]
   }
 }

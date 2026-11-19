@@ -59,6 +59,7 @@ data class PartyEntity(
     val deviceId: String = ""
 )
 
+/** Immutable once written. Returns are separate CREDIT_NOTE documents with negative amounts. */
 @Immutable
 @Entity(
     tableName = "invoice_headers",
@@ -66,16 +67,20 @@ data class PartyEntity(
         Index(value = ["shopId", "invoiceNumber"], unique = true),
         Index(value = ["shopId", "issuedAt"]),
         Index(value = ["shopId", "docType"]),
-        Index(value = ["syncStatus"])
+        Index(value = ["originalInvoiceId"])
     ]
 )
 data class InvoiceHeaderEntity(
     @PrimaryKey
     val id: String,
     val shopId: String = DEFAULT_SHOP_ID,
+    val deviceId: String = "",
     val deviceShortCode: String = "",
     val invoiceNumber: String,
+    /** "SALE" or "CREDIT_NOTE". */
     val docType: String = "SALE",
+    /** For a CREDIT_NOTE: the SALE it reverses. */
+    val originalInvoiceId: String? = null,
     val partyId: String? = null,
     val buyerName: String = "",
     val buyerPhone: String = "",
@@ -92,9 +97,7 @@ data class InvoiceHeaderEntity(
     val yearInt: Int,
     val monthInt: Int,
     val dayInt: Int,
-    val isReturned: Boolean = false,
-    val updatedAt: Long = System.currentTimeMillis(),
-    val syncStatus: String = SyncState.PENDING_UPLOAD
+    val createdByUid: String = ""
 )
 
 @Immutable
@@ -110,7 +113,8 @@ data class InvoiceHeaderEntity(
     ],
     indices = [
         Index(value = ["invoiceId"]),
-        Index(value = ["shopId", "invoiceId"])
+        Index(value = ["shopId", "invoiceId"]),
+        Index(value = ["originalLineId"])
     ]
 )
 data class InvoiceLineEntity(
@@ -118,11 +122,14 @@ data class InvoiceLineEntity(
     val id: String,
     val shopId: String = DEFAULT_SHOP_ID,
     val invoiceId: String,
+    /** For a credit-note line: the sale line it returns. */
+    val originalLineId: String? = null,
     val productId: String,
     val skuId: String,
     val itemNameSnapshot: String,
     val variantSummarySnapshot: String,
     val hsnSnapshot: String = "",
+    /** Negative on credit notes. */
     val qtyMilliUnits: Long,
     val unitSnapshot: String,
     val unitCostPaise: Long,
@@ -130,8 +137,7 @@ data class InvoiceLineEntity(
     val gstRateBps: Int = 0,
     val lineTaxPaise: Long = 0L,
     val lineTotalPaise: Long,
-    val lineProfitPaise: Long,
-    val isReturned: Boolean = false
+    val lineProfitPaise: Long
 )
 
 /** Append-only. Never updated or deleted; corrections are new rows. Source of truth for stock. */

@@ -1,7 +1,6 @@
 package com.shopledger.pos.data.repository
 
 import android.content.Context
-import androidx.room.withTransaction
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.core.share.ReceiptLineItem
@@ -9,26 +8,25 @@ import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.command.AppCommandEnvironment
 import com.shopledger.pos.data.command.CatalogCommands
+import com.shopledger.pos.data.command.CheckoutLine
+import com.shopledger.pos.data.command.CheckoutRequest
 import com.shopledger.pos.data.command.CommandEnvironment
 import com.shopledger.pos.data.command.CommandException
+import com.shopledger.pos.data.command.InvoiceResult
 import com.shopledger.pos.data.command.KhataCommands
 import com.shopledger.pos.data.command.LegacyJsonImporter
-import com.shopledger.pos.data.command.OutboxDocType
-import com.shopledger.pos.data.command.OutboxOp
 import com.shopledger.pos.data.command.PaymentDirection
+import com.shopledger.pos.data.command.ReturnLine
+import com.shopledger.pos.data.command.SalesCommands
 import com.shopledger.pos.data.command.VariantEdit
 import com.shopledger.pos.data.command.VariantSpec
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
-import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
-import com.shopledger.pos.data.local.entity.InvoiceLineEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.data.local.entity.PartyTransactionEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
-import com.shopledger.pos.data.local.entity.StockMovementEntity
-import com.shopledger.pos.data.local.entity.SyncOutboxEntity
 import com.shopledger.pos.data.model.CartLineItem
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +34,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
@@ -54,6 +51,7 @@ class LpsRepository(
     private val shopDao = database.shopPartyAndLedgerDao()
     private val catalog = CatalogCommands(database, env)
     private val khata = KhataCommands(database, env)
+    private val sales = SalesCommands(database, env)
 
 
     val activeInventoryFlow: Flow<List<InventoryItemWithVariants>> =
@@ -75,6 +73,12 @@ class LpsRepository(
         shopDao.observeAllLedgerEntries()
 
     val totalPendingSyncCountFlow: Flow<Int> = database.syncOutboxDao().observePendingCount()
+
+    data class CheckoutOutcome(
+        val receipt: SaleReceiptData,
+        val oversoldItemNames: List<String>,
+        val replayed: Boolean
+    )
 
     data class NewVariantSpec(
         val sizeLabel: String = "",
@@ -205,12 +209,8 @@ class LpsRepository(
     suspend fun deleteItemOrVariant(itemId: String, variantId: String?, totalVariantsCount: Int) =
         catalog.deleteItem(newActionId(), itemId, variantId.takeIf { totalVariantsCount > 1 })
 
-    /**
-     * Records a single-item or multi-item POS sale (`CASH`, `UPI`, or `CREDIT` Udhar),
-     * deducts stock counts atomically, inserts Invoice Header/Lines, logs additive StockMovements,
-     * and updates Customer Khata balance when payment is on credit or partially paid.
-     */
     suspend fun executeCheckoutAndDeductStock(
+        actionId: String,
         cartItems: List<CartLineItem>,
         buyerName: String = "",
         buyerPhone: String = "",
@@ -218,185 +218,53 @@ class LpsRepository(
         discountPaise: Long = 0L,
         amountPaidPaise: Long? = null,
         gstRateBps: Int = 0
-    ): SaleReceiptData = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val shopId = env.shopId()
-        val deviceCode = SyncManager.getDeviceShortCode(context)
-        val cal = Calendar.getInstance().apply { timeInMillis = now }
-        val yearInt = cal.get(Calendar.YEAR)
-        val monthInt = cal.get(Calendar.MONTH) + 1
-        val dayInt = cal.get(Calendar.DAY_OF_MONTH)
-
-        val receiptNo = generateNextSmartReceiptNumber(yearInt, monthInt, dayInt, deviceCode)
-        val invoiceId = UUID.randomUUID().toString()
-        val cleanBuyerName = buyerName.trim()
-        val cleanBuyerPhone = buyerPhone.trim()
-
-        val saleEntities = ArrayList<SaleRecordEntity>(cartItems.size)
-        val invoiceLines = ArrayList<InvoiceLineEntity>(cartItems.size)
-        val receiptLineItems = ArrayList<ReceiptLineItem>(cartItems.size)
-
-        var subtotalPaise = 0L
-        for (line in cartItems) {
-            val analysis = IndianCurrencyFormatter.computeProfitAnalysis(
-                unitPurchasePaise = line.unitPurchasePricePaise,
-                unitSellingPaise = line.customSellingPricePaise,
-                quantity = line.quantity
+    ): CheckoutOutcome {
+        val result = sales.checkout(
+            CheckoutRequest(
+                actionId = actionId,
+                lines = cartItems.map {
+                    CheckoutLine(it.variantId, IndianCurrencyFormatter.doubleToMilliUnits(it.quantity), it.customSellingPricePaise)
+                },
+                buyerName = buyerName,
+                buyerPhone = buyerPhone,
+                paymentMode = paymentMode,
+                discountPaise = discountPaise,
+                amountPaidPaise = amountPaidPaise,
+                gstRateBps = gstRateBps
             )
-            subtotalPaise += analysis.totalRevenuePaise
-            receiptLineItems.add(
-                ReceiptLineItem(
-                    itemName = line.itemName,
-                    variantSummary = line.variantSummary,
-                    quantity = line.quantity,
-                    unit = line.unit,
-                    unitSellingPricePaise = line.customSellingPricePaise,
-                    lineTotalPaise = analysis.totalRevenuePaise
-                )
-            )
-        }
-
-        val cleanDiscount = discountPaise.coerceIn(0L, subtotalPaise)
-        val taxableAmount = (subtotalPaise - cleanDiscount).coerceAtLeast(0L)
-        val gstEnabled = SyncManager.gstEnabledFlow.value
-        val effectiveGstBps = if (gstEnabled && gstRateBps > 0) gstRateBps else 0
-        val taxBreakdown = IndianCurrencyFormatter.computeGstBreakdown(taxableAmount, effectiveGstBps)
-        val grandTotalPaise = taxBreakdown.grandTotalPaise
-
-        val normalizedPaymentMode = paymentMode.uppercase(Locale.ROOT).ifBlank { "CASH" }
-        val resolvedPaidPaise = when {
-            amountPaidPaise != null -> amountPaidPaise.coerceIn(0L, grandTotalPaise)
-            normalizedPaymentMode == "CREDIT" -> 0L
-            else -> grandTotalPaise
-        }
-        val balanceDuePaise = (grandTotalPaise - resolvedPaidPaise).coerceAtLeast(0L)
-
-        var resolvedPartyId: String? = null
-        var newParty: PartyEntity? = null
-        if (balanceDuePaise > 0L || cleanBuyerPhone.isNotBlank()) {
-            val phoneDigits = cleanBuyerPhone.filter { it.isDigit() }.takeLast(10)
-            val matched = shopDao.getAllActivePartiesSnapshot().firstOrNull { p ->
-                (phoneDigits.length >= 6 && p.phone.filter { it.isDigit() }.takeLast(10) == phoneDigits) ||
-                    (cleanBuyerName.isNotBlank() && p.name.equals(cleanBuyerName, ignoreCase = true))
-            }
-            if (matched != null) {
-                resolvedPartyId = matched.id
-            } else if (balanceDuePaise > 0L || cleanBuyerName.isNotBlank() || phoneDigits.length >= 6) {
-                val created = PartyEntity(
-                    id = UUID.randomUUID().toString(),
-                    shopId = shopId,
-                    name = cleanBuyerName.ifBlank { cleanBuyerPhone.ifBlank { "Credit Customer" } },
-                    phone = if (phoneDigits.length >= 10) phoneDigits else cleanBuyerPhone,
-                    createdAt = now,
-                    updatedAt = now
-                )
-                newParty = created
-                resolvedPartyId = created.id
-            }
-        }
-        // vals (not vars) so they can be used inside the transaction lambda below
-        val partyToCreate: PartyEntity? = newParty
-        val ledgerPartyId: String? = resolvedPartyId
-
-        for (line in cartItems) {
-            val analysis = IndianCurrencyFormatter.computeProfitAnalysis(
-                unitPurchasePaise = line.unitPurchasePricePaise,
-                unitSellingPaise = line.customSellingPricePaise,
-                quantity = line.quantity
-            )
-            val lineId = UUID.randomUUID().toString()
-            val qtyMilli = IndianCurrencyFormatter.doubleToMilliUnits(line.quantity)
-            saleEntities.add(
-                SaleRecordEntity(
-                    id = lineId, shopId = shopId, receiptNumber = receiptNo, buyerName = cleanBuyerName,
-                    buyerPhone = cleanBuyerPhone, partyId = resolvedPartyId, itemId = line.itemId,
-                    variantId = line.variantId, itemNameSnapshot = line.itemName,
-                    variantSummarySnapshot = line.variantSummary, quantitySold = line.quantity,
-                    unitSnapshot = line.unit, unitPurchasePricePaise = line.unitPurchasePricePaise,
-                    unitSellingPricePaise = line.customSellingPricePaise, totalCostPaise = analysis.totalCostPaise,
-                    totalRevenuePaise = analysis.totalRevenuePaise, totalProfitPaise = analysis.totalProfitPaise,
-                    gainMarkupPercent = analysis.gainMarkupPercent, grossMarginPercent = analysis.grossMarginPercent,
-                    paymentMode = normalizedPaymentMode, amountPaidPaise = resolvedPaidPaise,
-                    balanceDuePaise = balanceDuePaise, discountPaise = cleanDiscount,
-                    gstPaise = taxBreakdown.totalTaxPaise, soldAt = now, yearInt = yearInt, monthInt = monthInt,
-                    dayInt = dayInt, updatedAt = now
-                )
-            )
-            invoiceLines.add(
-                InvoiceLineEntity(
-                    id = lineId, shopId = shopId, invoiceId = invoiceId, productId = line.itemId,
-                    skuId = line.variantId, itemNameSnapshot = line.itemName,
-                    variantSummarySnapshot = line.variantSummary, qtyMilliUnits = qtyMilli, unitSnapshot = line.unit,
-                    unitCostPaise = line.unitPurchasePricePaise, unitSellPaise = line.customSellingPricePaise,
-                    gstRateBps = effectiveGstBps, lineTotalPaise = analysis.totalRevenuePaise,
-                    lineProfitPaise = analysis.totalProfitPaise
-                )
-            )
-        }
-
-        val invoiceHeader = InvoiceHeaderEntity(
-            id = invoiceId, shopId = shopId, deviceShortCode = deviceCode, invoiceNumber = receiptNo,
-            partyId = resolvedPartyId, buyerName = cleanBuyerName, buyerPhone = cleanBuyerPhone,
-            paymentMode = normalizedPaymentMode, subtotalPaise = subtotalPaise, discountPaise = cleanDiscount,
-            cgstPaise = taxBreakdown.cgstPaise, sgstPaise = taxBreakdown.sgstPaise, igstPaise = taxBreakdown.igstPaise,
-            grandTotalPaise = grandTotalPaise, amountPaidPaise = resolvedPaidPaise, balanceDuePaise = balanceDuePaise,
-            issuedAt = now, yearInt = yearInt, monthInt = monthInt, dayInt = dayInt, updatedAt = now
         )
-
-        database.withTransaction {
-            val device = database.deviceDao().getLocalDevice() ?: error("Local device row missing")
-            for (line in invoiceLines) {
-                shopDao.insertStockMovement(
-                    StockMovementEntity(
-                        movementId = UUID.randomUUID().toString(), shopId = shopId, skuId = line.skuId,
-                        deviceId = device.deviceId, deviceShortCode = device.deviceCode,
-                        deltaMilliUnits = -line.qtyMilliUnits, movementType = "SALE", refDocId = invoiceId,
-                        note = "Sale #$receiptNo", createdAt = now
-                    )
-                )
-                inventoryDao.addToStockProjection(line.skuId, -line.qtyMilliUnits)
-            }
-            saleDao.insertSales(saleEntities)
-            shopDao.upsertInvoiceHeader(invoiceHeader)
-            shopDao.upsertInvoiceLines(invoiceLines)
-            if (partyToCreate != null) shopDao.insertParty(partyToCreate)
-            if (ledgerPartyId != null && balanceDuePaise > 0L) {
-                shopDao.insertLedgerEntry(
-                    PartyTransactionEntity(
-                        entryId = UUID.randomUUID().toString(), shopId = shopId, partyId = ledgerPartyId,
-                        refDocId = invoiceId, entryType = "CREDIT_BILL", amountDeltaPaise = balanceDuePaise,
-                        paymentMode = normalizedPaymentMode, note = "Invoice #$receiptNo", createdAt = now,
-                        deviceId = device.deviceId
-                    )
-                )
-                shopDao.addToPartyBalance(ledgerPartyId, balanceDuePaise)
-            }
-            database.syncOutboxDao().insert(SyncOutboxEntity(docType = OutboxDocType.INVOICE, docId = invoiceId, op = OutboxOp.APPEND, createdAt = now))
-            if (partyToCreate != null) database.syncOutboxDao().insert(SyncOutboxEntity(docType = OutboxDocType.PARTY, docId = partyToCreate.id, op = OutboxOp.UPSERT, createdAt = now))
-        }
-
-        SyncManager.scheduleDeltaSync(context)
-
-        SaleReceiptData(
-            receiptNumber = receiptNo,
-            timestampMillis = now,
-            buyerName = cleanBuyerName,
-            buyerPhone = cleanBuyerPhone,
-            sellerName = SyncManager.getSellerName(context),
-            sellerWhatsAppPhone = SyncManager.getSellerWhatsAppNumber(context),
-            isEstimate = false,
-            items = receiptLineItems,
-            grandTotalPaise = grandTotalPaise,
-            paymentMode = normalizedPaymentMode,
-            subtotalPaise = subtotalPaise,
-            discountPaise = cleanDiscount,
-            taxPaise = taxBreakdown.totalTaxPaise,
-            amountPaidPaise = resolvedPaidPaise,
-            balanceDuePaise = balanceDuePaise,
-            upiId = SyncManager.getUpiId(context),
-            gstin = SyncManager.getGstin(context)
-        )
+        val oversoldNames = result.lines.filter { it.skuId in result.oversoldVariantIds }.map { it.itemNameSnapshot }
+        return CheckoutOutcome(result.toReceipt(), oversoldNames, result.replayed)
     }
+
+    private fun InvoiceResult.toReceipt(): SaleReceiptData = SaleReceiptData(
+        receiptNumber = header.invoiceNumber,
+        timestampMillis = header.issuedAt,
+        buyerName = header.buyerName,
+        buyerPhone = header.buyerPhone,
+        sellerName = SyncManager.getSellerName(context),
+        sellerWhatsAppPhone = SyncManager.getSellerWhatsAppNumber(context),
+        isEstimate = false,
+        items = lines.map {
+            ReceiptLineItem(
+                itemName = it.itemNameSnapshot,
+                variantSummary = it.variantSummarySnapshot,
+                quantity = it.qtyMilliUnits / 1000.0,
+                unit = it.unitSnapshot,
+                unitSellingPricePaise = it.unitSellPaise,
+                lineTotalPaise = it.lineTotalPaise
+            )
+        },
+        grandTotalPaise = header.grandTotalPaise,
+        paymentMode = header.paymentMode,
+        subtotalPaise = header.subtotalPaise,
+        discountPaise = header.discountPaise,
+        taxPaise = header.cgstPaise + header.sgstPaise + header.igstPaise,
+        amountPaidPaise = header.amountPaidPaise,
+        balanceDuePaise = header.balanceDuePaise,
+        upiId = SyncManager.getUpiId(context),
+        gstin = SyncManager.getGstin(context)
+    )
 
     /**
      * Prepares an Estimate (Quotation / Kaccha Parcha) photo receipt without deducting stock.
@@ -407,13 +275,7 @@ class LpsRepository(
         buyerPhone: String = ""
     ): SaleReceiptData = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        val deviceCode = SyncManager.getDeviceShortCode(context)
-        val cal = Calendar.getInstance().apply { timeInMillis = now }
-        val yearInt = cal.get(Calendar.YEAR)
-        val monthInt = cal.get(Calendar.MONTH) + 1
-        val dayInt = cal.get(Calendar.DAY_OF_MONTH)
-
-        val receiptNo = generateNextSmartReceiptNumber(yearInt, monthInt, dayInt, deviceCode)
+        val receiptNo = "EST-" + java.text.SimpleDateFormat("yyMMdd-HHmmss", Locale.US).format(java.util.Date(now))
         val receiptLineItems = cartItems.map { line ->
             ReceiptLineItem(
                 itemName = line.itemName,
@@ -442,69 +304,8 @@ class LpsRepository(
         )
     }
 
-    /**
-     * Generates a smart receipt number (`YYYYMMDDCCCC` or `D1-YYYYMMDD-CCCC` when multi-device code is set).
-     */
-    private suspend fun generateNextSmartReceiptNumber(
-        yearInt: Int,
-        monthInt: Int,
-        dayInt: Int,
-        deviceShortCode: String = ""
-    ): String {
-        val existingReceiptsToday = saleDao.getDistinctReceiptNumbersForDay(yearInt, monthInt, dayInt)
-        val datePrefix = String.format(Locale.US, "%04d%02d%02d", yearInt, monthInt, dayInt)
-        var maxSeqToday = existingReceiptsToday.size
-        for (r in existingReceiptsToday) {
-            if (r.contains(datePrefix)) {
-                val tail = r.takeLast(4).toIntOrNull() ?: 0
-                maxSeqToday = max(maxSeqToday, tail)
-            }
-        }
-        val nextCount = maxSeqToday + 1
-        return formatSmartReceiptId(yearInt, monthInt, dayInt, nextCount, deviceShortCode)
-    }
-
-    companion object {
-        fun formatSmartReceiptId(
-            yearInt: Int,
-            monthInt: Int,
-            dayInt: Int,
-            dailyCount: Int,
-            deviceShortCode: String = ""
-        ): String {
-            val dateStr = String.format(Locale.US, "%04d%02d%02d", yearInt, monthInt, dayInt)
-            val seqStr = String.format(Locale.US, "%04d", dailyCount.coerceAtLeast(1))
-            val cleanCode = deviceShortCode.trim().uppercase(Locale.US)
-            return if (cleanCode.isEmpty()) {
-                "$dateStr$seqStr"
-            } else {
-                "$cleanCode-$dateStr-$seqStr"
-            }
-        }
-    }
-
-    /**
-     * Reverses a sale ("Wapsi / Exchange"), restoring the sold quantity back to inventory stock
-     * and recording an additive `SALE_RETURN` movement.
-     */
-    suspend fun returnSaleAndRestoreStock(sale: SaleRecordEntity) = withContext(Dispatchers.IO) {
-        if (sale.isReturned) return@withContext
-        val now = System.currentTimeMillis()
-        val qtyMilli = IndianCurrencyFormatter.doubleToMilliUnits(sale.quantitySold)
-        database.withTransaction {
-            val device = database.deviceDao().getLocalDevice() ?: error("Local device row missing")
-            saleDao.markSaleReturned(sale.id, now)
-            val movement = StockMovementEntity(
-                movementId = UUID.randomUUID().toString(), shopId = sale.shopId.ifBlank { env.shopId() },
-                skuId = sale.variantId, deviceId = device.deviceId, deviceShortCode = device.deviceCode,
-                deltaMilliUnits = qtyMilli, movementType = "SALE_RETURN", refDocId = sale.receiptNumber,
-                note = "Return of #${sale.receiptNumber}", createdAt = now
-            )
-            shopDao.insertStockMovement(movement)
-            inventoryDao.addToStockProjection(sale.variantId, qtyMilli)
-            database.syncOutboxDao().insert(SyncOutboxEntity(docType = OutboxDocType.MOVEMENT, docId = movement.movementId, op = OutboxOp.APPEND, createdAt = now))
-        }
-        SyncManager.scheduleDeltaSync(context)
+    suspend fun returnSaleLine(actionId: String, sale: SaleRecordEntity, qtyMilli: Long) {
+        sales.returnItems(actionId, sale.invoiceId, listOf(ReturnLine(sale.id, qtyMilli)))
     }
 
     // -------------------------------------------------------------------------

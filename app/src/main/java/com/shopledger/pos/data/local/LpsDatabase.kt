@@ -33,7 +33,6 @@ typealias ShopDatabase = LpsDatabase
     entities = [
         InventoryItemEntity::class,
         ItemVariantEntity::class,
-        SaleRecordEntity::class,
         SearchHistoryEntity::class,
         ShopProfileEntity::class,
         PartyEntity::class,
@@ -45,6 +44,7 @@ typealias ShopDatabase = LpsDatabase
         SyncOutboxEntity::class,
         AppliedActionEntity::class
     ],
+    views = [SaleRecordEntity::class],
     version = 3,
     exportSchema = true
 )
