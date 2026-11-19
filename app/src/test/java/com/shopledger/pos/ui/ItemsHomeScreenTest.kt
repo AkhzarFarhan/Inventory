@@ -10,12 +10,17 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
+import com.shopledger.pos.data.local.entity.SearchHistoryEntity
+import com.shopledger.pos.core.cipher.CipherMode
+import com.shopledger.pos.core.cipher.CostCipherEngine
+import org.junit.After
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
@@ -46,6 +51,11 @@ class ItemsHomeScreenTest {
         items: List<InventoryItemWithVariants> = all,
         onSell: () -> Unit = {},
         onManual: () -> Unit = {},
+        unlocked: Boolean = false,
+        onOpen: (String) -> Unit = {},
+        onCart: (String) -> Unit = {},
+        recent: List<SearchHistoryEntity> = emptyList(),
+        onDeleteRecent: (Long) -> Unit = {},
     ) {
         compose.setContent {
             ShopLedgerTheme {
@@ -59,14 +69,16 @@ class ItemsHomeScreenTest {
                     onSearchQueryChange = { query = it },
                     lowStockOnly = low,
                     onLowStockOnlyChange = { low = it },
-                    isSellerUnlocked = false,
+                    isSellerUnlocked = unlocked,
                     onToggleSeller = {},
                     cartLineCount = 0,
                     onSell = onSell,
                     onAddItemManually = onManual,
-                    onOpenItem = { _, _, _ -> },
+                    onOpenItem = { _, v, _ -> onOpen(v.id) },
                     onEditItem = { _, _ -> },
-                    onAddToCart = { _, _ -> },
+                    onAddToCart = { _, v -> onCart(v.id) },
+                    recentSearches = recent,
+                    onDeleteRecentSearch = onDeleteRecent,
                 )
             }
         }
@@ -115,5 +127,101 @@ class ItemsHomeScreenTest {
         show(items = emptyList())
         compose.onNodeWithText("No items yet").assertIsDisplayed()
         compose.onNodeWithText("Tap Stock In to add your first items").assertIsDisplayed()
+    }
+
+    @After
+    fun restoreCipher() {
+        CostCipherEngine.setActiveConfig(CipherMode.CUSTOM_CODE)
+    }
+
+    private fun costItem(): InventoryItemWithVariants = InventoryItemWithVariants(
+        item = InventoryItemEntity(id = "c1", displayName = "Cost Item", sortKey = "COST ITEM"),
+        allVariants = listOf(
+            ItemVariantEntity(
+                id = "c1-v", itemId = "c1", purchasePricePaise = 4_321L, sellingPricePaise = 5_000L,
+                stockMilliUnits = 20_000L, lowStockMilliUnits = 5_000L,
+            ),
+        ),
+    )
+
+    @Test
+    fun numericCostHiddenWhenLockedAndShownWhenUnlocked() {
+        CostCipherEngine.setActiveConfig(CipherMode.HIDDEN_PIN)
+        show(items = listOf(costItem()), unlocked = false)
+        compose.onNodeWithText("43.21", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Cost Item").assertIsDisplayed()
+    }
+
+    @Test
+    fun numericCostShownWhenUnlocked() {
+        CostCipherEngine.setActiveConfig(CipherMode.HIDDEN_PIN)
+        show(items = listOf(costItem()), unlocked = true)
+        compose.onNodeWithText("43.21", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun customCodeShownWhenLockedAndWhenUnlocked() {
+        CostCipherEngine.setActiveConfig(CipherMode.CUSTOM_CODE)
+        val coded = CostCipherEngine.encodePaiseToCustomCode(4_321L)
+        show(items = listOf(costItem()), unlocked = false)
+        compose.onNodeWithText(coded, substring = true).assertIsDisplayed()
+        compose.onNodeWithText("43.21", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun customCodeShownAlongsideNumericWhenUnlocked() {
+        CostCipherEngine.setActiveConfig(CipherMode.CUSTOM_CODE)
+        val coded = CostCipherEngine.encodePaiseToCustomCode(4_321L)
+        show(items = listOf(costItem()), unlocked = true)
+        compose.onNodeWithText(coded, substring = true).assertIsDisplayed()
+        compose.onNodeWithText("43.21", substring = true).assertIsDisplayed()
+    }
+
+    private fun multiVariantItem(): InventoryItemWithVariants = InventoryItemWithVariants(
+        item = InventoryItemEntity(id = "m1", displayName = "Multi Item", sortKey = "MULTI ITEM"),
+        allVariants = listOf(
+            ItemVariantEntity(
+                id = "m1-a", itemId = "m1", sizeLabel = "A", purchasePricePaise = 4_000L, sellingPricePaise = 5_000L,
+                stockMilliUnits = 20_000L, lowStockMilliUnits = 5_000L,
+            ),
+            ItemVariantEntity(
+                id = "m1-b", itemId = "m1", sizeLabel = "B", purchasePricePaise = 6_000L, sellingPricePaise = 7_000L,
+                stockMilliUnits = 20_000L, lowStockMilliUnits = 5_000L,
+            ),
+        ),
+    )
+
+    @Test
+    fun cartTapOnMultiVariantOpensQuickSellInsteadOfAdding() {
+        val opened = mutableListOf<String>()
+        val added = mutableListOf<String>()
+        show(items = listOf(multiVariantItem()), onOpen = { opened += it }, onCart = { added += it })
+        compose.onNodeWithContentDescription("Add to cart").performClick()
+        assertEquals(1, opened.size)
+        assertEquals(0, added.size)
+    }
+
+    @Test
+    fun cartTapOnSingleVariantAddsDirectly() {
+        val opened = mutableListOf<String>()
+        val added = mutableListOf<String>()
+        show(items = listOf(item("s1", "Single", 20_000L)), onOpen = { opened += it }, onCart = { added += it })
+        compose.onNodeWithContentDescription("Add to cart").performClick()
+        assertEquals(listOf("s1-v"), added)
+        assertEquals(0, opened.size)
+    }
+
+    @Test
+    fun deletingARecentSearchInvokesCallbackWithItsId() {
+        val deleted = mutableListOf<Long>()
+        val recent = listOf(
+            SearchHistoryEntity(id = 7L, rawQuery = "Nuts", normalizedQuery = "nuts"),
+            SearchHistoryEntity(id = 9L, rawQuery = "Screws", normalizedQuery = "screws"),
+        )
+        show(recent = recent, onDeleteRecent = { deleted += it })
+        compose.onNodeWithText("Search items or scan a barcode").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Remove \"Screws\" from recent searches").performClick()
+        assertEquals(listOf(9L), deleted)
     }
 }

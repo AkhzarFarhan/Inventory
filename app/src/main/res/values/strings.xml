@@ -96,4 +96,11 @@
     <string name="update_ready">Ready. Tap to install</string>
     <string name="update_failed">Could not check for updates</string>
     <string name="update_permission">Please allow installing updates from this app in Settings</string>
+    <string name="cd_delete_search_entry">Remove \"%1$s\" from recent searches</string>
+    <string name="owner_pin_locked_hint">Unlock seller mode to change the PIN</string>
+    <string name="cost_code_locked_hint">Unlock seller mode to see or change the cost code key</string>
+    <string name="error_barcode_scanner_failed">Barcode Scanner Failed</string>
+    <string name="error_backup_export_failed">Backup Export Failed</string>
+    <string name="reorder_list_title">*%1$s — Reorder / Purchase List*</string>
+    <string name="reorder_list_line">%1$d. *%2$s* (%3$s) — Current Stock: %4$s %5$s</string>
 </resources>

@@ -59,6 +59,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.shopledger.pos.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.ImeAction
@@ -629,6 +631,7 @@ fun CloudSyncAndBackupSheet(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                if (isSellerUnlocked) {
                 Text(
                     text = "Cost Price Privacy Mode & Owner PIN",
                     fontSize = 14.sp,
@@ -735,8 +738,16 @@ fun CloudSyncAndBackupSheet(
                         )
                     }
                 }
+                } else {
+                    Text(
+                        text = stringResource(R.string.cost_code_locked_hint),
+                        fontSize = 12.sp,
+                        color = CupertinoColors.LabelSecondary
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
+                if (ownerPinHash.isBlank() || isSellerUnlocked) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -762,6 +773,13 @@ fun CloudSyncAndBackupSheet(
                     ) {
                         Text(if (newPinInput.isBlank() && ownerPinHash.isNotBlank()) "Clear" else "Set PIN", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
+                }
+                } else {
+                    Text(
+                        text = stringResource(R.string.owner_pin_locked_hint),
+                        fontSize = 12.sp,
+                        color = CupertinoColors.LabelSecondary
+                    )
                 }
             }
 
@@ -959,7 +977,10 @@ fun CloudSyncAndBackupSheet(
                                 color = CupertinoColors.DestructiveRed
                             )
                             OutlinedButton(
-                                onClick = { AppUpdateManager.resetStatus() },
+                                onClick = {
+                                    AppUpdateManager.resetStatus()
+                                    coroutineScope.launch { AppUpdateManager.checkForUpdates(context) }
+                                },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {

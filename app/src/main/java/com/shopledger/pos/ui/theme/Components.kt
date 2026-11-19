@@ -107,6 +107,7 @@ fun ItemRow(
     modifier: Modifier = Modifier,
     trailingSecondary: String? = null,
     status: StockStatus = StockStatus.OK,
+    trailingSecondaryColor: Color = Color.Unspecified,
 ) {
     val secondaryColor = when (status) {
         StockStatus.OK -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -129,7 +130,11 @@ fun ItemRow(
         Column(horizontalAlignment = Alignment.End) {
             Text(trailingPrimary, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             if (trailingSecondary != null) {
-                Text(trailingSecondary, style = MaterialTheme.typography.bodyMedium, color = secondaryColor)
+                Text(
+                    trailingSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (trailingSecondaryColor != Color.Unspecified) trailingSecondaryColor else secondaryColor,
+                )
             }
         }
     }

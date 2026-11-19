@@ -96,4 +96,11 @@
     <string name="update_ready">तैयार है। इंस्टॉल करने के लिए दबाएँ</string>
     <string name="update_failed">अपडेट नहीं देख सके</string>
     <string name="update_permission">कृपया सेटिंग में इस ऐप को अपडेट इंस्टॉल करने की अनुमति दें</string>
+    <string name="cd_delete_search_entry">\"%1$s\" को हाल की खोज से हटाएँ</string>
+    <string name="owner_pin_locked_hint">PIN बदलने के लिए पहले सेलर मोड खोलें</string>
+    <string name="cost_code_locked_hint">खरीद कोड की चाबी देखने या बदलने के लिए पहले सेलर मोड खोलें</string>
+    <string name="error_barcode_scanner_failed">बारकोड स्कैनर नहीं चला</string>
+    <string name="error_backup_export_failed">बैकअप निकालने में दिक्कत हुई</string>
+    <string name="reorder_list_title">*%1$s — दोबारा मँगाने की सूची*</string>
+    <string name="reorder_list_line">%1$d. *%2$s* (%3$s) — अभी स्टॉक: %4$s %5$s</string>
 </resources>

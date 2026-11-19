@@ -238,27 +238,36 @@ private fun SecurityCard(isSellerUnlocked: Boolean, onToggleSeller: () -> Unit) 
             }
             Switch(checked = isSellerUnlocked, onCheckedChange = { onToggleSeller() })
         }
-        OutlinedTextField(
-            value = newPin,
-            onValueChange = { newPin = it.filter { c -> c.isDigit() }.take(6) },
-            label = {
-                Text(stringResource(if (pinHash.isBlank()) R.string.owner_pin_set else R.string.owner_pin_change))
-            },
-            placeholder = { Text(stringResource(R.string.owner_pin_hint)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        val clearing = newPin.isBlank() && pinHash.isNotBlank()
-        if (newPin.isNotBlank() || pinHash.isNotBlank()) {
-            SecondaryActionButton(
-                text = stringResource(if (clearing) R.string.owner_pin_button_clear else R.string.owner_pin_button_set),
-                onClick = {
-                    SyncManager.saveOwnerPin(context, newPin)
-                    Toast.makeText(context, if (newPin.isBlank()) cleared else saved, Toast.LENGTH_SHORT).show()
-                    newPin = ""
-                },
+        val pinLocked = pinHash.isNotBlank() && !isSellerUnlocked
+        if (pinLocked) {
+            Text(
+                stringResource(R.string.owner_pin_locked_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        } else {
+            OutlinedTextField(
+                value = newPin,
+                onValueChange = { newPin = it.filter { c -> c.isDigit() }.take(6) },
+                label = {
+                    Text(stringResource(if (pinHash.isBlank()) R.string.owner_pin_set else R.string.owner_pin_change))
+                },
+                placeholder = { Text(stringResource(R.string.owner_pin_hint)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            val clearing = newPin.isBlank() && pinHash.isNotBlank()
+            if (newPin.isNotBlank() || pinHash.isNotBlank()) {
+                SecondaryActionButton(
+                    text = stringResource(if (clearing) R.string.owner_pin_button_clear else R.string.owner_pin_button_set),
+                    onClick = {
+                        SyncManager.saveOwnerPin(context, newPin)
+                        Toast.makeText(context, if (newPin.isBlank()) cleared else saved, Toast.LENGTH_SHORT).show()
+                        newPin = ""
+                    },
+                )
+            }
         }
     }
 }
@@ -359,7 +368,16 @@ private fun AboutCard() {
             )
             is UpdateStatus.Error -> {
                 Text(stringResource(R.string.update_failed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                SecondaryActionButton(text = stringResource(R.string.action_retry), onClick = { AppUpdateManager.resetStatus() })
+                SecondaryActionButton(
+                    text = stringResource(R.string.action_retry),
+                    onClick = {
+                        AppUpdateManager.resetStatus()
+                        scope.launch {
+                            val result = AppUpdateManager.checkForUpdates(context)
+                            if (result is UpdateStatus.UpToDate) Toast.makeText(context, upToDate, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
             }
         }
     }

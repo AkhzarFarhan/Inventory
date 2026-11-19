@@ -54,6 +54,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +67,7 @@ import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.scanner.BarcodeScannerHelper
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
+import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.ui.screens.stockin.StockInEntrySheet
 import com.shopledger.pos.ui.theme.ChipTone
@@ -99,7 +102,8 @@ fun ItemsHomeScreen(
     onAddToCart: (InventoryItemEntity, ItemVariantEntity) -> Unit,
     modifier: Modifier = Modifier,
     onCommitSearch: (String) -> Unit = {},
-    recentSearches: List<String> = emptyList(),
+    recentSearches: List<SearchHistoryEntity> = emptyList(),
+    onDeleteRecentSearch: (Long) -> Unit = {},
     onClearRecentSearches: () -> Unit = {},
     draftName: String? = null,
     onResumeDraft: () -> Unit = {},
@@ -112,6 +116,7 @@ fun ItemsHomeScreen(
     var showStockIn by remember { mutableStateOf(false) }
     val cipherMode by CostCipherEngine.activeModeFlow.collectAsState()
     val digitMap by CostCipherEngine.activeCustomDigitMapFlow.collectAsState()
+    val scannerFailedTitle = stringResource(R.string.error_barcode_scanner_failed)
 
     Column(modifier.fillMaxSize()) {
         TopAppBar(
@@ -159,7 +164,7 @@ fun ItemsHomeScreen(
                                         onCommitSearch(scanned)
                                     },
                                     onError = { err ->
-                                        AppErrorManager.reportError(title = "Barcode Scanner Failed", customDetail = err)
+                                        AppErrorManager.reportError(title = scannerFailedTitle, customDetail = err)
                                     },
                                 )
                             },
@@ -213,6 +218,7 @@ fun ItemsHomeScreen(
                         focusManager.clearFocus()
                     },
                     onClear = onClearRecentSearches,
+                    onDelete = onDeleteRecentSearch,
                 )
             }
         }
@@ -245,7 +251,14 @@ fun ItemsHomeScreen(
                                     onOpenItem(group.item, variants.first(), variants)
                                 },
                                 onEdit = { onEditItem(group, variants.first()) },
-                                onAddToCart = { onAddToCart(group.item, variants.first()) },
+                                onAddToCart = {
+                                    if (variants.size > 1) {
+                                        if (searchQuery.isNotBlank()) onCommitSearch(searchQuery)
+                                        onOpenItem(group.item, variants.first(), variants)
+                                    } else {
+                                        onAddToCart(group.item, variants.first())
+                                    }
+                                },
                             )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
@@ -266,7 +279,13 @@ fun ItemsHomeScreen(
                         icon = Icons.Filled.ShoppingCart,
                     )
                     if (cartLineCount > 0) {
-                        Badge(Modifier.align(Alignment.TopEnd).padding(ShopLedgerTokens.spacingXs)) {
+                        val cartDesc = stringResource(R.string.cd_cart_lines, cartLineCount)
+                        Badge(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(ShopLedgerTokens.spacingXs)
+                                .semantics { contentDescription = cartDesc },
+                        ) {
                             Text(cartLineCount.toString())
                         }
                     }
@@ -332,7 +351,8 @@ private fun GroupRow(
     } else {
         formattedMin
     }
-    val cost = variants.first().purchasePricePaise
+    val costVariant = variants.minBy { it.sellingPricePaise }
+    val cost = costVariant.purchasePricePaise
     val costText: String? = when {
         cipherMode == CipherMode.CUSTOM_CODE -> {
             val coded = CostCipherEngine.encodePaiseToCustomCode(cost, digitMap)
@@ -348,6 +368,7 @@ private fun GroupRow(
             subtitle = subtitle,
             trailingPrimary = priceText,
             trailingSecondary = costText,
+            trailingSecondaryColor = MaterialTheme.colorScheme.onSurfaceVariant,
             status = status,
             onClick = onOpen,
             modifier = Modifier.weight(1f),
@@ -389,7 +410,12 @@ private fun DraftCard(name: String, onResume: () -> Unit, onDiscard: () -> Unit)
 }
 
 @Composable
-private fun RecentSearches(recent: List<String>, onPick: (String) -> Unit, onClear: () -> Unit) {
+private fun RecentSearches(
+    recent: List<SearchHistoryEntity>,
+    onPick: (String) -> Unit,
+    onClear: () -> Unit,
+    onDelete: (Long) -> Unit,
+) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -401,16 +427,24 @@ private fun RecentSearches(recent: List<String>, onPick: (String) -> Unit, onCle
                 Text(stringResource(R.string.search_clear_all))
             }
         }
-        recent.take(6).forEach { q ->
-            Text(
-                q,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = ShopLedgerTokens.minTouch)
-                    .clickable { onPick(q) }
-                    .padding(vertical = ShopLedgerTokens.spacingS),
-            )
+        recent.take(6).forEach { entry ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    entry.rawQuery,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = ShopLedgerTokens.minTouch)
+                        .clickable { onPick(entry.rawQuery) }
+                        .padding(vertical = ShopLedgerTokens.spacingS),
+                )
+                IconButton(onClick = { onDelete(entry.id) }, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.cd_delete_search_entry, entry.rawQuery),
+                    )
+                }
+            }
         }
     }
 }

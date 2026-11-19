@@ -217,23 +217,35 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         },
                         onAddToCart = { item, variant -> viewModel.addOrUpdateCartItem(item, variant, 1.0) },
                         onCommitSearch = viewModel::commitSearchToHistory,
-                        recentSearches = recentSearches.map { it.rawQuery },
+                        recentSearches = recentSearches,
+                        onDeleteRecentSearch = viewModel::deleteSearchHistoryItem,
                         onClearRecentSearches = viewModel::clearAllSearchHistory,
                         draftName = savedItemDraft?.takeIf { it.hasContent }?.itemName,
                         onResumeDraft = { activeEditorMode = ItemEditorMode.AddNewItem },
                         onDiscardDraft = { ItemDraftManager.clearDraft(context) },
                         onShareLowStock = {
                             val orderText = buildString {
-                                append("*${activeSellerName.ifBlank { "ShopLedger POS" }} — Reorder / Purchase List*\n\n")
+                                append(
+                                    context.getString(
+                                        R.string.reorder_list_title,
+                                        activeSellerName.ifBlank { context.getString(R.string.app_name) },
+                                    )
+                                )
+                                append("\n\n")
                                 var count = 1
                                 filteredInventory.forEach { group ->
                                     group.variants
                                         .filter { it.isLowStock || it.isOutOfStock }
                                         .forEach { v ->
                                             append(
-                                                "${count++}. *${group.item.displayName}* (${v.buildVariantSummary()}) — Current Stock: ${
-                                                    IndianCurrencyFormatter.formatQuantity(v.stockQuantity)
-                                                } ${v.unit}\n"
+                                                context.getString(
+                                                    R.string.reorder_list_line,
+                                                    count++,
+                                                    group.item.displayName,
+                                                    v.buildVariantSummary(),
+                                                    IndianCurrencyFormatter.formatQuantity(v.stockQuantity),
+                                                    v.unit,
+                                                ) + "\n"
                                             )
                                         }
                                 }
@@ -422,7 +434,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 onExportBackupFile = {
                     withContext(Dispatchers.IO) {
                         runCatching { app.backupManager.exportShareableBackup() }
-                            .onFailure { AppErrorManager.reportError("Backup Export Failed", it) }
+                            .onFailure { AppErrorManager.reportError(context.getString(R.string.error_backup_export_failed), it) }
                             .getOrNull()
                     }
                 },
