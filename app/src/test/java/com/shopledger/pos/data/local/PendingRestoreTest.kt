@@ -668,4 +668,141 @@ class PendingRestoreTest {
         PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
         assertTrue(fresh.exists())
     }
+
+    /** Layout left by a kill inside the branch-1 undo between the main and WAL moves. */
+    private fun splitUndoLayout(marker: String) {
+        live.parentFile?.mkdirs()
+        live.writeText("original")
+        file(".pre-restore-wal").writeText("original-wal")
+        file(".restore-staged").writeText("staged")
+        PendingRestore.armStaged(context, dbName, now)
+        file(".restore-pending").writeText(marker)
+    }
+
+    @Test
+    fun undoingSwapMarker_isResumedFirst_originalWalComesBack_andTheRestoreIsAbandoned() {
+        splitUndoLayout("undoing-swap")
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertFalse(file(".pre-restore-wal").exists())
+        assertFalse(file(".restore-staged").exists())
+        assertFalse(file(".restore-staged.go").exists())
+        assertFalse(file(".restore-pending").exists())
+        assertTrue(PendingRestore.takeRollbackResumedNotice())
+        assertEquals(
+            PendingRestore.Outcome.NotPending,
+            PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+        )
+    }
+
+    @Test
+    fun undoingSwap_withALiveWalOfTheOriginal_neverDeletesIt() {
+        splitUndoLayout("undoing-swap")
+        file("-shm").writeText("original-shm")
+
+        assertFalse(apply())
+
+        assertEquals("original-shm", file("-shm").readText())
+        assertEquals("original-wal", file("-wal").readText())
+    }
+
+    @Test
+    fun swappingMarkerWithTheSplitLayout_neverDeletesThePreRestoreWal() {
+        splitUndoLayout("swapping")
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertFalse(file(".restore-pending").exists())
+        assertFalse(file(".restore-staged").exists())
+    }
+
+    @Test
+    fun swappingMarkerWithTheSplitLayout_andAnExpiredToken_stillRestoresTheOriginalWal() {
+        splitUndoLayout("swapping")
+        PendingRestore.armStaged(context, dbName, now - PendingRestore.TOKEN_MAX_AGE_MS - 1)
+
+        assertFalse(apply())
+
+        assertEquals("original-wal", file("-wal").readText())
+    }
+
+    @Test
+    fun branchOneUndo_ofAnInterruptedForwardSwap_keepsTheOriginalSetThroughout() {
+        // Forward swap killed after the original set moved aside: live missing, `.pre-restore*` holds the original.
+        live.parentFile?.mkdirs()
+        file(".pre-restore").writeText("original")
+        file(".pre-restore-wal").writeText("original-wal")
+        file(".restore-staged").writeText("restored")
+        PendingRestore.armStaged(context, dbName, now)
+        file(".restore-pending").writeText("swapping")
+
+        assertTrue(apply()) // undone, then the staged backup is swapped in again
+
+        assertEquals("restored", live.readText())
+        assertEquals("original", file(".pre-restore").readText())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        assertEquals("pending", file(".restore-pending").readText())
+    }
+
+    @Test
+    fun finishOrRollback_withUndoingSwapMarker_needsSupport_andNeverOpensRoom() {
+        splitUndoLayout("undoing-swap")
+
+        val outcome = PendingRestore.finishOrRollback(context, dbName, open = { error("must not open") }, close = {})
+
+        assertTrue(outcome is PendingRestore.Outcome.NeedsSupport)
+        assertTrue(file(".restore-pending").exists())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+    }
+
+    @Test
+    fun supportCopy_forTheSplitLayout_foldsTheWalOnlyRow() {
+        live.parentFile?.mkdirs()
+        writeWalPair(live, file(".pre-restore-wal"))
+        file(".restore-pending").writeText("undoing-swap")
+
+        val copy = PendingRestore.supportCopy(context, dbName)!!
+
+        assertTrue(copy.name != live.name)
+        assertFoldedHasWalRow(copy)
+    }
+
+    @Test
+    fun supportCopy_forTheSplitLayout_foldsEvenWithoutAKnownMarkerState() {
+        live.parentFile?.mkdirs()
+        writeWalPair(live, file(".pre-restore-wal"))
+        file(".restore-pending").writeText("swapping")
+
+        assertFoldedHasWalRow(PendingRestore.supportCopy(context, dbName)!!)
+    }
+
+    @Test
+    fun aMarkerThatCannotBeRead_isKept_andNothingHappens() {
+        splitUndoLayout("swapping")
+
+        val result = PendingRestore.applyStaged(context, dbName, now) { throw java.io.IOException("transient") }
+
+        assertFalse(result)
+        assertTrue(file(".restore-pending").exists())
+        assertEquals("swapping", file(".restore-pending").readText())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        assertTrue(file(".restore-staged").exists())
+        assertEquals("original", live.readText())
+    }
+
+    @Test
+    fun cleanup_removesALeftoverShmTemp_underTheSameRules() {
+        writeOriginal()
+        val old = file("-shm.tmp").apply { writeText("x"); setLastModified(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)) }
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
+        assertFalse(old.exists())
+        val fresh = file("-shm.tmp").apply { writeText("x") }
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
+        assertTrue(fresh.exists())
+    }
 }

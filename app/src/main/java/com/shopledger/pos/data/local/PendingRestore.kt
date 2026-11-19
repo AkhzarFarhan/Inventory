@@ -21,6 +21,7 @@ object PendingRestore {
     private const val STATE_SWAPPING = "swapping"
     private const val STATE_PENDING = "pending"
     private const val STATE_ROLLING_BACK = "rolling-back"
+    private const val STATE_UNDOING_SWAP = "undoing-swap"
     private val SUFFIXES = listOf("", "-wal", "-shm")
 
     /** A staged file is only applied if the user's restart happened within this long of staging. */
@@ -78,15 +79,31 @@ object PendingRestore {
      * `.pre-restore` set is only deleted while the live database is present and no marker exists, and a half-done swap
      * found at the start is finished or undone before anything else.
      */
-    fun applyStaged(context: Context, dbName: String, now: Long = System.currentTimeMillis()): Boolean {
+    fun applyStaged(context: Context, dbName: String, now: Long = System.currentTimeMillis()): Boolean =
+        applyStaged(context, dbName, now) { it.readText() }
+
+    /** [readMarker] is injectable so tests can simulate a transient I/O failure while reading the marker. */
+    internal fun applyStaged(context: Context, dbName: String, now: Long, readMarker: (File) -> String): Boolean {
         val live = context.getDatabasePath(dbName)
         val staged = File(live.path + STAGED)
         val token = File(live.path + TOKEN)
         val marker = File(live.path + MARKER)
         val preMain = File(live.path + PRE_RESTORE)
 
-        // An empty/unreadable marker is read as `swapping`, exactly like finishOrRollback does.
-        val state = if (marker.exists()) markerState(marker) else null
+        // A successfully read empty/unknown marker is `swapping`, like finishOrRollback. A marker that cannot be READ
+        // (transient I/O) is never interpreted or deleted: everything stays and nothing happens this launch.
+        val state = if (marker.exists()) {
+            val text = try {
+                readMarker(marker)
+            } catch (t: Throwable) {
+                return false
+            }
+            stateOf(text)
+        } else {
+            null
+        }
+        val preWal = File(live.path + PRE_RESTORE + "-wal")
+        val preShm = File(live.path + PRE_RESTORE + "-shm")
 
         // 0. An interrupted rollback is resumed first: the original's files go back over the live names, then the
         // marker goes. Nothing else happens in this launch, and it is never reported as a restore.
@@ -101,10 +118,30 @@ object PendingRestore {
             }
         }
 
+        // 0b. An interrupted undo of a forward swap is resumed (and the restore abandoned). The same applies to a
+        // `swapping` marker with the original main already back but its sidecars still `.pre-restore-*` (an undo cut
+        // short by a build that did not log it). Live sidecars here are the original's and are never deleted.
+        val orphanedOriginalSidecars = state == STATE_SWAPPING && live.exists() && !preMain.exists() &&
+            (preWal.exists() || preShm.exists())
+        if (state == STATE_UNDOING_SWAP || orphanedOriginalSidecars) {
+            return try {
+                if (state != STATE_UNDOING_SWAP) writeDurably(marker, STATE_UNDOING_SWAP)
+                restoreFromPre(live)
+                marker.delete()
+                discardStaged(context, dbName)
+                rollbackResumedNotice.set(true)
+                false
+            } catch (t: Throwable) {
+                false // everything stays exactly where it is, marker included
+            }
+        }
+
         // 1. Finish or undo an earlier interrupted swap before anything else.
         if (!live.exists() && preMain.exists()) {
-            // The original was moved aside and the swap never completed: put it back (this also drops the marker).
+            // The original was moved aside and the swap never completed: put it back. The undo moves main then WAL, so
+            // it is logged durably first; a kill in between leaves `undoing-swap`, which the next start resumes.
             try {
+                writeDurably(marker, STATE_UNDOING_SWAP)
                 restoreFromPre(live)
                 marker.delete()
             } catch (t: Throwable) {
@@ -270,7 +307,7 @@ object PendingRestore {
             DatabaseHealth.markFailed(
                 "Your previous data could not be put back (${t.message ?: t.javaClass.simpleName}). " +
                     "It was kept safely; please send the data file to support.",
-                if (preMain.exists()) preRestoreSupportCopy(preMain) else live.takeIf { it.exists() }
+                supportCopy(context, dbName)
             )
             false
         }
@@ -302,10 +339,13 @@ object PendingRestore {
     }
 
     /** `pending` or `rolling-back` only when the marker says so; an empty, unreadable or unknown marker is the safe reading `swapping`. */
-    private fun markerState(marker: File): String =
-        when (runCatching { marker.readText().trim() }.getOrDefault("")) {
+    private fun markerState(marker: File): String = stateOf(runCatching { marker.readText() }.getOrDefault(""))
+
+    private fun stateOf(text: String): String =
+        when (text.trim()) {
             STATE_PENDING -> STATE_PENDING
             STATE_ROLLING_BACK -> STATE_ROLLING_BACK
+            STATE_UNDOING_SWAP -> STATE_UNDOING_SWAP
             else -> STATE_SWAPPING
         }
 
@@ -315,7 +355,6 @@ object PendingRestore {
         val pre = File(live.path + PRE_RESTORE)
         val preWal = File(pre.path + "-wal")
         val liveWal = File(live.path + "-wal")
-        val marker = File(live.path + MARKER)
         if (pre.exists()) {
             // A move may be half-done. The WAL that belongs to the original main is `.pre-restore-wal` or, when the
             // main moved aside first and the WAL did not follow, the live `-wal` (only while no live main exists, so it
@@ -327,8 +366,9 @@ object PendingRestore {
             }
             return foldedSupportCopy(pre, wal, pre)
         }
-        // Rollback got as far as moving the original main back but not its WAL: fold live main + `.pre-restore-wal`.
-        if (marker.exists() && markerState(marker) == STATE_ROLLING_BACK && live.exists() && preWal.exists()) {
+        // A rollback or swap-undo got as far as moving the original main back but not its WAL (marker `rolling-back`,
+        // `undoing-swap`, or any other): fold live main + `.pre-restore-wal`.
+        if (live.exists() && preWal.exists()) {
             return foldedSupportCopy(live, preWal, pre)
         }
         return PreMigrationGuard.latestSafetyCopy(context) ?: live.takeIf { it.exists() }
