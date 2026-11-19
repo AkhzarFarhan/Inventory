@@ -1,96 +1,75 @@
 package com.shopledger.pos
 
+import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ReceiptLong
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import com.shopledger.pos.core.backup.AppRestarter
 import com.shopledger.pos.core.backup.BackupException
-import com.shopledger.pos.data.local.LpsDatabase
-import com.shopledger.pos.data.local.PendingRestore
 import com.shopledger.pos.core.backup.BackupShare
-import com.shopledger.pos.data.local.DatabaseHealth
-import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
-import com.shopledger.pos.core.auth.GoogleAuthManager
+import com.shopledger.pos.core.draft.ItemDraftManager
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.FloatingAppMessageHost
+import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.sync.SyncManager
+import com.shopledger.pos.data.local.DatabaseHealth
+import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.PendingRestore
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
+import com.shopledger.pos.ui.InventoryFilterMode
 import com.shopledger.pos.ui.MainViewModel
+import com.shopledger.pos.ui.i18n.AppLanguageStore
+import com.shopledger.pos.ui.navigation.AppScaffold
+import com.shopledger.pos.ui.navigation.AppTab
 import com.shopledger.pos.ui.screens.inventory.AddEditItemSheet
 import com.shopledger.pos.ui.screens.inventory.CounterCartSheet
-import com.shopledger.pos.ui.screens.inventory.InventoryScreen
 import com.shopledger.pos.ui.screens.inventory.ItemEditorMode
 import com.shopledger.pos.ui.screens.inventory.OrderScanSheet
 import com.shopledger.pos.ui.screens.inventory.QuickSellSheet
+import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
 import com.shopledger.pos.ui.screens.khata.PartiesKhataScreen
+import com.shopledger.pos.ui.screens.more.MoreScreen
+import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
 import com.shopledger.pos.ui.screens.sales.ReceiptShareDialog
 import com.shopledger.pos.ui.screens.sales.SaleHistoryScreen
 import com.shopledger.pos.ui.screens.settings.CloudSyncAndBackupSheet
-import com.shopledger.pos.ui.theme.CupertinoColors
-import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.LpsCupertinoTheme
-import com.shopledger.pos.ui.i18n.AppLanguageStore
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 
 class MainActivity : ComponentActivity() {
@@ -107,10 +86,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            ShopLedgerTheme { LpsCupertinoTheme {
+            ShopLedgerTheme {
                 val health by DatabaseHealth.state.collectAsState()
                 when (val current = health) {
-                    is DatabaseHealth.State.Failed -> DatabaseRecoveryScreen(
+                    is DatabaseHealth.State.Failed -> LpsCupertinoTheme { DatabaseRecoveryScreen(
                         reason = current.reason,
                         hasSafetyCopy = current.safetyCopy != null,
                         onShareSafetyCopy = {
@@ -125,10 +104,10 @@ class MainActivity : ComponentActivity() {
                                 app.backupManager.stageRestoreFromSnapshot(latest)
                             }
                         }
-                    )
+                    ) }
                     DatabaseHealth.State.Ok -> LpsHardwareMainApp(viewModel = viewModel)
                 }
-            } }
+            }
         }
     }
 }
@@ -166,13 +145,13 @@ private suspend fun stageRestore(app: ShopLedgerApp, stage: () -> Int): String? 
 @Composable
 fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val app = LocalContext.current.applicationContext as ShopLedgerApp
+    val activity = LocalContext.current as? Activity
     val filteredInventory by viewModel.filteredInventoryState.collectAsState()
     val allInventory by viewModel.allInventoryState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val filterMode by viewModel.filterMode.collectAsState()
     val isSellerUnlocked by viewModel.isSellerUnlocked.collectAsState()
     val recentSearches by viewModel.recentSearchesState.collectAsState()
-    val frequentSearches by viewModel.frequentSearchesState.collectAsState()
     val salesHistory by viewModel.salesHistoryState.collectAsState()
     val knownBuyers by viewModel.knownBuyersState.collectAsState()
     val carts by viewModel.cartsState.collectAsState()
@@ -180,12 +159,12 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val cartItems by viewModel.cartItems.collectAsState()
     val activeReceipt by viewModel.activeReceiptForSharing.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCountState.collectAsState()
-    val signedInGoogleUser by GoogleAuthManager.currentUser.collectAsState()
     val activeSellerName by SyncManager.sellerNameFlow.collectAsState()
+    val savedItemDraft by ItemDraftManager.draftFlow.collectAsState()
     val parties by viewModel.partiesState.collectAsState()
     val context = LocalContext.current
 
-    var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
+    var currentTab by rememberSaveable { mutableStateOf(AppTab.ITEMS) }
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
     var quickSellTarget by remember { mutableStateOf<Triple<InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>>?>(null) }
     var showCounterCartSheet by remember { mutableStateOf(false) }
@@ -193,6 +172,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     var showCloudSyncSheet by remember { mutableStateOf(false) }
     var showOwnerPinDialog by remember { mutableStateOf(false) }
     var pinEntryInput by remember { mutableStateOf("") }
+    val wrongPinTitle = stringResource(R.string.pin_wrong)
 
     val requestToggleSeller = {
         if (isSellerUnlocked) {
@@ -205,325 +185,96 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         }
     }
 
+    val duePartyCount = parties.count { it.currentBalancePaise > 0L }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-        containerColor = CupertinoColors.SystemGroupedBackground,
-        topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(CupertinoColors.CardSurface)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Shop Name & Offline-First Sync Status Pill
-                    Column {
-                        Text(
-                            text = activeSellerName.ifBlank { "ShopLedger POS" },
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = CupertinoColors.LabelPrimary
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.clickable { showCloudSyncSheet = true }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Saved on this phone",
-                                tint = CupertinoColors.EmeraldGreen,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = buildString {
-                                    val user = signedInGoogleUser
-                                    if (user != null) {
-                                        append(user.email.ifBlank { user.displayName })
-                                        append(" • ")
-                                    } else {
-                                        append("Google Sign-In • ")
-                                    }
-                                    append("Saved on this phone")
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = CupertinoColors.LabelSecondary
-                            )
-                        }
-                    }
-
-                    // Right Actions: Counter Cart Button + Seller Privacy Unlock Toggle
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Counter Cart Pill
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (cartItems.isNotEmpty()) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                            border = BorderStroke(
-                                1.dp,
-                                if (cartItems.isNotEmpty()) CupertinoColors.SystemBlue else CupertinoColors.Separator
-                            ),
-                            modifier = Modifier.clickable { showCounterCartSheet = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ShoppingCart,
-                                    contentDescription = "Counter Cart",
-                                    tint = if (cartItems.isNotEmpty()) Color.White else CupertinoColors.LabelPrimary,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                val totalItemsAcrossCarts = carts.sumOf { it.items.size }
-                                val cartBadgeText = if (carts.size > 1) {
-                                    "${carts.size} Carts ($totalItemsAcrossCarts)"
-                                } else {
-                                    "${activeCartSession.label} (${cartItems.size})"
-                                }
-                                Text(
-                                    text = cartBadgeText,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (cartItems.isNotEmpty()) Color.White else CupertinoColors.LabelPrimary
-                                )
-                            }
-                        }
-
-                        // Seller Privacy Lock Toggle (Hidden by default per Requirement 3.1)
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSellerUnlocked) CupertinoColors.EmeraldTint else CupertinoColors.CipherContainer,
-                            border = BorderStroke(
-                                1.dp,
-                                if (isSellerUnlocked) CupertinoColors.EmeraldGreen.copy(alpha = 0.4f)
-                                else CupertinoColors.CipherIndigo.copy(alpha = 0.25f)
-                            ),
-                            modifier = Modifier.clickable { requestToggleSeller() }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isSellerUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                                    contentDescription = "Seller Mode Toggle",
-                                    tint = if (isSellerUnlocked) CupertinoColors.EmeraldGreen else CupertinoColors.CipherIndigo,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = if (isSellerUnlocked) "Seller" else "Safe",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSellerUnlocked) CupertinoColors.EmeraldGreen else CupertinoColors.CipherIndigo
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(CupertinoColors.Separator)
-                )
-            }
-        },
-        bottomBar = {
-            Column {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(CupertinoColors.Separator)
-                )
-                NavigationBar(
-                    containerColor = CupertinoColors.CardSurface,
-                    tonalElevation = 0.dp
-                ) {
-                    NavigationBarItem(
-                        selected = currentTabIndex == 0,
-                        onClick = { currentTabIndex = 0 },
-                        icon = {
-                            BadgedBox(
-                                badge = {
-                                    if (allInventory.isNotEmpty()) {
-                                        Badge(
-                                            containerColor = CupertinoColors.SystemBlueTint,
-                                            contentColor = CupertinoColors.SystemBlue
-                                        ) {
-                                            Text(allInventory.size.toString(), fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.Inventory2, contentDescription = "Inventory")
-                            }
-                        },
-                        label = {
-                            Text(
-                                text = "Inventory (A–Z)",
-                                fontWeight = if (currentTabIndex == 0) FontWeight.Bold else FontWeight.Medium
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = CupertinoColors.SystemBlue,
-                            selectedTextColor = CupertinoColors.SystemBlue,
-                            indicatorColor = CupertinoColors.SystemBlueTint,
-                            unselectedIconColor = CupertinoColors.LabelMuted,
-                            unselectedTextColor = CupertinoColors.LabelMuted
-                        )
-                    )
-
-                    NavigationBarItem(
-                        selected = currentTabIndex == 1,
-                        onClick = { currentTabIndex = 1 },
-                        icon = {
-                            BadgedBox(
-                                badge = {
-                                    if (salesHistory.isNotEmpty()) {
-                                        Badge(
-                                            containerColor = CupertinoColors.EmeraldTint,
-                                            contentColor = CupertinoColors.EmeraldGreen
-                                        ) {
-                                            Text(
-                                                salesHistory.count { !it.isReturned }.toString(),
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Sale History")
-                            }
-                        },
-                        label = {
-                            Text(
-                                text = "Sales & Margin (₹)",
-                                fontWeight = if (currentTabIndex == 1) FontWeight.Bold else FontWeight.Medium
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = CupertinoColors.SystemBlue,
-                            selectedTextColor = CupertinoColors.SystemBlue,
-                            indicatorColor = CupertinoColors.SystemBlueTint,
-                            unselectedIconColor = CupertinoColors.LabelMuted,
-                            unselectedTextColor = CupertinoColors.LabelMuted
-                        )
-                    )
-
-                    val duePartyCount = parties.count { it.currentBalancePaise > 0L }
-                    NavigationBarItem(
-                        selected = currentTabIndex == 2,
-                        onClick = { currentTabIndex = 2 },
-                        icon = {
-                            BadgedBox(
-                                badge = {
-                                    if (duePartyCount > 0) {
-                                        Badge(
-                                            containerColor = CupertinoColors.DestructiveTint,
-                                            contentColor = CupertinoColors.DestructiveRed
-                                        ) {
-                                            Text(
-                                                duePartyCount.toString(),
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Khata (Udhar)")
-                            }
-                        },
-                        label = {
-                            Text(
-                                text = "Khata (Udhar)",
-                                fontWeight = if (currentTabIndex == 2) FontWeight.Bold else FontWeight.Medium
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = CupertinoColors.SystemBlue,
-                            selectedTextColor = CupertinoColors.SystemBlue,
-                            indicatorColor = CupertinoColors.SystemBlueTint,
-                            unselectedIconColor = CupertinoColors.LabelMuted,
-                            unselectedTextColor = CupertinoColors.LabelMuted
-                        )
-                    )
-                }
-            }
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            when (currentTabIndex) {
-                0 -> {
-                    InventoryScreen(
+        AppScaffold(
+            selectedTab = currentTab,
+            onTabSelected = { currentTab = it },
+            badges = mapOf(AppTab.KHATA to duePartyCount),
+        ) { innerPadding ->
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                when (currentTab) {
+                    AppTab.ITEMS -> ItemsHomeScreen(
+                        shopName = activeSellerName.ifBlank { stringResource(R.string.app_name) },
                         items = filteredInventory,
                         searchQuery = searchQuery,
-                        filterMode = filterMode,
-                        isSellerUnlocked = isSellerUnlocked,
-                        recentSearches = recentSearches,
-                        frequentSearches = frequentSearches,
-                        carts = carts,
-                        activeCartId = activeCartSession.cartId,
-                        activeCartItems = cartItems,
                         onSearchQueryChange = viewModel::updateSearchQuery,
-                        onCommitSearch = viewModel::commitSearchToHistory,
-                        onDeleteSearchEntry = viewModel::deleteSearchHistoryItem,
-                        onClearAllSearches = viewModel::clearAllSearchHistory,
-                        onFilterModeChange = viewModel::setFilterMode,
-                        onAddNewItemClick = {
-                            activeEditorMode = ItemEditorMode.AddNewItem
+                        lowStockOnly = filterMode == InventoryFilterMode.LOW_STOCK_ONLY,
+                        onLowStockOnlyChange = { low ->
+                            viewModel.setFilterMode(
+                                if (low) InventoryFilterMode.LOW_STOCK_ONLY else InventoryFilterMode.ALL_ALPHABETICAL
+                            )
                         },
-                        onEditItemClick = { itemWithVariants, variant ->
-                            activeEditorMode = ItemEditorMode.ManageItem(itemWithVariants, variant.id)
-                        },
-                        onQuickSellClick = { item, variant, variants ->
-                            quickSellTarget = Triple(item, variant, variants)
-                        },
-                        onAddToCartClick = { item, variant, delta ->
-                            viewModel.addOrUpdateCartItem(item, variant, delta)
-                        },
-                        onSwitchCart = viewModel::switchActiveCart,
-                        onCreateNewCart = { viewModel.createNewCart() },
-                        onCloseCart = viewModel::closeCart,
-                        onOpenCartSheet = { showCounterCartSheet = true },
-                        onOpenOrderScanner = { showOrderScanSheet = true }
-                    )
-                }
-                1 -> {
-                    SaleHistoryScreen(
-                        sales = salesHistory,
                         isSellerUnlocked = isSellerUnlocked,
-                        onToggleSellerUnlocked = requestToggleSeller,
-                        onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
-                        onReturnSale = viewModel::returnSaleLine
+                        onToggleSeller = requestToggleSeller,
+                        cartLineCount = carts.sumOf { it.items.size },
+                        onSell = { showCounterCartSheet = true },
+                        onAddItemManually = { activeEditorMode = ItemEditorMode.AddNewItem },
+                        onOpenItem = { item, variant, variants -> quickSellTarget = Triple(item, variant, variants) },
+                        onEditItem = { group, variant ->
+                            activeEditorMode = ItemEditorMode.ManageItem(group, variant.id)
+                        },
+                        onAddToCart = { item, variant -> viewModel.addOrUpdateCartItem(item, variant, 1.0) },
+                        onCommitSearch = viewModel::commitSearchToHistory,
+                        recentSearches = recentSearches.map { it.rawQuery },
+                        onClearRecentSearches = viewModel::clearAllSearchHistory,
+                        draftName = savedItemDraft?.takeIf { it.hasContent }?.itemName,
+                        onResumeDraft = { activeEditorMode = ItemEditorMode.AddNewItem },
+                        onDiscardDraft = { ItemDraftManager.clearDraft(context) },
+                        onShareLowStock = {
+                            val orderText = buildString {
+                                append("*${activeSellerName.ifBlank { "ShopLedger POS" }} — Reorder / Purchase List*\n\n")
+                                var count = 1
+                                filteredInventory.forEach { group ->
+                                    group.variants
+                                        .filter { it.isLowStock || it.isOutOfStock }
+                                        .forEach { v ->
+                                            append(
+                                                "${count++}. *${group.item.displayName}* (${v.buildVariantSummary()}) — Current Stock: ${
+                                                    IndianCurrencyFormatter.formatQuantity(v.stockQuantity)
+                                                } ${v.unit}\n"
+                                            )
+                                        }
+                                }
+                            }
+                            ReceiptShareManager.shareTextToWhatsApp(context, orderText)
+                        },
                     )
-                }
-                else -> {
-                    PartiesKhataScreen(
-                        parties = parties,
-                        onAddParty = viewModel::addOrUpdateParty,
-                        onRecordPaymentReceived = viewModel::recordPartyPaymentReceived
+                    AppTab.BILLS -> LpsCupertinoTheme {
+                        SaleHistoryScreen(
+                            sales = salesHistory,
+                            isSellerUnlocked = isSellerUnlocked,
+                            onToggleSellerUnlocked = requestToggleSeller,
+                            onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
+                            onReturnSale = viewModel::returnSaleLine
+                        )
+                    }
+                    AppTab.KHATA -> LpsCupertinoTheme {
+                        PartiesKhataScreen(
+                            parties = parties,
+                            onAddParty = viewModel::addOrUpdateParty,
+                            onRecordPaymentReceived = viewModel::recordPartyPaymentReceived
+                        )
+                    }
+                    AppTab.MORE -> MoreScreen(
+                        isSellerUnlocked = isSellerUnlocked,
+                        onToggleSeller = requestToggleSeller,
+                        language = remember { AppLanguageStore.get(context) },
+                        onLanguageSelected = { lang ->
+                            if (lang != AppLanguageStore.get(context)) {
+                                AppLanguageStore.set(context, lang)
+                                activity?.recreate()
+                            }
+                        },
+                        pendingSyncCount = pendingSyncCount,
+                        loadDeviceCode = { withContext(Dispatchers.IO) { app.repository.localDeviceCode() } },
+                        onSaveDeviceCode = { code -> withContext(Dispatchers.IO) { app.repository.setDeviceCode(code) } },
+                        onOpenAccountSheet = { showCloudSyncSheet = true },
                     )
                 }
             }
         }
-    }
 
         FloatingAppMessageHost(
             modifier = Modifier
@@ -537,217 +288,204 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         allInventory.map { it.item.category }.filter { it.isNotBlank() }.distinct()
     }
 
-    // Add / Edit Item & Variant Sheet
-    activeEditorMode?.let { mode ->
-        AddEditItemSheet(
-            mode = mode,
-            existingCategories = allExistingCategories,
-            onCheckDuplicate = viewModel::checkCandidateDuplicate,
-            onSaveNewItemWithVariants = viewModel::addNewItemWithVariants,
-            onSaveVariantToParent = viewModel::addVariantToExistingItem,
-            onUpdateExisting = viewModel::updateExistingItemAndVariant,
-            onDeleteItemOrVariant = viewModel::deleteItemOrVariant,
-            onSwitchToManageItem = { matchedParent, initialVariantId, isAddingNew, pSize, pMat, pCol ->
-                activeEditorMode = ItemEditorMode.ManageItem(
-                    itemWithVariants = matchedParent,
-                    initialVariantId = initialVariantId,
-                    startInAddVariantMode = isAddingNew,
-                    prefillSize = pSize,
-                    prefillMaterial = pMat,
-                    prefillColor = pCol
-                )
-            },
-            onDismiss = { activeEditorMode = null }
-        )
+    // The sheets below keep their existing look until they are restyled.
+    LpsCupertinoTheme {
+        // Add / Edit Item & Variant Sheet
+        activeEditorMode?.let { mode ->
+            AddEditItemSheet(
+                mode = mode,
+                existingCategories = allExistingCategories,
+                onCheckDuplicate = viewModel::checkCandidateDuplicate,
+                onSaveNewItemWithVariants = viewModel::addNewItemWithVariants,
+                onSaveVariantToParent = viewModel::addVariantToExistingItem,
+                onUpdateExisting = viewModel::updateExistingItemAndVariant,
+                onDeleteItemOrVariant = viewModel::deleteItemOrVariant,
+                onSwitchToManageItem = { matchedParent, initialVariantId, isAddingNew, pSize, pMat, pCol ->
+                    activeEditorMode = ItemEditorMode.ManageItem(
+                        itemWithVariants = matchedParent,
+                        initialVariantId = initialVariantId,
+                        startInAddVariantMode = isAddingNew,
+                        prefillSize = pSize,
+                        prefillMaterial = pMat,
+                        prefillColor = pCol
+                    )
+                },
+                onDismiss = { activeEditorMode = null }
+            )
+        }
+
+        // 1-Tap Quick Sell Sheet
+        quickSellTarget?.let { (item, variant, allVariants) ->
+            QuickSellSheet(
+                item = item,
+                variant = variant,
+                allVariants = allVariants,
+                isSellerUnlocked = isSellerUnlocked,
+                knownBuyers = knownBuyers,
+                onConfirmQuickSell = { lineItem, buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
+                    viewModel.completeSaleAndPrepareReceipt(
+                        itemsToSell = listOf(lineItem),
+                        buyerName = buyerName,
+                        buyerPhone = buyerPhone,
+                        clearCounterCart = false,
+                        paymentMode = paymentMode,
+                        discountPaise = discountPaise,
+                        amountPaidPaise = amountPaidPaise
+                    )
+                },
+                onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
+                    viewModel.prepareEstimateImageForSharing(
+                        itemsToEstimate = itemsToEstimate,
+                        buyerName = buyerName,
+                        buyerPhone = buyerPhone
+                    )
+                },
+                onFillCartWithBuyerOrderAndOpenCart = { snapshots, buyerName, buyerPhone ->
+                    viewModel.fillCartFromBuyerHistory(snapshots)
+                    viewModel.updateActiveCartBuyer(buyerName, buyerPhone)
+                    quickSellTarget = null
+                    showCounterCartSheet = true
+                },
+                onDismiss = { quickSellTarget = null }
+            )
+        }
+
+        // Multi-Item & Multi-Session Counter Cart Sheet
+        if (showCounterCartSheet) {
+            CounterCartSheet(
+                cartItems = cartItems,
+                isSellerUnlocked = isSellerUnlocked,
+                knownBuyers = knownBuyers,
+                carts = carts,
+                activeCartId = activeCartSession.cartId,
+                initialBuyerName = activeCartSession.buyerName,
+                initialBuyerPhone = activeCartSession.buyerPhone,
+                onSwitchCart = viewModel::switchActiveCart,
+                onCreateNewCart = { viewModel.createNewCart() },
+                onCloseCart = viewModel::closeCart,
+                onActiveCartBuyerChange = viewModel::updateActiveCartBuyer,
+                onUpdateCartLine = viewModel::updateCartLineQuantityAndPrice,
+                onRemoveCartLine = viewModel::removeCartLine,
+                onRemoveMultipleCartLines = viewModel::removeMultipleCartLines,
+                onClearCart = viewModel::clearCart,
+                onFillCartFromBuyerOrder = viewModel::fillCartFromBuyerHistory,
+                onOpenOrderScanner = { showOrderScanSheet = true },
+                onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
+                    viewModel.prepareEstimateImageForSharing(
+                        itemsToEstimate = itemsToEstimate,
+                        buyerName = buyerName,
+                        buyerPhone = buyerPhone
+                    )
+                },
+                onCheckoutCart = { buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
+                    viewModel.completeSaleAndPrepareReceipt(
+                        itemsToSell = cartItems,
+                        buyerName = buyerName,
+                        buyerPhone = buyerPhone,
+                        clearCounterCart = true,
+                        paymentMode = paymentMode,
+                        discountPaise = discountPaise,
+                        amountPaidPaise = amountPaidPaise
+                    )
+                },
+                onDismiss = { showCounterCartSheet = false }
+            )
+        }
+
+        // Unbundled On-Device Order List / Receipt Scanner Sheet
+        if (showOrderScanSheet) {
+            OrderScanSheet(
+                inventory = allInventory,
+                activeCartLabel = activeCartSession.label,
+                onAddScannedItemsAndOpenCart = { scannedLines ->
+                    viewModel.batchAddItemsToActiveCart(scannedLines)
+                    showOrderScanSheet = false
+                    showCounterCartSheet = true
+                },
+                onDismiss = { showOrderScanSheet = false }
+            )
+        }
+
+        // Sale Receipt Image Preview & Direct WhatsApp Buyer Phone Share Dialog
+        activeReceipt?.let { receipt ->
+            ReceiptShareDialog(
+                receipt = receipt,
+                onDismiss = viewModel::dismissReceiptDialog
+            )
+        }
+
+        // Cloud Sync, Cipher Legend & Backup Sheet
+        if (showCloudSyncSheet) {
+            CloudSyncAndBackupSheet(
+                pendingSyncCount = pendingSyncCount,
+                isSellerUnlocked = isSellerUnlocked,
+                onExportBackupFile = {
+                    withContext(Dispatchers.IO) {
+                        runCatching { app.backupManager.exportShareableBackup() }
+                            .onFailure { AppErrorManager.reportError("Backup Export Failed", it) }
+                            .getOrNull()
+                    }
+                },
+                onRestoreBackupFile = { uri ->
+                    stageRestore(app) {
+                        val stream = app.contentResolver.openInputStream(uri) ?: throw BackupException("That file could not be opened")
+                        stream.use { app.backupManager.stageRestoreFromShareable(it) }
+                    }
+                },
+                latestSnapshotTime = { app.backupManager.latestSnapshot()?.lastModified() },
+                onRestoreLatestSnapshot = {
+                    stageRestore(app) {
+                        val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet")
+                        app.backupManager.stageRestoreFromSnapshot(latest)
+                    }
+                },
+                onImportBackupJson = viewModel::importBackupJson,
+                loadDeviceCode = { withContext(Dispatchers.IO) { app.repository.localDeviceCode() } },
+                onSaveDeviceCode = { code -> withContext(Dispatchers.IO) { app.repository.setDeviceCode(code) } },
+                onDismiss = { showCloudSyncSheet = false }
+            )
+        }
     }
 
-    // 1-Tap Quick Sell Sheet
-    quickSellTarget?.let { (item, variant, allVariants) ->
-        QuickSellSheet(
-            item = item,
-            variant = variant,
-            allVariants = allVariants,
-            isSellerUnlocked = isSellerUnlocked,
-            knownBuyers = knownBuyers,
-            onConfirmQuickSell = { lineItem, buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
-                viewModel.completeSaleAndPrepareReceipt(
-                    itemsToSell = listOf(lineItem),
-                    buyerName = buyerName,
-                    buyerPhone = buyerPhone,
-                    clearCounterCart = false,
-                    paymentMode = paymentMode,
-                    discountPaise = discountPaise,
-                    amountPaidPaise = amountPaidPaise
-                )
-            },
-            onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
-                viewModel.prepareEstimateImageForSharing(
-                    itemsToEstimate = itemsToEstimate,
-                    buyerName = buyerName,
-                    buyerPhone = buyerPhone
-                )
-            },
-            onFillCartWithBuyerOrderAndOpenCart = { snapshots, buyerName, buyerPhone ->
-                viewModel.fillCartFromBuyerHistory(snapshots)
-                viewModel.updateActiveCartBuyer(buyerName, buyerPhone)
-                quickSellTarget = null
-                showCounterCartSheet = true
-            },
-            onDismiss = { quickSellTarget = null }
-        )
-    }
-
-    // Multi-Item & Multi-Session Counter Cart Sheet
-    if (showCounterCartSheet) {
-        CounterCartSheet(
-            cartItems = cartItems,
-            isSellerUnlocked = isSellerUnlocked,
-            knownBuyers = knownBuyers,
-            carts = carts,
-            activeCartId = activeCartSession.cartId,
-            initialBuyerName = activeCartSession.buyerName,
-            initialBuyerPhone = activeCartSession.buyerPhone,
-            onSwitchCart = viewModel::switchActiveCart,
-            onCreateNewCart = { viewModel.createNewCart() },
-            onCloseCart = viewModel::closeCart,
-            onActiveCartBuyerChange = viewModel::updateActiveCartBuyer,
-            onUpdateCartLine = viewModel::updateCartLineQuantityAndPrice,
-            onRemoveCartLine = viewModel::removeCartLine,
-            onRemoveMultipleCartLines = viewModel::removeMultipleCartLines,
-            onClearCart = viewModel::clearCart,
-            onFillCartFromBuyerOrder = viewModel::fillCartFromBuyerHistory,
-            onOpenOrderScanner = { showOrderScanSheet = true },
-            onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
-                viewModel.prepareEstimateImageForSharing(
-                    itemsToEstimate = itemsToEstimate,
-                    buyerName = buyerName,
-                    buyerPhone = buyerPhone
-                )
-            },
-            onCheckoutCart = { buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
-                viewModel.completeSaleAndPrepareReceipt(
-                    itemsToSell = cartItems,
-                    buyerName = buyerName,
-                    buyerPhone = buyerPhone,
-                    clearCounterCart = true,
-                    paymentMode = paymentMode,
-                    discountPaise = discountPaise,
-                    amountPaidPaise = amountPaidPaise
-                )
-            },
-            onDismiss = { showCounterCartSheet = false }
-        )
-    }
-
-    // Unbundled On-Device Order List / Receipt Scanner Sheet
-    if (showOrderScanSheet) {
-        OrderScanSheet(
-            inventory = allInventory,
-            activeCartLabel = activeCartSession.label,
-            onAddScannedItemsAndOpenCart = { scannedLines ->
-                viewModel.batchAddItemsToActiveCart(scannedLines)
-                showOrderScanSheet = false
-                showCounterCartSheet = true
-            },
-            onDismiss = { showOrderScanSheet = false }
-        )
-    }
-
-    // Sale Receipt Image Preview & Direct WhatsApp Buyer Phone Share Dialog
-    activeReceipt?.let { receipt ->
-        ReceiptShareDialog(
-            receipt = receipt,
-            onDismiss = viewModel::dismissReceiptDialog
-        )
-    }
-
-    // Cloud Sync, Cipher Legend & Backup Sheet
-    if (showCloudSyncSheet) {
-        CloudSyncAndBackupSheet(
-            pendingSyncCount = pendingSyncCount,
-            isSellerUnlocked = isSellerUnlocked,
-            onExportBackupFile = {
-                withContext(Dispatchers.IO) {
-                    runCatching { app.backupManager.exportShareableBackup() }
-                        .onFailure { AppErrorManager.reportError("Backup Export Failed", it) }
-                        .getOrNull()
-                }
-            },
-            onRestoreBackupFile = { uri ->
-                stageRestore(app) {
-                    val stream = app.contentResolver.openInputStream(uri) ?: throw BackupException("That file could not be opened")
-                    stream.use { app.backupManager.stageRestoreFromShareable(it) }
-                }
-            },
-            latestSnapshotTime = { app.backupManager.latestSnapshot()?.lastModified() },
-            onRestoreLatestSnapshot = {
-                stageRestore(app) {
-                    val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet")
-                    app.backupManager.stageRestoreFromSnapshot(latest)
-                }
-            },
-            onImportBackupJson = viewModel::importBackupJson,
-            loadDeviceCode = { withContext(Dispatchers.IO) { app.repository.localDeviceCode() } },
-            onSaveDeviceCode = { code -> withContext(Dispatchers.IO) { app.repository.setDeviceCode(code) } },
-            onDismiss = { showCloudSyncSheet = false }
-        )
-    }
-
-    // Owner PIN Lock Check Dialog before unlocking Cost & Margin Mode
+    // Owner PIN check before unlocking cost and profit
     if (showOwnerPinDialog) {
         AlertDialog(
             onDismissRequest = { showOwnerPinDialog = false },
-            containerColor = CupertinoColors.CardSurface,
-            title = {
-                Text(
-                    text = "Enter Owner PIN",
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-            },
+            title = { Text(stringResource(R.string.pin_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Enter your secret 4–6 digit PIN to unlock purchase prices and profit margins.",
-                        fontSize = 13.sp,
-                        color = CupertinoColors.LabelSecondary
-                    )
-                    CupertinoTextField(
+                    Text(stringResource(R.string.pin_message), style = MaterialTheme.typography.bodyLarge)
+                    OutlinedTextField(
                         value = pinEntryInput,
                         onValueChange = { ch ->
-                            if (ch.all { it.isDigit() } && ch.length <= 6) {
-                                pinEntryInput = ch
-                            }
+                            if (ch.all { it.isDigit() } && ch.length <= 6) pinEntryInput = ch
                         },
-                        label = "Owner PIN",
-                        placeholder = "4–6 digits",
-                        keyboardType = KeyboardType.NumberPassword
+                        label = { Text(stringResource(R.string.pin_label)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             },
             confirmButton = {
-                Button(
+                TextButton(
                     onClick = {
                         if (SyncManager.verifyOwnerPin(pinEntryInput.trim())) {
                             showOwnerPinDialog = false
                             pinEntryInput = ""
                             viewModel.toggleSellerUnlocked()
                         } else {
-                            AppErrorManager.reportError(
-                                title = "Wrong Owner PIN",
-                                customDetail = "Entered PIN did not match. Please try again."
-                            )
-                            Toast.makeText(context, "Incorrect Owner PIN", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, wrongPinTitle, Toast.LENGTH_SHORT).show()
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = CupertinoColors.EmeraldGreen)
+                    modifier = Modifier.heightIn(min = 48.dp)
                 ) {
-                    Text("Unlock", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.pin_unlock), style = MaterialTheme.typography.labelLarge)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showOwnerPinDialog = false }) {
-                    Text("Cancel")
+                TextButton(onClick = { showOwnerPinDialog = false }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
                 }
             }
         )
