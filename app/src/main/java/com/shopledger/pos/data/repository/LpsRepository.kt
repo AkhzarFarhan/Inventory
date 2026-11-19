@@ -32,8 +32,6 @@ import com.shopledger.pos.data.model.InventoryItemWithVariants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 import java.util.Locale
 import java.util.UUID
 

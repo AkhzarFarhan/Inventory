@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto Backup rules for API 30 and below. Everything is backed up as before, except the on-device
+     encrypted snapshots: their Keystore key never leaves the phone, so they cannot be read elsewhere and only use quota. -->
+<full-backup-content>
+    <exclude domain="file" path="backups/" />
+</full-backup-content>

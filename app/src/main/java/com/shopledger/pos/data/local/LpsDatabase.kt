@@ -350,7 +350,7 @@ abstract class LpsDatabase : RoomDatabase() {
             }
         }
 
-        /** Used by backup restore: the next getInstance() reopens (and migrates) the swapped file. */
+        /** Closes the cached instance so the next getInstance() reopens the file (used when a pending restore is rolled back). */
         fun closeInstance() {
             synchronized(this) {
                 INSTANCE?.close()
@@ -359,6 +359,8 @@ abstract class LpsDatabase : RoomDatabase() {
         }
 
         private fun buildDatabase(appContext: Context): LpsDatabase {
+            // A fresh process, nothing has the file open yet: the only safe moment to swap in a staged restore.
+            runCatching { PendingRestore.applyStaged(appContext, DB_NAME) }
             val legacyDbFile = appContext.getDatabasePath(LEGACY_DB_NAME)
             val targetDbFile = appContext.getDatabasePath(DB_NAME)
             if (legacyDbFile.exists() && !targetDbFile.exists()) {

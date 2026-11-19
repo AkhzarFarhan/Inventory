@@ -140,9 +140,11 @@ object PreMigrationGuard {
     fun latestSafetyCopy(context: Context): File? =
         databaseDir(context)?.listFiles { f -> f.name.contains(MARKER) && f.name.endsWith(".db") }?.maxByOrNull { it.lastModified() }
 
-    /** Only `.pre-v` safety copies are removed; `.corrupt-` evidence copies are never touched. */
+    /** Only `.pre-v` safety copies and `.pre-restore` undo sets are removed; `.corrupt-` evidence copies and the live db are never touched. */
     fun deleteSafetyCopiesOlderThan(context: Context, maxAgeMs: Long, now: Long = System.currentTimeMillis()) {
-        databaseDir(context)?.listFiles { f -> f.name.contains(MARKER) && !f.name.contains(CORRUPT_MARKER) }
+        databaseDir(context)?.listFiles { f ->
+            (f.name.contains(MARKER) || f.name.contains(PendingRestore.PRE_RESTORE_MARKER)) && !f.name.contains(CORRUPT_MARKER)
+        }
             ?.filter { now - it.lastModified() > maxAgeMs }
             ?.forEach { it.delete() }
     }

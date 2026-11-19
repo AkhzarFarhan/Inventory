@@ -63,6 +63,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.shopledger.pos.core.auth.GoogleAuthManager
@@ -86,6 +87,8 @@ import com.shopledger.pos.ui.theme.SemanticPillBadge
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.InputStream
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 /**
@@ -93,7 +96,8 @@ import java.util.Locale
  * 1. Single-Tap Google Sign-In (auto-configured via `google-services.json` -> `ubiverse-app`).
  * 2. Seller's WhatsApp Number (for 1-tap buyer contact link on Receipts & Estimates).
  * 3. Secret Symbol Key (when Seller Mode is unlocked).
- * 4. Offline JSON Backup & Restore.
+ * 4. Backup & Restore: nightly encrypted snapshots, a shareable backup file, and a checked restore
+ *    (the backup is validated and staged, then the app restarts to swap it in with automatic rollback).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,7 +105,12 @@ fun CloudSyncAndBackupSheet(
     pendingSyncCount: Int,
     isSellerUnlocked: Boolean,
     onExportBackupFile: suspend () -> File?,
-    onRestoreBackupFile: suspend (InputStream) -> Boolean,
+    /** Stages the chosen backup file for restore. Returns null when it was staged, otherwise an error message to show. */
+    onRestoreBackupFile: suspend (InputStream) -> String?,
+    /** Modification time of the newest automatic (nightly) snapshot, or null when there is none. */
+    latestSnapshotTime: () -> Long?,
+    /** Stages the newest automatic snapshot for restore. Returns null when staged, otherwise an error message. */
+    onRestoreLatestSnapshot: suspend () -> String?,
     onImportBackupJson: suspend (String) -> Boolean,
     onDismiss: () -> Unit
 ) {
@@ -135,20 +144,49 @@ fun CloudSyncAndBackupSheet(
     var importJsonText by remember { mutableStateOf("") }
     var showImportBox by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
-    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            coroutineScope.launch {
-                val ok = runCatching {
-                    context.contentResolver.openInputStream(uri)!!.use { onRestoreBackupFile(it) }
-                }.getOrDefault(false)
-                if (ok) {
-                    Toast.makeText(context, "Backup restored. Restartingâ€¦", Toast.LENGTH_SHORT).show()
-                    AppRestarter.restart(context)
-                } else {
-                    Toast.makeText(context, "That file is not a ShopLedger backup", Toast.LENGTH_LONG).show()
-                }
+    var showSnapshotRestoreConfirm by remember { mutableStateOf(false) }
+    var checkingBackup by remember { mutableStateOf(false) }
+    val lastSnapshotMillis = remember { latestSnapshotTime() }
+    val lastSnapshotLabel = remember(lastSnapshotMillis) {
+        lastSnapshotMillis?.let { SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(Date(it)) }
+    }
+
+    /** Check and stage a backup behind a blocking dialog, then restart so the swap happens before the database opens. */
+    fun stageThenRestart(stage: suspend () -> String?) {
+        coroutineScope.launch {
+            checkingBackup = true
+            val error = runCatching { stage() }.getOrElse { "The backup could not be read" }
+            checkingBackup = false
+            if (error == null) {
+                Toast.makeText(context, "Backup checked. Restarting to restore…", Toast.LENGTH_SHORT).show()
+                AppRestarter.restart(context)
+            } else {
+                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            stageThenRestart {
+                val stream = context.contentResolver.openInputStream(uri) ?: return@stageThenRestart "That file could not be opened"
+                stream.use { onRestoreBackupFile(it) }
+            }
+        }
+    }
+    if (checkingBackup) {
+        AlertDialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+            title = { Text("Checking backup…") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Text("Please wait. Your current data is not changed yet.")
+                }
+            },
+            confirmButton = {}
+        )
     }
     if (showRestoreConfirm) {
         AlertDialog(
@@ -162,6 +200,25 @@ fun CloudSyncAndBackupSheet(
                 }) { Text("Choose backup file", color = CupertinoColors.DestructiveRed) }
             },
             dismissButton = { TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel") } }
+        )
+    }
+    if (showSnapshotRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSnapshotRestoreConfirm = false },
+            title = { Text("Restore last night's backup?") },
+            text = {
+                Text(
+                    "Everything on this phone will be replaced by the automatic backup from ${lastSnapshotLabel ?: "last night"}. " +
+                        "Anything entered since then will be lost. Export a backup first if you might need today's data."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSnapshotRestoreConfirm = false
+                    stageThenRestart { onRestoreLatestSnapshot() }
+                }) { Text("Restore", color = CupertinoColors.DestructiveRed) }
+            },
+            dismissButton = { TextButton(onClick = { showSnapshotRestoreConfirm = false }) { Text("Cancel") } }
         )
     }
 
@@ -897,6 +954,13 @@ fun CloudSyncAndBackupSheet(
                     fontSize = 12.sp,
                     color = CupertinoColors.LabelSecondary
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (lastSnapshotLabel != null) "Last automatic backup: $lastSnapshotLabel" else "No automatic backup yet",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = CupertinoColors.LabelPrimary
+                )
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -920,6 +984,16 @@ fun CloudSyncAndBackupSheet(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Restore Backup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+                if (lastSnapshotLabel != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showSnapshotRestoreConfirm = true },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Restore last night's backup ($lastSnapshotLabel)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))

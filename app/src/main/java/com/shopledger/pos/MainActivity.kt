@@ -55,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.shopledger.pos.core.backup.AppRestarter
+import com.shopledger.pos.core.backup.BackupException
 import com.shopledger.pos.core.backup.BackupShare
 import com.shopledger.pos.data.local.DatabaseHealth
 import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
@@ -113,6 +115,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+/**
+ * Runs a restore staging step off the main thread and out of reach of cancellation (closing the sheet must not
+ * abandon it half-way). Returns null when the backup was staged, otherwise a message the user can read.
+ */
+private suspend fun stageRestore(stage: () -> Int): String? =
+    withContext(NonCancellable + Dispatchers.IO) {
+        try {
+            stage()
+            null
+        } catch (e: BackupException) {
+            e.message ?: "The backup could not be read"
+        } catch (e: Exception) {
+            "The backup could not be read"
+        }
+    }
 
 @Composable
 fun LpsHardwareMainApp(viewModel: MainViewModel) {
@@ -626,10 +644,13 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 }
             },
             onRestoreBackupFile = { stream ->
-                withContext(Dispatchers.IO) {
-                    runCatching { app.backupManager.restoreFromShareable(stream) }
-                        .onFailure { AppErrorManager.reportError("Restore Failed", it) }
-                        .isSuccess
+                stageRestore { app.backupManager.stageRestoreFromShareable(stream) }
+            },
+            latestSnapshotTime = { app.backupManager.latestSnapshot()?.lastModified() },
+            onRestoreLatestSnapshot = {
+                stageRestore {
+                    val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet")
+                    app.backupManager.stageRestoreFromSnapshot(latest)
                 }
             },
             onImportBackupJson = viewModel::importBackupJson,
