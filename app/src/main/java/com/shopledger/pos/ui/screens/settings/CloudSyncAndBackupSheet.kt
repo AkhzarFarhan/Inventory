@@ -46,6 +46,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -113,6 +114,10 @@ fun CloudSyncAndBackupSheet(
     /** Stages the newest automatic snapshot for restore. Returns null when staged, otherwise an error message. */
     onRestoreLatestSnapshot: suspend () -> String?,
     onImportBackupJson: suspend (String) -> Boolean,
+    /** The code in the local `devices` row (what receipt numbers really use). */
+    loadDeviceCode: suspend () -> String,
+    /** Saves the counter code. Returns the stored (cleaned) code, or throws with a user-presentable message. */
+    onSaveDeviceCode: suspend (String) -> String,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -139,6 +144,9 @@ fun CloudSyncAndBackupSheet(
     var upiIdInput by remember { mutableStateOf(SyncManager.getUpiId(context)) }
     var gstinInput by remember { mutableStateOf(SyncManager.getGstin(context)) }
     var deviceCodeInput by remember { mutableStateOf(SyncManager.getDeviceShortCode(context)) }
+    LaunchedEffect(Unit) {
+        runCatching { loadDeviceCode() }.onSuccess { deviceCodeInput = it }
+    }
     var word10Input by remember(activeWord10) { mutableStateOf(activeWord10) }
     var customDigitInputs by remember(activeCustomDigitMap) { mutableStateOf(activeCustomDigitMap) }
     var newPinInput by remember { mutableStateOf("") }
@@ -514,9 +522,16 @@ fun CloudSyncAndBackupSheet(
                     )
                     CupertinoTextField(
                         value = deviceCodeInput,
-                        onValueChange = {
-                            deviceCodeInput = it
-                            SyncManager.saveDeviceShortCode(context, it)
+                        onValueChange = { typed ->
+                            val cleaned = typed.uppercase(Locale.ROOT).filter { ch -> ch in 'A'..'Z' || ch in '0'..'9' }.take(4)
+                            deviceCodeInput = cleaned
+                            if (cleaned.isNotEmpty()) {
+                                coroutineScope.launch {
+                                    runCatching { onSaveDeviceCode(cleaned) }
+                                        .onSuccess { SyncManager.saveDeviceShortCode(context, it) }
+                                        .onFailure { Toast.makeText(context, it.message ?: "Could not save the counter code", Toast.LENGTH_LONG).show() }
+                                }
+                            }
                         },
                         label = "Counter Code",
                         placeholder = "D1 / blank",
@@ -953,6 +968,13 @@ fun CloudSyncAndBackupSheet(
                     color = CupertinoColors.LabelPrimary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                if (!isSellerUnlocked) {
+                    Text(
+                        text = "Unlock Seller Mode to back up or restore",
+                        fontSize = 12.sp,
+                        color = CupertinoColors.LabelSecondary
+                    )
+                } else {
                 Text(
                     text = "This phone keeps an encrypted backup every night (last 7 days). Export a backup file to keep a copy on Google Drive or move to a new phone. The file contains your prices and customers, so share it only with yourself.",
                     fontSize = 12.sp,
@@ -1035,6 +1057,7 @@ fun CloudSyncAndBackupSheet(
                     ) {
                         Text("Import & Merge Records", fontWeight = FontWeight.Bold)
                     }
+                }
                 }
             }
 

@@ -9,6 +9,14 @@ object BackupShare {
     /** Shares [file] through the app's FileProvider (`cache/backups/`), copying it there if needed. */
     fun share(context: Context, file: File, title: String) {
         val dir = File(context.cacheDir, "backups").apply { mkdirs() }
+        if (file.parentFile != dir) {
+            // Plaintext support copies must not pile up: drop older ones (exports are pruned by BackupManager).
+            dir.listFiles()?.forEach { old ->
+                if (old.isFile && old.name != file.name && !(old.name.startsWith("ShopLedger-backup-") && old.name.endsWith(".slbak"))) {
+                    runCatching { old.delete() }
+                }
+            }
+        }
         val shareable = if (file.parentFile == dir) file else File(dir, file.name).also { file.copyTo(it, overwrite = true) }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", shareable)
         val send = Intent(Intent.ACTION_SEND)

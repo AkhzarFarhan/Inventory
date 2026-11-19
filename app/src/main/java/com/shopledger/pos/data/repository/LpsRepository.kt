@@ -8,6 +8,7 @@ import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.command.AppCommandEnvironment
 import com.shopledger.pos.data.command.CatalogCommands
+import com.shopledger.pos.data.command.DeviceCommands
 import com.shopledger.pos.data.command.CheckoutLine
 import com.shopledger.pos.data.command.CheckoutRequest
 import com.shopledger.pos.data.command.CommandEnvironment
@@ -49,6 +50,7 @@ class LpsRepository(
     private val catalog = CatalogCommands(database, env)
     private val khata = KhataCommands(database, env)
     private val sales = SalesCommands(database, env)
+    private val deviceCommands = DeviceCommands(database, env)
 
 
     val activeInventoryFlow: Flow<List<InventoryItemWithVariants>> =
@@ -106,6 +108,10 @@ class LpsRepository(
     }
 
     private fun newActionId(): String = UUID.randomUUID().toString()
+
+    suspend fun localDeviceCode(): String = deviceCommands.localDeviceCode()
+
+    suspend fun setDeviceCode(code: String): String = deviceCommands.setDeviceCode(newActionId(), code)
 
     /**
      * Adds a brand-new parent product along with multiple variants/SKUs (each with its own distinct pricing).

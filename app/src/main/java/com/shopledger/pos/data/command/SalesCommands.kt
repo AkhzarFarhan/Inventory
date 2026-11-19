@@ -101,8 +101,7 @@ class SalesCommands(
             val party = resolveParty(buyerName, buyerPhone, due, device)
 
             val parts = CalendarParts.of(now)
-            devices.bumpInvoiceSeq(device.deviceId, parts.dayKey)
-            val number = ReceiptNumbers.format(device.deviceCode, parts.dayKey, devices.getLastInvoiceSeq(device.deviceId))
+            val number = nextReceiptNumber(device, parts.dayKey)
             faults.at(CheckoutStep.NUMBER)
 
             val invoiceId = env.newId()
@@ -231,8 +230,7 @@ class SalesCommands(
             val cashRefund = creditTotal - khataCredit
 
             val parts = CalendarParts.of(now)
-            devices.bumpInvoiceSeq(device.deviceId, parts.dayKey)
-            val number = ReceiptNumbers.format(device.deviceCode, parts.dayKey, devices.getLastInvoiceSeq(device.deviceId))
+            val number = nextReceiptNumber(device, parts.dayKey)
             val header = InvoiceHeaderEntity(
                 id = creditNoteId,
                 shopId = original.shopId,
@@ -272,6 +270,21 @@ class SalesCommands(
             writer.enqueue(OutboxDocType.INVOICE, creditNoteId, OutboxOp.APPEND)
             InvoiceResult(header, creditLines) to creditNoteId
         }
+
+    /**
+     * Next receipt number for [dayKey]. Never trusts the counter alone: if the clock moved backwards the
+     * counter was reset, so also look at the numbers already issued for this device and day.
+     */
+    private suspend fun nextReceiptNumber(device: DeviceEntity, dayKey: String): String {
+        val prefix = "${device.deviceCode}-$dayKey-"
+        val counter = if (device.lastSeqDate == dayKey) device.lastInvoiceSeq else 0L
+        val highestIssued = ledger.getInvoiceNumbersWithPrefix(device.shopId, prefix)
+            .mapNotNull { it.substring(prefix.length).toLongOrNull() }
+            .maxOrNull() ?: 0L
+        val next = maxOf(counter, highestIssued) + 1
+        devices.setInvoiceSeq(device.deviceId, next, dayKey)
+        return ReceiptNumbers.format(device.deviceCode, dayKey, next)
+    }
 
     /** Same matching rules as v2: phone digits first, then exact name. Creates a party only when needed. */
     private suspend fun resolveParty(name: String, phone: String, due: Long, device: DeviceEntity): PartyEntity? {

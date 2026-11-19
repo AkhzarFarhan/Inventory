@@ -180,4 +180,43 @@ class SalesCommandsTest {
         val next = sales.checkout(twoHinges(variantId, actionId = "d2"))
         assertEquals("L-${dayKey()}-0001", next.header.invoiceNumber)
     }
+
+    @Test
+    fun clockMovedBackwards_neverReusesAReceiptNumber() = runBlocking<Unit> {
+        val variantId = seedHinge(db, env)
+        val dayA = dayKey()
+        val first = sales.checkout(twoHinges(variantId, actionId = "r1"))
+        sales.checkout(twoHinges(variantId, actionId = "r2"))
+        env.clock += 24L * 60 * 60 * 1000
+        assertEquals("L-${dayKey()}-0001", sales.checkout(twoHinges(variantId, actionId = "r3")).header.invoiceNumber)
+        env.clock -= 24L * 60 * 60 * 1000
+        assertEquals(dayA, dayKey())
+        assertEquals("L-$dayA-0003", sales.checkout(twoHinges(variantId, actionId = "r4")).header.invoiceNumber)
+        // A credit note on the rewound day also gets a fresh number.
+        val credit = sales.returnItems("r5", first.header.id, listOf(ReturnLine(first.lines.single().id, 1_000L)))
+        assertEquals("L-$dayA-0004", credit.header.invoiceNumber)
+    }
+
+    @Test
+    fun counterCode_changeAppliesToNextReceipt() = runBlocking<Unit> {
+        val variantId = seedHinge(db, env)
+        val device = DeviceCommands(db, env)
+        assertEquals("L", device.localDeviceCode())
+        assertEquals("B", device.setDeviceCode("dc1", " b "))
+        assertEquals("B", device.localDeviceCode())
+        assertEquals("B-${dayKey()}-0001", sales.checkout(twoHinges(variantId, actionId = "k1")).header.invoiceNumber)
+        expectFailure<CommandException.Validation> { device.setDeviceCode("dc2", "  ") }
+        expectFailure<CommandException.Validation> { device.setDeviceCode("dc3", "TOOLONG") }
+        expectFailure<CommandException.Validation> { device.setDeviceCode("dc4", "A-1") }
+        assertEquals("B", device.localDeviceCode())
+    }
+
+    @Test
+    fun afterCommitFailure_doesNotFailACommittedCheckout() = runBlocking<Unit> {
+        val variantId = seedHinge(db, env)
+        env.failAfterCommit = true
+        val result = sales.checkout(twoHinges(variantId, actionId = "f1"))
+        assertEquals("L-${dayKey()}-0001", result.header.invoiceNumber)
+        assertEquals(1L, db.scalar("SELECT COUNT(*) FROM invoice_headers"))
+    }
 }

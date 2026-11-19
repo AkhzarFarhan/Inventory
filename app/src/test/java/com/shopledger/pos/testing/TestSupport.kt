@@ -30,12 +30,14 @@ class TestEnv(
 ) : CommandEnvironment {
     private val ids = AtomicLong(0)
     val commits = AtomicInteger(0)
+    @Volatile var failAfterCommit: Boolean = false
     override fun shopId() = shop
     override fun actor() = Actor(uid = "uid-test", role = role)
     override fun gstEnabled() = gst
     override fun now() = clock
     override fun newId() = "id-${ids.incrementAndGet()}"
     override fun afterCommit() {
+        if (failAfterCommit) throw IllegalStateException("scheduler unavailable")
         commits.incrementAndGet()
     }
 

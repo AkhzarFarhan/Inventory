@@ -1,6 +1,7 @@
 package com.shopledger.pos.data.command
 
 import androidx.room.withTransaction
+import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.AppliedActionEntity
 import com.shopledger.pos.data.local.entity.DeviceEntity
@@ -43,7 +44,10 @@ class LedgerWriter(private val db: LpsDatabase, private val env: CommandEnvironm
                 value
             }
         }
-        env.afterCommit()
+        // The action is already committed; failing to schedule background work must not undo that for the caller.
+        runCatching { env.afterCommit() }.onFailure {
+            AppErrorManager.reportError("Background sync scheduling failed", it)
+        }
         return result
     }
 

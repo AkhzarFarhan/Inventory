@@ -14,12 +14,12 @@ interface DeviceDao {
     @Query("SELECT * FROM devices WHERE isLocal = 1 LIMIT 1")
     suspend fun getLocalDevice(): DeviceEntity?
 
-    /** Hands out the next per-day sequence number. Call inside the transaction that uses it. */
-    @Query(
-        "UPDATE devices SET lastInvoiceSeq = CASE WHEN lastSeqDate = :dayKey THEN lastInvoiceSeq + 1 ELSE 1 END, " +
-            "lastSeqDate = :dayKey WHERE deviceId = :deviceId"
-    )
-    suspend fun bumpInvoiceSeq(deviceId: String, dayKey: String): Int
+    /** Records the last receipt sequence handed out on [dayKey]. Call inside the transaction that uses it. */
+    @Query("UPDATE devices SET lastInvoiceSeq = :seq, lastSeqDate = :dayKey WHERE deviceId = :deviceId")
+    suspend fun setInvoiceSeq(deviceId: String, seq: Long, dayKey: String): Int
+
+    @Query("UPDATE devices SET deviceCode = :code WHERE deviceId = :deviceId")
+    suspend fun updateDeviceCode(deviceId: String, code: String): Int
 
     @Query("SELECT lastInvoiceSeq FROM devices WHERE deviceId = :deviceId")
     suspend fun getLastInvoiceSeq(deviceId: String): Long

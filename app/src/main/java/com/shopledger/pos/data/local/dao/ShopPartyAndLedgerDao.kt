@@ -92,6 +92,9 @@ interface ShopPartyAndLedgerDao {
     @Query("SELECT invoiceNumber FROM invoice_headers WHERE shopId = :shopId")
     suspend fun getInvoiceNumbers(shopId: String): List<String>
 
+    @Query("SELECT invoiceNumber FROM invoice_headers WHERE shopId = :shopId AND substr(invoiceNumber, 1, length(:prefix)) = :prefix")
+    suspend fun getInvoiceNumbersWithPrefix(shopId: String, prefix: String): List<String>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertInvoiceHeader(header: InvoiceHeaderEntity)
 

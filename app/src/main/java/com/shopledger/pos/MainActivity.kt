@@ -109,7 +109,15 @@ class MainActivity : ComponentActivity() {
                         onShareSafetyCopy = {
                             current.safetyCopy?.let { BackupShare.share(this, it, "Send ShopLedger data file") }
                         },
-                        onRetry = { AppRestarter.restart(this) }
+                        onRetry = { AppRestarter.restart(this) },
+                        latestSnapshotTime = remember { (application as ShopLedgerApp).backupManager.latestSnapshot()?.lastModified() },
+                        onRestoreSnapshot = {
+                            val app = application as ShopLedgerApp
+                            stageRestore(app) {
+                                val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet")
+                                app.backupManager.stageRestoreFromSnapshot(latest)
+                            }
+                        }
                     )
                     DatabaseHealth.State.Ok -> LpsHardwareMainApp(viewModel = viewModel)
                 }
@@ -672,6 +680,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 }
             },
             onImportBackupJson = viewModel::importBackupJson,
+            loadDeviceCode = { withContext(Dispatchers.IO) { app.repository.localDeviceCode() } },
+            onSaveDeviceCode = { code -> withContext(Dispatchers.IO) { app.repository.setDeviceCode(code) } },
             onDismiss = { showCloudSyncSheet = false }
         )
     }
