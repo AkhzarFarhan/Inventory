@@ -36,7 +36,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import java.util.UUID
-import kotlin.math.max
 
 typealias ShopRepository = LpsRepository
 
@@ -218,7 +217,7 @@ class LpsRepository(
         discountPaise: Long = 0L,
         amountPaidPaise: Long? = null,
         gstRateBps: Int = 0
-    ): CheckoutOutcome {
+    ): CheckoutOutcome = withContext(Dispatchers.IO) {
         val result = sales.checkout(
             CheckoutRequest(
                 actionId = actionId,
@@ -234,7 +233,7 @@ class LpsRepository(
             )
         )
         val oversoldNames = result.lines.filter { it.skuId in result.oversoldVariantIds }.map { it.itemNameSnapshot }
-        return CheckoutOutcome(result.toReceipt(), oversoldNames, result.replayed)
+        CheckoutOutcome(result.toReceipt(), oversoldNames, result.replayed)
     }
 
     private fun InvoiceResult.toReceipt(): SaleReceiptData = SaleReceiptData(
@@ -385,7 +384,7 @@ class LpsRepository(
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val items = inventoryDao.getAllRawItems()
         val variants = inventoryDao.getAllRawVariants()
-        val sales = saleDao.getAllRawSales()
+        val rawSales = saleDao.getAllRawSales()
         val parties = shopDao.getAllRawParties()
 
         val root = JSONObject()
@@ -436,7 +435,7 @@ class LpsRepository(
         root.put("variants", variantsArr)
 
         val salesArr = JSONArray()
-        for (s in sales) {
+        for (s in rawSales) {
             salesArr.put(
                 JSONObject().apply {
                     put("id", s.id)

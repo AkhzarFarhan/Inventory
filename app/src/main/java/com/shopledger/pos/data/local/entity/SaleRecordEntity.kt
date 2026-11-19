@@ -24,6 +24,9 @@ const val SALE_RECORDS_VIEW_SQL =
         "h.issuedAt AS soldAt, h.yearInt AS yearInt, h.monthInt AS monthInt, h.dayInt AS dayInt, " +
         "COALESCE((SELECT -SUM(r.qtyMilliUnits) FROM invoice_lines r WHERE r.originalLineId = l.id), 0) AS returnedMilliUnits, " +
         "CASE WHEN COALESCE((SELECT -SUM(r2.qtyMilliUnits) FROM invoice_lines r2 WHERE r2.originalLineId = l.id), 0) >= l.qtyMilliUnits THEN 1 ELSE 0 END AS isReturned, " +
+        "l.lineTotalPaise + COALESCE((SELECT SUM(r3.lineTotalPaise) FROM invoice_lines r3 WHERE r3.originalLineId = l.id), 0) AS netRevenuePaise, " +
+        "(l.lineTotalPaise - l.lineProfitPaise) + COALESCE((SELECT SUM(r4.lineTotalPaise - r4.lineProfitPaise) FROM invoice_lines r4 WHERE r4.originalLineId = l.id), 0) AS netCostPaise, " +
+        "l.lineProfitPaise + COALESCE((SELECT SUM(r5.lineProfitPaise) FROM invoice_lines r5 WHERE r5.originalLineId = l.id), 0) AS netProfitPaise, " +
         "h.issuedAt AS updatedAt " +
         "FROM invoice_lines l INNER JOIN invoice_headers h ON h.id = l.invoiceId WHERE h.docType = 'SALE'"
 
@@ -64,5 +67,9 @@ data class SaleRecordEntity(
     val returnedMilliUnits: Long = 0L,
     /** True once the whole line has been returned (possibly over several credit notes). */
     val isReturned: Boolean = false,
+    /** Line value net of credit-note lines (partial returns). */
+    val netRevenuePaise: Long = totalRevenuePaise,
+    val netCostPaise: Long = totalCostPaise,
+    val netProfitPaise: Long = totalProfitPaise,
     val updatedAt: Long = soldAt
 )

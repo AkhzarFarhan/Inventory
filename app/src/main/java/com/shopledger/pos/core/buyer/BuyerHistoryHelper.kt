@@ -65,7 +65,7 @@ object BuyerHistoryHelper {
             val bestPhone = if (rawPhoneDigits.length >= 10) rawPhoneDigits.takeLast(10) else rawBestPhone
 
             val distinctReceipts = sortedDesc.map { it.receiptNumber }.distinct()
-            val totalSpent = sortedDesc.sumOf { it.totalRevenuePaise }
+            val totalSpent = sortedDesc.sumOf { it.netRevenuePaise }
 
             val lastReceiptNo = latestSale.receiptNumber
             val lastOrderLines = sortedDesc

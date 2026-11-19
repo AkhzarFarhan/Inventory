@@ -99,4 +99,40 @@ class ReturnsTest {
             sales.returnItems("r1", sale.header.id, listOf(ReturnLine(lineId, 1_000L), ReturnLine(lineId, 1_000L)))
         }
     }
+
+    @Test
+    fun partialReturn_netColumnsReflectCreditNoteLines() = runBlocking<Unit> {
+        val sale = sellTwo()
+        sales.returnItems("r1", sale.header.id, listOf(ReturnLine(sale.lines.single().id, 1_000L)))
+        val row = db.saleDao().getAllRawSales().single()
+        assertEquals(7_500L, row.netRevenuePaise)
+        assertEquals(4_800L, row.netCostPaise)
+        assertEquals(2_700L, row.netProfitPaise)
+    }
+
+    @Test
+    fun returnItems_isIdempotentOnActionId() = runBlocking<Unit> {
+        val sale = sellTwo()
+        val args = listOf(ReturnLine(sale.lines.single().id, 1_000L))
+        val first = sales.returnItems("r1", sale.header.id, args)
+        val second = sales.returnItems("r1", sale.header.id, args)
+        assertFalse(first.replayed)
+        assertTrue(second.replayed)
+        assertEquals(1L, db.scalar("SELECT COUNT(*) FROM invoice_headers WHERE docType = 'CREDIT_NOTE'"))
+        assertEquals(9_000L, db.scalar("SELECT stockMilliUnits FROM item_variants"))
+    }
+
+    @Test
+    fun twoPartialReturns_reduceKhataBeforeRefundingCash() = runBlocking<Unit> {
+        val sale = sellTwo(mode = "CASH", paid = 5_000L) // 15_000 bill, 5_000 paid, 10_000 due
+        val lineId = sale.lines.single().id
+        val n1 = sales.returnItems("r1", sale.header.id, listOf(ReturnLine(lineId, 1_000L)))
+        assertEquals(-7_500L, n1.header.balanceDuePaise)
+        assertEquals(0L, n1.header.amountPaidPaise)
+        assertEquals(2_500L, db.shopPartyAndLedgerDao().getAllRawParties().single().currentBalancePaise)
+        val n2 = sales.returnItems("r2", sale.header.id, listOf(ReturnLine(lineId, 1_000L)))
+        assertEquals(-2_500L, n2.header.balanceDuePaise)
+        assertEquals(-5_000L, n2.header.amountPaidPaise)
+        assertEquals(0L, db.shopPartyAndLedgerDao().getAllRawParties().single().currentBalancePaise)
+    }
 }

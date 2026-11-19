@@ -653,17 +653,22 @@ class MainViewModel(
                 discountPaise = discountPaise,
                 amountPaidPaise = amountPaidPaise
             )
-            if (outcome.replayed) return@launchSafe
-            if (!clearCounterCart) quickSellActionId = UUID.randomUUID().toString()
-            if (clearCounterCart) {
-                if (_carts.value.size > 1) {
-                    closeCart(checkedOutCartId)
-                } else {
-                    clearCart()
-                    updateActiveCartBuyer("", "")
+            // On replay (double tap, or a retry after a post-commit failure) still clean up, but only if
+            // the cart / quick-sell id still belongs to this checkout; a normal double tap finds it rotated.
+            if (!clearCounterCart) {
+                if (quickSellActionId == actionId) quickSellActionId = UUID.randomUUID().toString()
+            } else {
+                val stillThere = _carts.value.firstOrNull { it.cartId == checkedOutCartId }
+                if (stillThere != null && stillThere.checkoutActionId == actionId) {
+                    if (_carts.value.size > 1) {
+                        closeCart(checkedOutCartId)
+                    } else {
+                        clearCart()
+                        updateActiveCartBuyer("", "")
+                    }
                 }
             }
-            if (outcome.oversoldItemNames.isNotEmpty()) {
+            if (!outcome.replayed && outcome.oversoldItemNames.isNotEmpty()) {
                 AppErrorManager.reportWarning(
                     "Stock below zero",
                     "Sold more than recorded stock: ${outcome.oversoldItemNames.distinct().joinToString()}. Please recount."

@@ -90,8 +90,8 @@ fun SaleHistoryScreen(
     }
 
     val activeSales = remember(filteredSales) { filteredSales.filter { !it.isReturned } }
-    val totalRevenuePaise = remember(activeSales) { activeSales.sumOf { it.totalRevenuePaise } }
-    val totalCostPaise = remember(activeSales) { activeSales.sumOf { it.totalCostPaise } }
+    val totalRevenuePaise = remember(activeSales) { activeSales.sumOf { it.netRevenuePaise } }
+    val totalCostPaise = remember(activeSales) { activeSales.sumOf { it.netCostPaise } }
     val totalProfitPaise = totalRevenuePaise - totalCostPaise
     val avgGainPercent = remember(totalProfitPaise, totalCostPaise) {
         if (totalCostPaise > 0L) (totalProfitPaise.toDouble() / totalCostPaise.toDouble()) * 100.0 else 0.0
@@ -254,8 +254,8 @@ fun SaleHistoryScreen(
                 groupedByYearMonth.forEach { (year, monthsMap) ->
                     val isYearExpanded = expandedYears.getOrPut(year) { year == currentYear }
                     val yearSalesList = monthsMap.values.flatten().filter { !it.isReturned }
-                    val yearRevenue = yearSalesList.sumOf { it.totalRevenuePaise }
-                    val yearProfit = yearSalesList.sumOf { it.totalProfitPaise }
+                    val yearRevenue = yearSalesList.sumOf { it.netRevenuePaise }
+                    val yearProfit = yearSalesList.sumOf { it.netProfitPaise }
 
                     item(key = "year_$year") {
                         // Level 1: Year Tinted Header
@@ -309,8 +309,8 @@ fun SaleHistoryScreen(
                             }
                             val monthName = DateFormatSymbols(Locale.ENGLISH).months.getOrElse(month - 1) { "Month $month" }
                             val activeMonthSales = monthSales.filter { !it.isReturned }
-                            val monthRevenue = activeMonthSales.sumOf { it.totalRevenuePaise }
-                            val monthProfit = activeMonthSales.sumOf { it.totalProfitPaise }
+                            val monthRevenue = activeMonthSales.sumOf { it.netRevenuePaise }
+                            val monthProfit = activeMonthSales.sumOf { it.netProfitPaise }
 
                             item(key = "month_$monthKey") {
                                 // Level 2: Month Header with Left Vertical Stripe (4.dp start margin)
@@ -390,8 +390,8 @@ fun SaleHistoryScreen(
     saleToReturnConfirm?.let { target ->
         val remainingMilli = (target.quantitySoldMilli - target.returnedMilliUnits).coerceAtLeast(0L)
         val returnActionId = remember(target.id) { UUID.randomUUID().toString() }
-        var qtyText by remember(target.id) { mutableStateOf(IndianCurrencyFormatter.formatMilliUnits(remainingMilli)) }
-        val qtyMilli = qtyText.trim().toDoubleOrNull()?.let { IndianCurrencyFormatter.doubleToMilliUnits(it) }
+        var qtyText by remember(target.id) { mutableStateOf(java.math.BigDecimal.valueOf(remainingMilli, 3).stripTrailingZeros().toPlainString()) }
+        val qtyMilli = qtyText.trim().toBigDecimalOrNull()?.let { bd -> runCatching { bd.movePointRight(3).longValueExact() }.getOrNull() }
         val qtyValid = qtyMilli != null && qtyMilli in 1L..remainingMilli
         AlertDialog(
             onDismissRequest = { saleToReturnConfirm = null },
