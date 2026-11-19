@@ -1,10 +1,9 @@
 package com.shopledger.pos.data.local
 
-import android.content.Context
-import androidx.room.Room
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
+import com.shopledger.pos.testing.newTestDatabase
+import com.shopledger.pos.testing.scalar
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -14,12 +13,10 @@ import org.junit.runner.RunWith
 class DatabaseSmokeTest {
     @Test
     fun inMemoryDatabaseOpensAndStoresAnItem() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(
-            ApplicationProvider.getApplicationContext<Context>(),
-            LpsDatabase::class.java
-        ).allowMainThreadQueries().build()
-        db.inventoryDao().upsertItem(InventoryItemEntity(id = "i1", displayName = "Hinge", sortKey = "HINGE"))
+        val db = newTestDatabase()
+        db.inventoryDao().insertItem(InventoryItemEntity(id = "i1", displayName = "Hinge", sortKey = "HINGE"))
         assertEquals(1, db.inventoryDao().getAllRawItems().size)
+        assertEquals(1L, db.scalar("SELECT COUNT(*) FROM devices WHERE isLocal = 1"))
         db.close()
     }
 }

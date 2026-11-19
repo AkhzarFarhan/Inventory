@@ -6,10 +6,15 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.shopledger.pos.data.local.dao.AppliedActionDao
+import com.shopledger.pos.data.local.dao.DeviceDao
 import com.shopledger.pos.data.local.dao.InventoryDao
 import com.shopledger.pos.data.local.dao.SaleDao
 import com.shopledger.pos.data.local.dao.SearchHistoryDao
 import com.shopledger.pos.data.local.dao.ShopPartyAndLedgerDao
+import com.shopledger.pos.data.local.dao.SyncOutboxDao
+import com.shopledger.pos.data.local.entity.AppliedActionEntity
+import com.shopledger.pos.data.local.entity.DeviceEntity
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
 import com.shopledger.pos.data.local.entity.InvoiceLineEntity
@@ -20,6 +25,7 @@ import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.local.entity.ShopProfileEntity
 import com.shopledger.pos.data.local.entity.StockMovementEntity
+import com.shopledger.pos.data.local.entity.SyncOutboxEntity
 
 typealias ShopDatabase = LpsDatabase
 
@@ -34,9 +40,12 @@ typealias ShopDatabase = LpsDatabase
         InvoiceHeaderEntity::class,
         InvoiceLineEntity::class,
         StockMovementEntity::class,
-        PartyTransactionEntity::class
+        PartyTransactionEntity::class,
+        DeviceEntity::class,
+        SyncOutboxEntity::class,
+        AppliedActionEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class LpsDatabase : RoomDatabase() {
@@ -45,10 +54,13 @@ abstract class LpsDatabase : RoomDatabase() {
     abstract fun saleDao(): SaleDao
     abstract fun searchHistoryDao(): SearchHistoryDao
     abstract fun shopPartyAndLedgerDao(): ShopPartyAndLedgerDao
+    abstract fun deviceDao(): DeviceDao
+    abstract fun syncOutboxDao(): SyncOutboxDao
+    abstract fun appliedActionDao(): AppliedActionDao
 
     companion object {
         private const val LEGACY_DB_NAME = "lps_hardware_inventory.db"
-        private const val NEW_DB_NAME = "shop_ledger.db"
+        const val DB_NAME = "shop_ledger.db"
 
         @Volatile
         private var INSTANCE: LpsDatabase? = null
@@ -334,7 +346,7 @@ abstract class LpsDatabase : RoomDatabase() {
 
         private fun buildDatabase(appContext: Context): LpsDatabase {
             val legacyDbFile = appContext.getDatabasePath(LEGACY_DB_NAME)
-            val targetDbFile = appContext.getDatabasePath(NEW_DB_NAME)
+            val targetDbFile = appContext.getDatabasePath(DB_NAME)
             if (legacyDbFile.exists() && !targetDbFile.exists()) {
                 try {
                     targetDbFile.parentFile?.mkdirs()
@@ -343,15 +355,20 @@ abstract class LpsDatabase : RoomDatabase() {
                 }
             }
 
-            return Room.databaseBuilder(
-                appContext,
-                LpsDatabase::class.java,
-                NEW_DB_NAME
-            )
-                // WRITE_AHEAD_LOGGING allows concurrent UI reads while background sync writes
+            return Room.databaseBuilder(appContext, LpsDatabase::class.java, DB_NAME)
+                // WRITE_AHEAD_LOGGING allows concurrent UI reads while background work writes
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_1_2)
+                .withShopLedgerDefaults()
                 .build()
         }
     }
 }
+
+/** Shared by the app and tests so every database gets the same migrations and seed rows. */
+fun RoomDatabase.Builder<LpsDatabase>.withShopLedgerDefaults(): RoomDatabase.Builder<LpsDatabase> =
+    addMigrations(LpsDatabase.MIGRATION_1_2)
+        .addCallback(object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                DatabaseSeed.seedFreshDatabase(db, System.currentTimeMillis())
+            }
+        })

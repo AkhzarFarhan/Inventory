@@ -49,6 +49,7 @@ object SyncManager {
     private const val KEY_DEVICE_SHORT_CODE = "device_short_code"
     private const val KEY_SETUP_COMPLETED = "setup_completed"
     private const val WORK_NAME = "shopledger_firestore_delta_sync"
+    private const val CLOUD_SYNC_ENABLED = false
 
     // Built-in Firebase web client config from google-services.json
     private const val BUILTIN_PROJECT_ID = "ubiverse-app"
@@ -284,6 +285,11 @@ object SyncManager {
      * internet connectivity (`NetworkType.CONNECTED`) is available or restored.
      */
     fun scheduleDeltaSync(context: Context) {
+        if (!CLOUD_SYNC_ENABLED) {
+            WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WORK_NAME)
+            _lastSyncMessage.value = "Cloud sync coming soon"
+            return
+        }
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()

@@ -108,7 +108,7 @@ class LpsHardwareDomainTest {
                     unit = "pcs",
                     purchasePricePaise = 4800L,
                     sellingPricePaise = 7500L,
-                    stockQuantity = 20.0
+                    stockMilliUnits = 20000L
                 )
             )
         )
@@ -145,7 +145,7 @@ class LpsHardwareDomainTest {
                     unit = "pcs",
                     purchasePricePaise = 4800L,
                     sellingPricePaise = 7500L,
-                    stockQuantity = 20.0
+                    stockMilliUnits = 20000L
                 )
             )
         )
@@ -182,7 +182,7 @@ class LpsHardwareDomainTest {
                     unit = "pcs",
                     purchasePricePaise = 3500L,
                     sellingPricePaise = 5500L,
-                    stockQuantity = 15.0
+                    stockMilliUnits = 15000L
                 )
             )
         )
@@ -207,7 +207,7 @@ class LpsHardwareDomainTest {
                     unit = "pkt",
                     purchasePricePaise = 2500L,
                     sellingPricePaise = 4000L,
-                    stockQuantity = 20.0
+                    stockMilliUnits = 20000L
                 )
             )
         )
@@ -252,7 +252,7 @@ class LpsHardwareDomainTest {
                     unit = "pkt",
                     purchasePricePaise = 2500L,
                     sellingPricePaise = 4000L,
-                    stockQuantity = 20.0
+                    stockMilliUnits = 20000L
                 )
             )
         )
@@ -282,7 +282,7 @@ class LpsHardwareDomainTest {
                     unit = "pcs",
                     purchasePricePaise = 4800L,
                     sellingPricePaise = 7500L,
-                    stockQuantity = 20.0
+                    stockMilliUnits = 20000L
                 )
             )
         )
@@ -496,7 +496,7 @@ class LpsHardwareDomainTest {
                     unit = "kg",
                     purchasePricePaise = 4000L,
                     sellingPricePaise = 4600L,
-                    stockQuantity = 25.0
+                    stockMilliUnits = 25000L
                 )
             )
         )
@@ -517,7 +517,7 @@ class LpsHardwareDomainTest {
                     unit = "pkt",
                     purchasePricePaise = 850L,
                     sellingPricePaise = 1000L,
-                    stockQuantity = 40.0
+                    stockMilliUnits = 40000L
                 )
             )
         )
@@ -641,7 +641,7 @@ class LpsHardwareDomainTest {
                     unit = "pkt",
                     purchasePricePaise = 2500L,
                     sellingPricePaise = 4000L,
-                    stockQuantity = 30.0
+                    stockMilliUnits = 30000L
                 )
             )
         )
@@ -662,7 +662,7 @@ class LpsHardwareDomainTest {
                     unit = "pcs",
                     purchasePricePaise = 1800L,
                     sellingPricePaise = 3000L,
-                    stockQuantity = 50.0
+                    stockMilliUnits = 50000L
                 ),
                 ItemVariantEntity(
                     id = "var-bh-4in-ss",
@@ -673,7 +673,7 @@ class LpsHardwareDomainTest {
                     unit = "pcs",
                     purchasePricePaise = 4200L,
                     sellingPricePaise = 7000L,
-                    stockQuantity = 40.0
+                    stockMilliUnits = 40000L
                 )
             )
         )
@@ -694,7 +694,7 @@ class LpsHardwareDomainTest {
                     unit = "box",
                     purchasePricePaise = 18000L,
                     sellingPricePaise = 24000L,
-                    stockQuantity = 12.0
+                    stockMilliUnits = 12000L
                 )
             )
         )

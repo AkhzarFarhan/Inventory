@@ -13,7 +13,7 @@ import com.shopledger.pos.core.nlp.ShopVertical
 @Entity(tableName = "shops")
 data class ShopProfileEntity(
     @PrimaryKey
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val shopName: String = "ShopLedger POS",
     val verticalType: String = ShopVertical.HARDWARE.name,
     val ownerUid: String = "",
@@ -28,6 +28,8 @@ data class ShopProfileEntity(
     val cipherWord10: String = CostCipherEngine.DEFAULT_WORD_10,
     val ownerPinHash: String = "",
     val isSetupCompleted: Boolean = false,
+    /** Largest bill discount STAFF may give without the owner PIN, in basis points (1000 = 10%). */
+    val maxStaffDiscountBps: Int = 1000,
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -36,24 +38,25 @@ data class ShopProfileEntity(
     tableName = "parties",
     indices = [
         Index(value = ["shopId", "partyType"]),
-        Index(value = ["shopId", "phone"]),
-        Index(value = ["syncStatus"])
+        Index(value = ["shopId", "phone"])
     ]
 )
 data class PartyEntity(
     @PrimaryKey
     val id: String,
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val partyType: String = "CUSTOMER",
     val name: String,
     val phone: String = "",
     val gstin: String = "",
     val billingAddress: String = "",
-    val openingBalancePaise: Long = 0L,
+    /** Cached projection: always equals SUM(party_ledger_entries.amountDeltaPaise) (invariant I2). + = party owes shop. */
     val currentBalancePaise: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val isDeleted: Boolean = false,
-    val syncStatus: String = SyncState.PENDING_UPLOAD
+    val createdByUid: String = "",
+    val deviceId: String = ""
 )
 
 @Immutable
@@ -69,7 +72,7 @@ data class PartyEntity(
 data class InvoiceHeaderEntity(
     @PrimaryKey
     val id: String,
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val deviceShortCode: String = "",
     val invoiceNumber: String,
     val docType: String = "SALE",
@@ -113,7 +116,7 @@ data class InvoiceHeaderEntity(
 data class InvoiceLineEntity(
     @PrimaryKey
     val id: String,
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val invoiceId: String,
     val productId: String,
     val skuId: String,
@@ -131,40 +134,43 @@ data class InvoiceLineEntity(
     val isReturned: Boolean = false
 )
 
+/** Append-only. Never updated or deleted; corrections are new rows. Source of truth for stock. */
 @Immutable
 @Entity(
     tableName = "stock_movements",
     indices = [
         Index(value = ["shopId", "skuId"]),
-        Index(value = ["syncStatus"])
+        Index(value = ["refDocId"])
     ]
 )
 data class StockMovementEntity(
     @PrimaryKey
     val movementId: String,
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val skuId: String,
+    val deviceId: String = "",
     val deviceShortCode: String = "",
     val deltaMilliUnits: Long,
     val movementType: String,
     val refDocId: String = "",
     val note: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val syncStatus: String = SyncState.PENDING_UPLOAD
+    val createdByUid: String = ""
 )
 
+/** Append-only. Source of truth for Khata balances. + = party owes shop, − = shop owes party / advance. */
 @Immutable
 @Entity(
     tableName = "party_ledger_entries",
     indices = [
         Index(value = ["shopId", "partyId"]),
-        Index(value = ["syncStatus"])
+        Index(value = ["refDocId"])
     ]
 )
 data class PartyTransactionEntity(
     @PrimaryKey
     val entryId: String,
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val partyId: String,
     val refDocId: String = "",
     val entryType: String,
@@ -172,5 +178,6 @@ data class PartyTransactionEntity(
     val paymentMode: String = "CASH",
     val note: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val syncStatus: String = SyncState.PENDING_UPLOAD
+    val createdByUid: String = "",
+    val deviceId: String = ""
 )

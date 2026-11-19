@@ -5,7 +5,6 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import kotlin.math.roundToLong
 
 typealias ProductSkuEntity = ItemVariantEntity
 
@@ -23,14 +22,13 @@ typealias ProductSkuEntity = ItemVariantEntity
     indices = [
         Index(value = ["itemId"]),
         Index(value = ["shopId", "barcode"]),
-        Index(value = ["syncStatus"]),
         Index(value = ["isDeleted"])
     ]
 )
 data class ItemVariantEntity(
     @PrimaryKey
     val id: String,
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val itemId: String,
     val skuCode: String = "",
     val barcode: String = "",
@@ -42,14 +40,19 @@ data class ItemVariantEntity(
     val purchasePricePaise: Long,
     val sellingPricePaise: Long,
     val gstRateBps: Int = 0,
-    val stockQuantity: Double,
-    val lowStockThreshold: Double = 5.0,
-    val stockMilliUnits: Long = (stockQuantity * 1000.0).roundToLong(),
-    val lowStockMilliUnits: Long = (lowStockThreshold * 1000.0).roundToLong(),
+    /** Cached projection: always equals SUM(stock_movements.deltaMilliUnits) for this SKU (invariant I1). */
+    val stockMilliUnits: Long = 0L,
+    val lowStockMilliUnits: Long = 5_000L,
+    val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val isDeleted: Boolean = false,
-    val syncStatus: String = SyncState.PENDING_UPLOAD
+    val isDemo: Boolean = false,
+    val createdByUid: String = "",
+    val deviceId: String = ""
 ) {
+    val stockQuantity: Double get() = stockMilliUnits / 1000.0
+    val lowStockThreshold: Double get() = lowStockMilliUnits / 1000.0
+
     val attr1Value: String get() = sizeLabel
     val attr2Value: String get() = materialLabel
     val attr3Value: String get() = colorFinishLabel
@@ -60,8 +63,12 @@ data class ItemVariantEntity(
     }
 
     val isLowStock: Boolean
-        get() = !isDeleted && stockQuantity <= lowStockThreshold && stockQuantity > 0.0
+        get() = !isDeleted && stockMilliUnits > 0L && stockMilliUnits <= lowStockMilliUnits
 
     val isOutOfStock: Boolean
-        get() = !isDeleted && stockQuantity <= 0.0
+        get() = !isDeleted && stockMilliUnits <= 0L
+
+    /** Several phones selling offline can push stock below zero; we show it instead of hiding it. */
+    val isOversold: Boolean
+        get() = !isDeleted && stockMilliUnits < 0L
 }

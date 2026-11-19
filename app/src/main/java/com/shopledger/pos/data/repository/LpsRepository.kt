@@ -7,6 +7,17 @@ import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.core.share.ReceiptLineItem
 import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.core.sync.SyncManager
+import com.shopledger.pos.data.command.AppCommandEnvironment
+import com.shopledger.pos.data.command.CatalogCommands
+import com.shopledger.pos.data.command.CommandEnvironment
+import com.shopledger.pos.data.command.CommandException
+import com.shopledger.pos.data.command.KhataCommands
+import com.shopledger.pos.data.command.LegacyJsonImporter
+import com.shopledger.pos.data.command.OutboxDocType
+import com.shopledger.pos.data.command.OutboxOp
+import com.shopledger.pos.data.command.PaymentDirection
+import com.shopledger.pos.data.command.VariantEdit
+import com.shopledger.pos.data.command.VariantSpec
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
@@ -17,12 +28,11 @@ import com.shopledger.pos.data.local.entity.PartyTransactionEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.local.entity.StockMovementEntity
-import com.shopledger.pos.data.local.entity.SyncState
+import com.shopledger.pos.data.local.entity.SyncOutboxEntity
 import com.shopledger.pos.data.model.CartLineItem
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -30,18 +40,21 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
-import kotlin.math.roundToLong
 
 typealias ShopRepository = LpsRepository
 
 class LpsRepository(
     private val context: Context,
-    private val database: LpsDatabase
+    private val database: LpsDatabase,
+    private val env: CommandEnvironment = AppCommandEnvironment(context)
 ) {
     private val inventoryDao = database.inventoryDao()
     private val saleDao = database.saleDao()
     private val searchHistoryDao = database.searchHistoryDao()
     private val shopDao = database.shopPartyAndLedgerDao()
+    private val catalog = CatalogCommands(database, env)
+    private val khata = KhataCommands(database, env)
+
 
     val activeInventoryFlow: Flow<List<InventoryItemWithVariants>> =
         inventoryDao.observeAllActiveItemsAlphabetically()
@@ -61,12 +74,7 @@ class LpsRepository(
     val allLedgerEntriesFlow: Flow<List<PartyTransactionEntity>> =
         shopDao.observeAllLedgerEntries()
 
-    val totalPendingSyncCountFlow: Flow<Int> = combine(
-        inventoryDao.observePendingItemCount(),
-        inventoryDao.observePendingVariantCount(),
-        saleDao.observePendingSaleCount(),
-        shopDao.observePendingLedgerAndMovementCount()
-    ) { items, variants, sales, ledgerAndMoves -> items + variants + sales + ledgerAndMoves }
+    val totalPendingSyncCountFlow: Flow<Int> = database.syncOutboxDao().observePendingCount()
 
     data class NewVariantSpec(
         val sizeLabel: String = "",
@@ -80,9 +88,23 @@ class LpsRepository(
         val barcode: String = "",
         val skuCode: String = "",
         val gstRateBps: Int = 0
-    )
+    ) {
+        fun toVariantSpec() = VariantSpec(
+            sizeLabel = sizeLabel,
+            materialLabel = materialLabel,
+            colorFinishLabel = colorFinishLabel,
+            unit = unit,
+            purchasePricePaise = purchasePricePaise,
+            sellingPricePaise = sellingPricePaise,
+            openingStockMilli = IndianCurrencyFormatter.doubleToMilliUnits(stockQuantity),
+            lowStockMilli = IndianCurrencyFormatter.doubleToMilliUnits(lowStockThreshold),
+            barcode = barcode,
+            skuCode = skuCode,
+            gstRateBps = gstRateBps
+        )
+    }
 
-    private fun activeShopId(): String = SyncManager.getConfig(context).shopCollectionId
+    private fun newActionId(): String = UUID.randomUUID().toString()
 
     /**
      * Adds a brand-new parent product along with multiple variants/SKUs (each with its own distinct pricing).
@@ -91,78 +113,8 @@ class LpsRepository(
         displayName: String,
         category: String,
         variants: List<NewVariantSpec>
-    ): String = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val shopId = activeShopId()
-        val deviceCode = SyncManager.getDeviceShortCode(context)
-        val cleanName = displayName.trim()
-        val itemId = UUID.randomUUID().toString()
+    ): String = catalog.createItem(newActionId(), displayName, category, variants.map { it.toVariantSpec() })
 
-        val itemEntity = InventoryItemEntity(
-            id = itemId,
-            shopId = shopId,
-            displayName = cleanName,
-            sortKey = cleanName.uppercase(),
-            category = category.trim().ifEmpty { "Uncategorized" },
-            createdAt = now,
-            updatedAt = now,
-            isDeleted = false,
-            syncStatus = SyncState.PENDING_UPLOAD
-        )
-
-        val variantEntities = variants.map { spec ->
-            ItemVariantEntity(
-                id = UUID.randomUUID().toString(),
-                shopId = shopId,
-                itemId = itemId,
-                skuCode = spec.skuCode.trim(),
-                barcode = spec.barcode.trim(),
-                sizeLabel = SmartItemMatcher.normalizeSizeString(spec.sizeLabel),
-                materialLabel = SmartItemMatcher.normalizeMaterialString(spec.materialLabel),
-                colorFinishLabel = SmartItemMatcher.normalizeColorString(spec.colorFinishLabel),
-                unit = spec.unit.trim().ifEmpty { "pcs" },
-                purchasePricePaise = spec.purchasePricePaise,
-                sellingPricePaise = spec.sellingPricePaise,
-                gstRateBps = spec.gstRateBps,
-                stockQuantity = spec.stockQuantity,
-                lowStockThreshold = spec.lowStockThreshold,
-                stockMilliUnits = IndianCurrencyFormatter.doubleToMilliUnits(spec.stockQuantity),
-                lowStockMilliUnits = IndianCurrencyFormatter.doubleToMilliUnits(spec.lowStockThreshold),
-                updatedAt = now,
-                isDeleted = false,
-                syncStatus = SyncState.PENDING_UPLOAD
-            )
-        }
-
-        val openingMovements = variantEntities.filter { it.stockMilliUnits != 0L }.map { v ->
-            StockMovementEntity(
-                movementId = UUID.randomUUID().toString(),
-                shopId = shopId,
-                skuId = v.id,
-                deviceShortCode = deviceCode,
-                deltaMilliUnits = v.stockMilliUnits,
-                movementType = "OPENING",
-                refDocId = itemId,
-                note = "Opening stock for $cleanName",
-                createdAt = now,
-                syncStatus = SyncState.PENDING_UPLOAD
-            )
-        }
-
-        database.withTransaction {
-            inventoryDao.upsertItem(itemEntity)
-            inventoryDao.upsertVariants(variantEntities)
-            if (openingMovements.isNotEmpty()) {
-                shopDao.insertStockMovements(openingMovements)
-            }
-        }
-        SyncManager.scheduleDeltaSync(context)
-        itemId
-    }
-
-    /**
-     * Adds a brand-new parent product along with its initial variant.
-     */
     suspend fun addNewItemWithVariant(
         displayName: String,
         category: String,
@@ -178,29 +130,10 @@ class LpsRepository(
         skuCode: String = "",
         gstRateBps: Int = 0
     ): String = addNewItemWithVariants(
-        displayName = displayName,
-        category = category,
-        variants = listOf(
-            NewVariantSpec(
-                sizeLabel = sizeLabel,
-                materialLabel = materialLabel,
-                colorFinishLabel = colorFinishLabel,
-                unit = unit,
-                purchasePricePaise = purchasePricePaise,
-                sellingPricePaise = sellingPricePaise,
-                stockQuantity = stockQuantity,
-                lowStockThreshold = lowStockThreshold,
-                barcode = barcode,
-                skuCode = skuCode,
-                gstRateBps = gstRateBps
-            )
-        )
+        displayName, category,
+        listOf(NewVariantSpec(sizeLabel, materialLabel, colorFinishLabel, unit, purchasePricePaise, sellingPricePaise, stockQuantity, lowStockThreshold, barcode, skuCode, gstRateBps))
     )
 
-    /**
-     * Adds a new variant/SKU under an existing parent product,
-     * optionally updating the parent product's display name or category in the same unified operation.
-     */
     suspend fun addVariantToExistingItem(
         itemId: String,
         newDisplayName: String? = null,
@@ -216,77 +149,13 @@ class LpsRepository(
         barcode: String = "",
         skuCode: String = "",
         gstRateBps: Int = 0
-    ): String = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val shopId = activeShopId()
-        val deviceCode = SyncManager.getDeviceShortCode(context)
+    ): String = catalog.addVariant(
+        newActionId(), itemId,
+        NewVariantSpec(sizeLabel, materialLabel, colorFinishLabel, unit, purchasePricePaise, sellingPricePaise, stockQuantity, lowStockThreshold, barcode, skuCode, gstRateBps).toVariantSpec(),
+        renameTo = newDisplayName,
+        recategorizeTo = newCategory
+    )
 
-        val variantId = UUID.randomUUID().toString()
-        val stockMilli = IndianCurrencyFormatter.doubleToMilliUnits(stockQuantity)
-        val variantEntity = ItemVariantEntity(
-            id = variantId,
-            shopId = shopId,
-            itemId = itemId,
-            skuCode = skuCode.trim(),
-            barcode = barcode.trim(),
-            sizeLabel = SmartItemMatcher.normalizeSizeString(sizeLabel),
-            materialLabel = SmartItemMatcher.normalizeMaterialString(materialLabel),
-            colorFinishLabel = SmartItemMatcher.normalizeColorString(colorFinishLabel),
-            unit = unit.trim().ifEmpty { "pcs" },
-            purchasePricePaise = purchasePricePaise,
-            sellingPricePaise = sellingPricePaise,
-            gstRateBps = gstRateBps,
-            stockQuantity = stockQuantity,
-            lowStockThreshold = lowStockThreshold,
-            stockMilliUnits = stockMilli,
-            lowStockMilliUnits = IndianCurrencyFormatter.doubleToMilliUnits(lowStockThreshold),
-            updatedAt = now,
-            isDeleted = false,
-            syncStatus = SyncState.PENDING_UPLOAD
-        )
-
-        database.withTransaction {
-            if (!newDisplayName.isNullOrBlank() || !newCategory.isNullOrBlank()) {
-                val existingItem = inventoryDao.getAllRawItems().firstOrNull { it.id == itemId }
-                if (existingItem != null) {
-                    val cleanName = newDisplayName?.trim()?.ifEmpty { existingItem.displayName } ?: existingItem.displayName
-                    val cleanCategory = newCategory?.trim()?.ifEmpty { existingItem.category } ?: existingItem.category
-                    inventoryDao.upsertItem(
-                        existingItem.copy(
-                            displayName = cleanName,
-                            sortKey = cleanName.uppercase(),
-                            category = cleanCategory,
-                            updatedAt = now,
-                            syncStatus = SyncState.PENDING_UPLOAD
-                        )
-                    )
-                }
-            }
-            inventoryDao.upsertVariant(variantEntity)
-            if (stockMilli != 0L) {
-                shopDao.insertStockMovement(
-                    StockMovementEntity(
-                        movementId = UUID.randomUUID().toString(),
-                        shopId = shopId,
-                        skuId = variantId,
-                        deviceShortCode = deviceCode,
-                        deltaMilliUnits = stockMilli,
-                        movementType = "OPENING",
-                        refDocId = itemId,
-                        note = "Opening stock for new variant",
-                        createdAt = now,
-                        syncStatus = SyncState.PENDING_UPLOAD
-                    )
-                )
-            }
-        }
-        SyncManager.scheduleDeltaSync(context)
-        variantId
-    }
-
-    /**
-     * Updates an existing item's name/category and a specific variant's prices, barcode, attributes, and stock count.
-     */
     suspend fun updateItemAndVariant(
         item: InventoryItemEntity,
         newDisplayName: String,
@@ -303,83 +172,38 @@ class LpsRepository(
         newBarcode: String = variant.barcode,
         newSkuCode: String = variant.skuCode,
         newGstRateBps: Int = variant.gstRateBps
-    ) = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val shopId = item.shopId.ifBlank { activeShopId() }
-        val deviceCode = SyncManager.getDeviceShortCode(context)
-        val cleanName = newDisplayName.trim()
-
+    ) {
         val newStockMilli = IndianCurrencyFormatter.doubleToMilliUnits(newStockQuantity)
-        val oldStockMilli = variant.stockMilliUnits
-        val deltaMilli = newStockMilli - oldStockMilli
-
-        val updatedItem = item.copy(
-            shopId = shopId,
-            displayName = cleanName,
-            sortKey = cleanName.uppercase(),
-            category = newCategory.trim().ifEmpty { "Uncategorized" },
-            updatedAt = now,
-            syncStatus = SyncState.PENDING_UPLOAD
+        catalog.editItem(
+            actionId = newActionId(),
+            itemId = item.id,
+            expectedItemUpdatedAt = item.updatedAt,
+            newDisplayName = newDisplayName,
+            newCategory = newCategory,
+            variantId = variant.id,
+            expectedVariantUpdatedAt = variant.updatedAt,
+            edit = VariantEdit(
+                sizeLabel = newSizeLabel,
+                materialLabel = newMaterialLabel,
+                colorFinishLabel = newColorFinishLabel,
+                unit = newUnit,
+                purchasePricePaise = newPurchasePricePaise,
+                sellingPricePaise = newSellingPricePaise,
+                lowStockMilli = IndianCurrencyFormatter.doubleToMilliUnits(newLowStockThreshold),
+                barcode = newBarcode,
+                skuCode = newSkuCode,
+                gstRateBps = newGstRateBps,
+                // Only when the user actually changed the count in the form; otherwise leave stock alone.
+                targetStockMilli = newStockMilli.takeIf { it != variant.stockMilliUnits }
+            )
         )
-
-        val updatedVariant = variant.copy(
-            shopId = shopId,
-            skuCode = newSkuCode.trim(),
-            barcode = newBarcode.trim(),
-            sizeLabel = SmartItemMatcher.normalizeSizeString(newSizeLabel),
-            materialLabel = SmartItemMatcher.normalizeMaterialString(newMaterialLabel),
-            colorFinishLabel = SmartItemMatcher.normalizeColorString(newColorFinishLabel),
-            unit = newUnit.trim().ifEmpty { "pcs" },
-            purchasePricePaise = newPurchasePricePaise,
-            sellingPricePaise = newSellingPricePaise,
-            gstRateBps = newGstRateBps,
-            stockQuantity = newStockQuantity,
-            lowStockThreshold = newLowStockThreshold,
-            stockMilliUnits = newStockMilli,
-            lowStockMilliUnits = IndianCurrencyFormatter.doubleToMilliUnits(newLowStockThreshold),
-            updatedAt = now,
-            syncStatus = SyncState.PENDING_UPLOAD
-        )
-
-        database.withTransaction {
-            inventoryDao.upsertItem(updatedItem)
-            inventoryDao.upsertVariant(updatedVariant)
-            if (deltaMilli != 0L) {
-                shopDao.insertStockMovement(
-                    StockMovementEntity(
-                        movementId = UUID.randomUUID().toString(),
-                        shopId = shopId,
-                        skuId = variant.id,
-                        deviceShortCode = deviceCode,
-                        deltaMilliUnits = deltaMilli,
-                        movementType = "ADJUSTMENT",
-                        refDocId = item.id,
-                        note = "Manual stock adjustment",
-                        createdAt = now,
-                        syncStatus = SyncState.PENDING_UPLOAD
-                    )
-                )
-            }
-        }
-        SyncManager.scheduleDeltaSync(context)
     }
 
     /**
      * Deletes an entire parent item or a single variant.
      */
     suspend fun deleteItemOrVariant(itemId: String, variantId: String?, totalVariantsCount: Int) =
-        withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            database.withTransaction {
-                if (variantId == null || totalVariantsCount <= 1) {
-                    inventoryDao.softDeleteItem(itemId, now)
-                    inventoryDao.softDeleteVariantsForItem(itemId, now)
-                } else {
-                    inventoryDao.softDeleteSingleVariant(variantId, now)
-                }
-            }
-            SyncManager.scheduleDeltaSync(context)
-        }
+        catalog.deleteItem(newActionId(), itemId, variantId.takeIf { totalVariantsCount > 1 })
 
     /**
      * Records a single-item or multi-item POS sale (`CASH`, `UPI`, or `CREDIT` Udhar),
@@ -396,7 +220,7 @@ class LpsRepository(
         gstRateBps: Int = 0
     ): SaleReceiptData = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        val shopId = activeShopId()
+        val shopId = env.shopId()
         val deviceCode = SyncManager.getDeviceShortCode(context)
         val cal = Calendar.getInstance().apply { timeInMillis = now }
         val yearInt = cal.get(Calendar.YEAR)
@@ -410,7 +234,6 @@ class LpsRepository(
 
         val saleEntities = ArrayList<SaleRecordEntity>(cartItems.size)
         val invoiceLines = ArrayList<InvoiceLineEntity>(cartItems.size)
-        val stockMovements = ArrayList<StockMovementEntity>(cartItems.size)
         val receiptLineItems = ArrayList<ReceiptLineItem>(cartItems.size)
 
         var subtotalPaise = 0L
@@ -448,60 +271,32 @@ class LpsRepository(
         }
         val balanceDuePaise = (grandTotalPaise - resolvedPaidPaise).coerceAtLeast(0L)
 
-        // Resolve or create PartyEntity if this transaction involves a customer with balance due or phone
         var resolvedPartyId: String? = null
-        var partyToSave: PartyEntity? = null
-        var partyLedgerToInsert: PartyTransactionEntity? = null
-
+        var newParty: PartyEntity? = null
         if (balanceDuePaise > 0L || cleanBuyerPhone.isNotBlank()) {
             val phoneDigits = cleanBuyerPhone.filter { it.isDigit() }.takeLast(10)
-            val existingParties = shopDao.getAllActivePartiesSnapshot()
-            val matchedParty = existingParties.firstOrNull { p ->
+            val matched = shopDao.getAllActivePartiesSnapshot().firstOrNull { p ->
                 (phoneDigits.length >= 6 && p.phone.filter { it.isDigit() }.takeLast(10) == phoneDigits) ||
                     (cleanBuyerName.isNotBlank() && p.name.equals(cleanBuyerName, ignoreCase = true))
             }
-
-            if (matchedParty != null) {
-                resolvedPartyId = matchedParty.id
-                if (balanceDuePaise > 0L) {
-                    partyToSave = matchedParty.copy(
-                        currentBalancePaise = matchedParty.currentBalancePaise + balanceDuePaise,
-                        updatedAt = now,
-                        syncStatus = SyncState.PENDING_UPLOAD
-                    )
-                }
+            if (matched != null) {
+                resolvedPartyId = matched.id
             } else if (balanceDuePaise > 0L || cleanBuyerName.isNotBlank() || phoneDigits.length >= 6) {
-                val newPartyId = UUID.randomUUID().toString()
-                resolvedPartyId = newPartyId
-                partyToSave = PartyEntity(
-                    id = newPartyId,
+                val created = PartyEntity(
+                    id = UUID.randomUUID().toString(),
                     shopId = shopId,
-                    partyType = "CUSTOMER",
                     name = cleanBuyerName.ifBlank { cleanBuyerPhone.ifBlank { "Credit Customer" } },
                     phone = if (phoneDigits.length >= 10) phoneDigits else cleanBuyerPhone,
-                    openingBalancePaise = 0L,
-                    currentBalancePaise = balanceDuePaise,
-                    updatedAt = now,
-                    isDeleted = false,
-                    syncStatus = SyncState.PENDING_UPLOAD
-                )
-            }
-
-            if (resolvedPartyId != null && balanceDuePaise > 0L) {
-                partyLedgerToInsert = PartyTransactionEntity(
-                    entryId = UUID.randomUUID().toString(),
-                    shopId = shopId,
-                    partyId = resolvedPartyId,
-                    refDocId = receiptNo,
-                    entryType = "CREDIT_BILL",
-                    amountDeltaPaise = balanceDuePaise,
-                    paymentMode = normalizedPaymentMode,
-                    note = "Invoice #$receiptNo (${receiptLineItems.size} items)",
                     createdAt = now,
-                    syncStatus = SyncState.PENDING_UPLOAD
+                    updatedAt = now
                 )
+                newParty = created
+                resolvedPartyId = created.id
             }
         }
+        // vals (not vars) so they can be used inside the transaction lambda below
+        val partyToCreate: PartyEntity? = newParty
+        val ledgerPartyId: String? = resolvedPartyId
 
         for (line in cartItems) {
             val analysis = IndianCurrencyFormatter.computeProfitAnalysis(
@@ -511,125 +306,73 @@ class LpsRepository(
             )
             val lineId = UUID.randomUUID().toString()
             val qtyMilli = IndianCurrencyFormatter.doubleToMilliUnits(line.quantity)
-
             saleEntities.add(
                 SaleRecordEntity(
-                    id = lineId,
-                    shopId = shopId,
-                    receiptNumber = receiptNo,
-                    buyerName = cleanBuyerName,
-                    buyerPhone = cleanBuyerPhone,
-                    partyId = resolvedPartyId,
-                    itemId = line.itemId,
-                    variantId = line.variantId,
-                    itemNameSnapshot = line.itemName,
-                    variantSummarySnapshot = line.variantSummary,
-                    quantitySold = line.quantity,
-                    unitSnapshot = line.unit,
-                    unitPurchasePricePaise = line.unitPurchasePricePaise,
-                    unitSellingPricePaise = line.customSellingPricePaise,
-                    totalCostPaise = analysis.totalCostPaise,
-                    totalRevenuePaise = analysis.totalRevenuePaise,
-                    totalProfitPaise = analysis.totalProfitPaise,
-                    gainMarkupPercent = analysis.gainMarkupPercent,
-                    grossMarginPercent = analysis.grossMarginPercent,
-                    paymentMode = normalizedPaymentMode,
-                    amountPaidPaise = resolvedPaidPaise,
-                    balanceDuePaise = balanceDuePaise,
-                    discountPaise = cleanDiscount,
-                    gstPaise = taxBreakdown.totalTaxPaise,
-                    soldAt = now,
-                    yearInt = yearInt,
-                    monthInt = monthInt,
-                    dayInt = dayInt,
-                    isReturned = false,
-                    updatedAt = now,
-                    syncStatus = SyncState.PENDING_UPLOAD
+                    id = lineId, shopId = shopId, receiptNumber = receiptNo, buyerName = cleanBuyerName,
+                    buyerPhone = cleanBuyerPhone, partyId = resolvedPartyId, itemId = line.itemId,
+                    variantId = line.variantId, itemNameSnapshot = line.itemName,
+                    variantSummarySnapshot = line.variantSummary, quantitySold = line.quantity,
+                    unitSnapshot = line.unit, unitPurchasePricePaise = line.unitPurchasePricePaise,
+                    unitSellingPricePaise = line.customSellingPricePaise, totalCostPaise = analysis.totalCostPaise,
+                    totalRevenuePaise = analysis.totalRevenuePaise, totalProfitPaise = analysis.totalProfitPaise,
+                    gainMarkupPercent = analysis.gainMarkupPercent, grossMarginPercent = analysis.grossMarginPercent,
+                    paymentMode = normalizedPaymentMode, amountPaidPaise = resolvedPaidPaise,
+                    balanceDuePaise = balanceDuePaise, discountPaise = cleanDiscount,
+                    gstPaise = taxBreakdown.totalTaxPaise, soldAt = now, yearInt = yearInt, monthInt = monthInt,
+                    dayInt = dayInt, updatedAt = now
                 )
             )
-
             invoiceLines.add(
                 InvoiceLineEntity(
-                    id = lineId,
-                    shopId = shopId,
-                    invoiceId = invoiceId,
-                    productId = line.itemId,
-                    skuId = line.variantId,
-                    itemNameSnapshot = line.itemName,
-                    variantSummarySnapshot = line.variantSummary,
-                    qtyMilliUnits = qtyMilli,
-                    unitSnapshot = line.unit,
-                    unitCostPaise = line.unitPurchasePricePaise,
-                    unitSellPaise = line.customSellingPricePaise,
-                    gstRateBps = effectiveGstBps,
-                    lineTaxPaise = 0L,
-                    lineTotalPaise = analysis.totalRevenuePaise,
-                    lineProfitPaise = analysis.totalProfitPaise,
-                    isReturned = false
-                )
-            )
-
-            stockMovements.add(
-                StockMovementEntity(
-                    movementId = UUID.randomUUID().toString(),
-                    shopId = shopId,
-                    skuId = line.variantId,
-                    deviceShortCode = deviceCode,
-                    deltaMilliUnits = -qtyMilli,
-                    movementType = "SALE",
-                    refDocId = receiptNo,
-                    note = "Sale #$receiptNo",
-                    createdAt = now,
-                    syncStatus = SyncState.PENDING_UPLOAD
+                    id = lineId, shopId = shopId, invoiceId = invoiceId, productId = line.itemId,
+                    skuId = line.variantId, itemNameSnapshot = line.itemName,
+                    variantSummarySnapshot = line.variantSummary, qtyMilliUnits = qtyMilli, unitSnapshot = line.unit,
+                    unitCostPaise = line.unitPurchasePricePaise, unitSellPaise = line.customSellingPricePaise,
+                    gstRateBps = effectiveGstBps, lineTotalPaise = analysis.totalRevenuePaise,
+                    lineProfitPaise = analysis.totalProfitPaise
                 )
             )
         }
 
         val invoiceHeader = InvoiceHeaderEntity(
-            id = invoiceId,
-            shopId = shopId,
-            deviceShortCode = deviceCode,
-            invoiceNumber = receiptNo,
-            docType = "SALE",
-            partyId = resolvedPartyId,
-            buyerName = cleanBuyerName,
-            buyerPhone = cleanBuyerPhone,
-            paymentMode = normalizedPaymentMode,
-            subtotalPaise = subtotalPaise,
-            discountPaise = cleanDiscount,
-            cgstPaise = taxBreakdown.cgstPaise,
-            sgstPaise = taxBreakdown.sgstPaise,
-            igstPaise = taxBreakdown.igstPaise,
-            grandTotalPaise = grandTotalPaise,
-            amountPaidPaise = resolvedPaidPaise,
-            balanceDuePaise = balanceDuePaise,
-            issuedAt = now,
-            yearInt = yearInt,
-            monthInt = monthInt,
-            dayInt = dayInt,
-            isReturned = false,
-            updatedAt = now,
-            syncStatus = SyncState.PENDING_UPLOAD
+            id = invoiceId, shopId = shopId, deviceShortCode = deviceCode, invoiceNumber = receiptNo,
+            partyId = resolvedPartyId, buyerName = cleanBuyerName, buyerPhone = cleanBuyerPhone,
+            paymentMode = normalizedPaymentMode, subtotalPaise = subtotalPaise, discountPaise = cleanDiscount,
+            cgstPaise = taxBreakdown.cgstPaise, sgstPaise = taxBreakdown.sgstPaise, igstPaise = taxBreakdown.igstPaise,
+            grandTotalPaise = grandTotalPaise, amountPaidPaise = resolvedPaidPaise, balanceDuePaise = balanceDuePaise,
+            issuedAt = now, yearInt = yearInt, monthInt = monthInt, dayInt = dayInt, updatedAt = now
         )
 
         database.withTransaction {
-            for (line in cartItems) {
-                inventoryDao.deductVariantStock(
-                    variantId = line.variantId,
-                    qtySold = line.quantity,
-                    now = now
+            val device = database.deviceDao().getLocalDevice() ?: error("Local device row missing")
+            for (line in invoiceLines) {
+                shopDao.insertStockMovement(
+                    StockMovementEntity(
+                        movementId = UUID.randomUUID().toString(), shopId = shopId, skuId = line.skuId,
+                        deviceId = device.deviceId, deviceShortCode = device.deviceCode,
+                        deltaMilliUnits = -line.qtyMilliUnits, movementType = "SALE", refDocId = invoiceId,
+                        note = "Sale #$receiptNo", createdAt = now
+                    )
                 )
+                inventoryDao.addToStockProjection(line.skuId, -line.qtyMilliUnits)
             }
             saleDao.insertSales(saleEntities)
             shopDao.upsertInvoiceHeader(invoiceHeader)
             shopDao.upsertInvoiceLines(invoiceLines)
-            shopDao.insertStockMovements(stockMovements)
-            if (partyToSave != null) {
-                shopDao.upsertParty(partyToSave)
+            if (partyToCreate != null) shopDao.insertParty(partyToCreate)
+            if (ledgerPartyId != null && balanceDuePaise > 0L) {
+                shopDao.insertLedgerEntry(
+                    PartyTransactionEntity(
+                        entryId = UUID.randomUUID().toString(), shopId = shopId, partyId = ledgerPartyId,
+                        refDocId = invoiceId, entryType = "CREDIT_BILL", amountDeltaPaise = balanceDuePaise,
+                        paymentMode = normalizedPaymentMode, note = "Invoice #$receiptNo", createdAt = now,
+                        deviceId = device.deviceId
+                    )
+                )
+                shopDao.addToPartyBalance(ledgerPartyId, balanceDuePaise)
             }
-            if (partyLedgerToInsert != null) {
-                shopDao.insertLedgerEntry(partyLedgerToInsert)
-            }
+            database.syncOutboxDao().insert(SyncOutboxEntity(docType = OutboxDocType.INVOICE, docId = invoiceId, op = OutboxOp.APPEND, createdAt = now))
+            if (partyToCreate != null) database.syncOutboxDao().insert(SyncOutboxEntity(docType = OutboxDocType.PARTY, docId = partyToCreate.id, op = OutboxOp.UPSERT, createdAt = now))
         }
 
         SyncManager.scheduleDeltaSync(context)
@@ -747,26 +490,19 @@ class LpsRepository(
     suspend fun returnSaleAndRestoreStock(sale: SaleRecordEntity) = withContext(Dispatchers.IO) {
         if (sale.isReturned) return@withContext
         val now = System.currentTimeMillis()
-        val deviceCode = SyncManager.getDeviceShortCode(context)
         val qtyMilli = IndianCurrencyFormatter.doubleToMilliUnits(sale.quantitySold)
-
         database.withTransaction {
+            val device = database.deviceDao().getLocalDevice() ?: error("Local device row missing")
             saleDao.markSaleReturned(sale.id, now)
-            inventoryDao.restoreVariantStock(sale.variantId, sale.quantitySold, now)
-            shopDao.insertStockMovement(
-                StockMovementEntity(
-                    movementId = UUID.randomUUID().toString(),
-                    shopId = sale.shopId.ifBlank { activeShopId() },
-                    skuId = sale.variantId,
-                    deviceShortCode = deviceCode,
-                    deltaMilliUnits = qtyMilli,
-                    movementType = "SALE_RETURN",
-                    refDocId = sale.receiptNumber,
-                    note = "Return of #${sale.receiptNumber}",
-                    createdAt = now,
-                    syncStatus = SyncState.PENDING_UPLOAD
-                )
+            val movement = StockMovementEntity(
+                movementId = UUID.randomUUID().toString(), shopId = sale.shopId.ifBlank { env.shopId() },
+                skuId = sale.variantId, deviceId = device.deviceId, deviceShortCode = device.deviceCode,
+                deltaMilliUnits = qtyMilli, movementType = "SALE_RETURN", refDocId = sale.receiptNumber,
+                note = "Return of #${sale.receiptNumber}", createdAt = now
             )
+            shopDao.insertStockMovement(movement)
+            inventoryDao.addToStockProjection(sale.variantId, qtyMilli)
+            database.syncOutboxDao().insert(SyncOutboxEntity(docType = OutboxDocType.MOVEMENT, docId = movement.movementId, op = OutboxOp.APPEND, createdAt = now))
         }
         SyncManager.scheduleDeltaSync(context)
     }
@@ -781,28 +517,13 @@ class LpsRepository(
         partyType: String = "CUSTOMER",
         gstin: String = "",
         openingBalancePaise: Long = 0L
-    ): String = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val shopId = activeShopId()
-        val existing = if (!id.isNullOrBlank()) shopDao.getPartyById(id) else null
-        val partyId = existing?.id ?: UUID.randomUUID().toString()
-
-        val entity = PartyEntity(
-            id = partyId,
-            shopId = shopId,
-            partyType = partyType,
-            name = name.trim(),
-            phone = phone.trim(),
-            gstin = gstin.trim().uppercase(Locale.ROOT),
-            openingBalancePaise = existing?.openingBalancePaise ?: openingBalancePaise,
-            currentBalancePaise = existing?.currentBalancePaise ?: openingBalancePaise,
-            updatedAt = now,
-            isDeleted = false,
-            syncStatus = SyncState.PENDING_UPLOAD
-        )
-        shopDao.upsertParty(entity)
-        SyncManager.scheduleDeltaSync(context)
-        partyId
+    ): String {
+        if (id.isNullOrBlank()) {
+            return khata.createParty(newActionId(), name, phone, partyType, gstin, openingBalancePaise)
+        }
+        val current = shopDao.getPartyById(id) ?: throw CommandException.NotFound("Party")
+        khata.updateParty(newActionId(), id, current.updatedAt, name, phone, partyType, gstin)
+        return id
     }
 
     /**
@@ -813,35 +534,8 @@ class LpsRepository(
         amountPaise: Long,
         paymentMode: String = "CASH",
         note: String = ""
-    ) = withContext(Dispatchers.IO) {
-        if (amountPaise <= 0L) return@withContext
-        val party = shopDao.getPartyById(partyId) ?: return@withContext
-        val now = System.currentTimeMillis()
-        val entryType = if (paymentMode.equals("UPI", ignoreCase = true)) "JAMA_UPI" else "JAMA_CASH"
-
-        val updatedParty = party.copy(
-            currentBalancePaise = (party.currentBalancePaise - amountPaise).coerceAtLeast(0L),
-            updatedAt = now,
-            syncStatus = SyncState.PENDING_UPLOAD
-        )
-        val entry = PartyTransactionEntity(
-            entryId = UUID.randomUUID().toString(),
-            shopId = party.shopId.ifBlank { activeShopId() },
-            partyId = partyId,
-            refDocId = "",
-            entryType = entryType,
-            amountDeltaPaise = -amountPaise,
-            paymentMode = paymentMode.uppercase(Locale.ROOT),
-            note = note.trim().ifBlank { "Payment received ($paymentMode)" },
-            createdAt = now,
-            syncStatus = SyncState.PENDING_UPLOAD
-        )
-
-        database.withTransaction {
-            shopDao.upsertParty(updatedParty)
-            shopDao.insertLedgerEntry(entry)
-        }
-        SyncManager.scheduleDeltaSync(context)
+    ) {
+        khata.recordPayment(newActionId(), partyId, amountPaise, paymentMode, PaymentDirection.IN, note)
     }
 
     /**
@@ -865,7 +559,7 @@ class LpsRepository(
         } else {
             searchHistoryDao.upsertSearchEntry(
                 SearchHistoryEntity(
-                    shopId = activeShopId(),
+                    shopId = env.shopId(),
                     rawQuery = trimmed,
                     normalizedQuery = normalized,
                     resultCount = resultCount,
@@ -1003,321 +697,41 @@ class LpsRepository(
      * Restores items, variants, sales, and parties from either a v1 LPS Hardware or v2 ShopLedger JSON backup.
      */
     suspend fun importBackupJson(jsonString: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val root = JSONObject(jsonString)
-            val shopId = activeShopId()
-            val itemsArr = root.optJSONArray("items") ?: JSONArray()
-            val variantsArr = root.optJSONArray("variants") ?: JSONArray()
-            val salesArr = root.optJSONArray("sales") ?: JSONArray()
-            val partiesArr = root.optJSONArray("parties") ?: JSONArray()
-
-            val items = ArrayList<InventoryItemEntity>(itemsArr.length())
-            for (idx in 0 until itemsArr.length()) {
-                val o = itemsArr.getJSONObject(idx)
-                items.add(
-                    InventoryItemEntity(
-                        id = o.getString("id"),
-                        shopId = o.optString("shopId", shopId),
-                        displayName = o.getString("displayName"),
-                        sortKey = o.optString("sortKey", o.getString("displayName").uppercase()),
-                        category = o.optString("category", "Uncategorized"),
-                        createdAt = o.optLong("createdAt", System.currentTimeMillis()),
-                        updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
-                        isDeleted = o.optBoolean("isDeleted", false),
-                        syncStatus = SyncState.PENDING_UPLOAD
-                    )
-                )
-            }
-
-            val variants = ArrayList<ItemVariantEntity>(variantsArr.length())
-            for (idx in 0 until variantsArr.length()) {
-                val o = variantsArr.getJSONObject(idx)
-                val qty = o.getDouble("stockQuantity")
-                val lowAlert = o.optDouble("lowStockThreshold", 5.0)
-                variants.add(
-                    ItemVariantEntity(
-                        id = o.getString("id"),
-                        shopId = o.optString("shopId", shopId),
-                        itemId = o.getString("itemId"),
-                        skuCode = o.optString("skuCode", ""),
-                        barcode = o.optString("barcode", ""),
-                        sizeLabel = o.optString("sizeLabel", ""),
-                        materialLabel = o.optString("materialLabel", ""),
-                        colorFinishLabel = o.optString("colorFinishLabel", ""),
-                        unit = o.optString("unit", "pcs"),
-                        purchasePricePaise = o.getLong("purchasePricePaise"),
-                        sellingPricePaise = o.getLong("sellingPricePaise"),
-                        gstRateBps = o.optInt("gstRateBps", 0),
-                        stockQuantity = qty,
-                        lowStockThreshold = lowAlert,
-                        stockMilliUnits = (qty * 1000.0).roundToLong(),
-                        lowStockMilliUnits = (lowAlert * 1000.0).roundToLong(),
-                        updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
-                        isDeleted = o.optBoolean("isDeleted", false),
-                        syncStatus = SyncState.PENDING_UPLOAD
-                    )
-                )
-            }
-
-            val sales = ArrayList<SaleRecordEntity>(salesArr.length())
-            for (idx in 0 until salesArr.length()) {
-                val o = salesArr.getJSONObject(idx)
-                val rev = o.getLong("totalRevenuePaise")
-                sales.add(
-                    SaleRecordEntity(
-                        id = o.getString("id"),
-                        shopId = o.optString("shopId", shopId),
-                        receiptNumber = o.optString("receiptNumber", "INV-0000"),
-                        buyerName = o.optString("buyerName", ""),
-                        buyerPhone = o.optString("buyerPhone", ""),
-                        itemId = o.getString("itemId"),
-                        variantId = o.getString("variantId"),
-                        itemNameSnapshot = o.getString("itemNameSnapshot"),
-                        variantSummarySnapshot = o.optString("variantSummarySnapshot", "Standard"),
-                        quantitySold = o.getDouble("quantitySold"),
-                        unitSnapshot = o.optString("unitSnapshot", "pcs"),
-                        unitPurchasePricePaise = o.getLong("unitPurchasePricePaise"),
-                        unitSellingPricePaise = o.getLong("unitSellingPricePaise"),
-                        totalCostPaise = o.getLong("totalCostPaise"),
-                        totalRevenuePaise = rev,
-                        totalProfitPaise = o.getLong("totalProfitPaise"),
-                        gainMarkupPercent = o.optDouble("gainMarkupPercent", 0.0),
-                        grossMarginPercent = o.optDouble("grossMarginPercent", 0.0),
-                        paymentMode = o.optString("paymentMode", "CASH"),
-                        amountPaidPaise = o.optLong("amountPaidPaise", rev),
-                        balanceDuePaise = o.optLong("balanceDuePaise", 0L),
-                        discountPaise = o.optLong("discountPaise", 0L),
-                        gstPaise = o.optLong("gstPaise", 0L),
-                        soldAt = o.optLong("soldAt", System.currentTimeMillis()),
-                        yearInt = o.optInt("yearInt", 2026),
-                        monthInt = o.optInt("monthInt", 1),
-                        dayInt = o.optInt("dayInt", 1),
-                        isReturned = o.optBoolean("isReturned", false),
-                        updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
-                        syncStatus = SyncState.PENDING_UPLOAD
-                    )
-                )
-            }
-
-            val parties = ArrayList<PartyEntity>(partiesArr.length())
-            for (idx in 0 until partiesArr.length()) {
-                val o = partiesArr.getJSONObject(idx)
-                parties.add(
-                    PartyEntity(
-                        id = o.getString("id"),
-                        shopId = o.optString("shopId", shopId),
-                        partyType = o.optString("partyType", "CUSTOMER"),
-                        name = o.getString("name"),
-                        phone = o.optString("phone", ""),
-                        gstin = o.optString("gstin", ""),
-                        currentBalancePaise = o.optLong("currentBalancePaise", 0L),
-                        updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
-                        isDeleted = o.optBoolean("isDeleted", false),
-                        syncStatus = SyncState.PENDING_UPLOAD
-                    )
-                )
-            }
-
-            database.withTransaction {
-                inventoryDao.upsertItems(items)
-                inventoryDao.upsertVariants(variants)
-                saleDao.insertSales(sales)
-                if (parties.isNotEmpty()) {
-                    shopDao.upsertParties(parties)
-                }
-            }
-            SyncManager.scheduleDeltaSync(context)
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
+        runCatching { LegacyJsonImporter(database, env).import(jsonString) }
+            .onFailure { it.printStackTrace() }
+            .isSuccess
     }
 
     suspend fun seedStarterCatalogIfEmpty() = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences("lps_seed_prefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("catalog_seeded_v1", false)) return@withContext
-
-        val existing = inventoryDao.getAllActiveItemsSnapshot()
-        if (existing.isNotEmpty()) {
+        if (inventoryDao.countItems() > 0) {
             prefs.edit().putBoolean("catalog_seeded_v1", true).apply()
             return@withContext
         }
-
-        val hingeId = addSeedItemWithVariant(
-            displayName = "Butt Hinge (Kabza)",
-            category = "Door & Window Fittings",
-            sizeLabel = "4 inch (100mm)",
-            materialLabel = "SS 304",
-            colorFinishLabel = "Silver / Chrome",
-            unit = "pcs",
-            purchasePricePaise = 4800L,
-            sellingPricePaise = 7500L,
-            stockQuantity = 40.0,
-            lowStockThreshold = 10.0
-        )
-        addSeedVariantToItem(
-            itemId = hingeId,
-            sizeLabel = "4 inch (100mm)",
-            materialLabel = "SS 304",
-            colorFinishLabel = "Matt Black",
-            unit = "pcs",
-            purchasePricePaise = 6500L,
-            sellingPricePaise = 9500L,
-            stockQuantity = 18.0,
-            lowStockThreshold = 6.0
-        )
-        addSeedVariantToItem(
-            itemId = hingeId,
-            sizeLabel = "6 inch (150mm)",
-            materialLabel = "Brass",
-            colorFinishLabel = "Antique Brass",
-            unit = "pcs",
-            purchasePricePaise = 14500L,
-            sellingPricePaise = 21000L,
-            stockQuantity = 12.0,
-            lowStockThreshold = 4.0
-        )
-
-        val screwId = addSeedItemWithVariant(
-            displayName = "Drywall Screw (Black)",
-            category = "Fasteners & Screws",
-            sizeLabel = "1.5 inch (38mm)",
-            materialLabel = "MS (Iron)",
-            colorFinishLabel = "Black",
-            unit = "box",
-            purchasePricePaise = 13500L,
-            sellingPricePaise = 19000L,
-            stockQuantity = 15.0,
-            lowStockThreshold = 5.0
-        )
-        addSeedVariantToItem(
-            itemId = screwId,
-            sizeLabel = "2 inch (50mm)",
-            materialLabel = "MS (Iron)",
-            colorFinishLabel = "Black",
-            unit = "box",
-            purchasePricePaise = 16000L,
-            sellingPricePaise = 22500L,
-            stockQuantity = 4.0,
-            lowStockThreshold = 5.0
-        )
-
-        val boltId = addSeedItemWithVariant(
-            displayName = "Tower Bolt (Chatkani)",
-            category = "Door & Window Fittings",
-            sizeLabel = "6 inch (150mm)",
-            materialLabel = "SS",
-            colorFinishLabel = "Silver / Chrome",
-            unit = "pcs",
-            purchasePricePaise = 8200L,
-            sellingPricePaise = 12500L,
-            stockQuantity = 24.0,
-            lowStockThreshold = 6.0
-        )
-        addSeedVariantToItem(
-            itemId = boltId,
-            sizeLabel = "8 inch (200mm)",
-            materialLabel = "Aluminium",
-            colorFinishLabel = "Rose Gold",
-            unit = "pcs",
-            purchasePricePaise = 11000L,
-            sellingPricePaise = 16500L,
-            stockQuantity = 3.0,
-            lowStockThreshold = 5.0
-        )
-
-        addSeedItemWithVariant(
-            displayName = "Wood Adhesive (Fevicol SH)",
-            category = "Paints & Adhesives",
-            sizeLabel = "1 kg",
-            materialLabel = "",
-            colorFinishLabel = "White",
-            unit = "pkt",
-            purchasePricePaise = 23000L,
-            sellingPricePaise = 29000L,
-            stockQuantity = 10.0,
-            lowStockThreshold = 3.0
-        )
-
+        fun spec(size: String, material: String, color: String, unit: String, cost: Long, sell: Long, stock: Long, low: Long) =
+            VariantSpec(
+                sizeLabel = size, materialLabel = material, colorFinishLabel = color, unit = unit,
+                purchasePricePaise = cost, sellingPricePaise = sell,
+                openingStockMilli = stock * 1000L, lowStockMilli = low * 1000L
+            )
+        // Fixed action ids make seeding idempotent even if the app is killed half-way.
+        catalog.createItem("seed-v1-hinge", "Butt Hinge (Kabza)", "Door & Window Fittings", listOf(
+            spec("4 inch (100mm)", "SS 304", "Silver / Chrome", "pcs", 4800L, 7500L, 40, 10),
+            spec("4 inch (100mm)", "SS 304", "Matt Black", "pcs", 6500L, 9500L, 18, 6),
+            spec("6 inch (150mm)", "Brass", "Antique Brass", "pcs", 14500L, 21000L, 12, 4)
+        ), isDemo = true)
+        catalog.createItem("seed-v1-screw", "Drywall Screw (Black)", "Fasteners & Screws", listOf(
+            spec("1.5 inch (38mm)", "MS (Iron)", "Black", "box", 13500L, 19000L, 15, 5),
+            spec("2 inch (50mm)", "MS (Iron)", "Black", "box", 16000L, 22500L, 4, 5)
+        ), isDemo = true)
+        catalog.createItem("seed-v1-bolt", "Tower Bolt (Chatkani)", "Door & Window Fittings", listOf(
+            spec("6 inch (150mm)", "SS", "Silver / Chrome", "pcs", 8200L, 12500L, 24, 6),
+            spec("8 inch (200mm)", "Aluminium", "Rose Gold", "pcs", 11000L, 16500L, 3, 5)
+        ), isDemo = true)
+        catalog.createItem("seed-v1-adhesive", "Wood Adhesive (Fevicol SH)", "Paints & Adhesives", listOf(
+            spec("1 kg", "", "White", "pkt", 23000L, 29000L, 10, 3)
+        ), isDemo = true)
         prefs.edit().putBoolean("catalog_seeded_v1", true).apply()
-    }
-
-    private suspend fun addSeedItemWithVariant(
-        displayName: String,
-        category: String,
-        sizeLabel: String,
-        materialLabel: String,
-        colorFinishLabel: String,
-        unit: String,
-        purchasePricePaise: Long,
-        sellingPricePaise: Long,
-        stockQuantity: Double,
-        lowStockThreshold: Double
-    ): String {
-        val now = System.currentTimeMillis()
-        val itemId = UUID.randomUUID().toString()
-        val variantId = UUID.randomUUID().toString()
-        inventoryDao.upsertItem(
-            InventoryItemEntity(
-                id = itemId,
-                displayName = displayName,
-                sortKey = displayName.uppercase(),
-                category = category,
-                createdAt = now,
-                updatedAt = now,
-                isDeleted = false,
-                syncStatus = SyncState.DEMO_SEED
-            )
-        )
-        inventoryDao.upsertVariant(
-            ItemVariantEntity(
-                id = variantId,
-                itemId = itemId,
-                sizeLabel = sizeLabel,
-                materialLabel = materialLabel,
-                colorFinishLabel = colorFinishLabel,
-                unit = unit,
-                purchasePricePaise = purchasePricePaise,
-                sellingPricePaise = sellingPricePaise,
-                stockQuantity = stockQuantity,
-                lowStockThreshold = lowStockThreshold,
-                updatedAt = now,
-                isDeleted = false,
-                syncStatus = SyncState.DEMO_SEED
-            )
-        )
-        return itemId
-    }
-
-    private suspend fun addSeedVariantToItem(
-        itemId: String,
-        sizeLabel: String,
-        materialLabel: String,
-        colorFinishLabel: String,
-        unit: String,
-        purchasePricePaise: Long,
-        sellingPricePaise: Long,
-        stockQuantity: Double,
-        lowStockThreshold: Double
-    ) {
-        val now = System.currentTimeMillis()
-        inventoryDao.upsertVariant(
-            ItemVariantEntity(
-                id = UUID.randomUUID().toString(),
-                itemId = itemId,
-                sizeLabel = sizeLabel,
-                materialLabel = materialLabel,
-                colorFinishLabel = colorFinishLabel,
-                unit = unit,
-                purchasePricePaise = purchasePricePaise,
-                sellingPricePaise = sellingPricePaise,
-                stockQuantity = stockQuantity,
-                lowStockThreshold = lowStockThreshold,
-                updatedAt = now,
-                isDeleted = false,
-                syncStatus = SyncState.DEMO_SEED
-            )
-        )
     }
 }

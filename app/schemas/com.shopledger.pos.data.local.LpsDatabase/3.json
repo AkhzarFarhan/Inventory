@@ -1,0 +1,1594 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "8fa38fda439e30c05713e17a69d159bc",
+    "entities": [
+      {
+        "tableName": "inventory_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `sortKey` TEXT NOT NULL, `category` TEXT NOT NULL, `defaultHsnCode` TEXT NOT NULL, `defaultGstRateBps` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, `isDemo` INTEGER NOT NULL, `createdByUid` TEXT NOT NULL, `deviceId` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortKey",
+            "columnName": "sortKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "defaultHsnCode",
+            "columnName": "defaultHsnCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "defaultGstRateBps",
+            "columnName": "defaultGstRateBps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDeleted",
+            "columnName": "isDeleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDemo",
+            "columnName": "isDemo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdByUid",
+            "columnName": "createdByUid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_inventory_items_sortKey",
+            "unique": false,
+            "columnNames": [
+              "sortKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inventory_items_sortKey` ON `${TABLE_NAME}` (`sortKey`)"
+          },
+          {
+            "name": "index_inventory_items_shopId_sortKey",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "sortKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inventory_items_shopId_sortKey` ON `${TABLE_NAME}` (`shopId`, `sortKey`)"
+          },
+          {
+            "name": "index_inventory_items_isDeleted",
+            "unique": false,
+            "columnNames": [
+              "isDeleted"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inventory_items_isDeleted` ON `${TABLE_NAME}` (`isDeleted`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "item_variants",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `skuCode` TEXT NOT NULL, `barcode` TEXT NOT NULL, `sizeLabel` TEXT NOT NULL, `materialLabel` TEXT NOT NULL, `colorFinishLabel` TEXT NOT NULL, `unit` TEXT NOT NULL, `mrpPaise` INTEGER NOT NULL, `purchasePricePaise` INTEGER NOT NULL, `sellingPricePaise` INTEGER NOT NULL, `gstRateBps` INTEGER NOT NULL, `stockMilliUnits` INTEGER NOT NULL, `lowStockMilliUnits` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, `isDemo` INTEGER NOT NULL, `createdByUid` TEXT NOT NULL, `deviceId` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`itemId`) REFERENCES `inventory_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skuCode",
+            "columnName": "skuCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "barcode",
+            "columnName": "barcode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeLabel",
+            "columnName": "sizeLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "materialLabel",
+            "columnName": "materialLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "colorFinishLabel",
+            "columnName": "colorFinishLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mrpPaise",
+            "columnName": "mrpPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purchasePricePaise",
+            "columnName": "purchasePricePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sellingPricePaise",
+            "columnName": "sellingPricePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gstRateBps",
+            "columnName": "gstRateBps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stockMilliUnits",
+            "columnName": "stockMilliUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lowStockMilliUnits",
+            "columnName": "lowStockMilliUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDeleted",
+            "columnName": "isDeleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDemo",
+            "columnName": "isDemo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdByUid",
+            "columnName": "createdByUid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_item_variants_itemId",
+            "unique": false,
+            "columnNames": [
+              "itemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_item_variants_itemId` ON `${TABLE_NAME}` (`itemId`)"
+          },
+          {
+            "name": "index_item_variants_shopId_barcode",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "barcode"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_item_variants_shopId_barcode` ON `${TABLE_NAME}` (`shopId`, `barcode`)"
+          },
+          {
+            "name": "index_item_variants_isDeleted",
+            "unique": false,
+            "columnNames": [
+              "isDeleted"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_item_variants_isDeleted` ON `${TABLE_NAME}` (`isDeleted`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "inventory_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "itemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sale_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `receiptNumber` TEXT NOT NULL, `buyerName` TEXT NOT NULL, `buyerPhone` TEXT NOT NULL, `partyId` TEXT, `itemId` TEXT NOT NULL, `variantId` TEXT NOT NULL, `itemNameSnapshot` TEXT NOT NULL, `variantSummarySnapshot` TEXT NOT NULL, `quantitySold` REAL NOT NULL, `unitSnapshot` TEXT NOT NULL, `unitPurchasePricePaise` INTEGER NOT NULL, `unitSellingPricePaise` INTEGER NOT NULL, `totalCostPaise` INTEGER NOT NULL, `totalRevenuePaise` INTEGER NOT NULL, `totalProfitPaise` INTEGER NOT NULL, `gainMarkupPercent` REAL NOT NULL, `grossMarginPercent` REAL NOT NULL, `paymentMode` TEXT NOT NULL, `amountPaidPaise` INTEGER NOT NULL, `balanceDuePaise` INTEGER NOT NULL, `discountPaise` INTEGER NOT NULL, `gstPaise` INTEGER NOT NULL, `soldAt` INTEGER NOT NULL, `yearInt` INTEGER NOT NULL, `monthInt` INTEGER NOT NULL, `dayInt` INTEGER NOT NULL, `isReturned` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receiptNumber",
+            "columnName": "receiptNumber",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerName",
+            "columnName": "buyerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPhone",
+            "columnName": "buyerPhone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variantId",
+            "columnName": "variantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemNameSnapshot",
+            "columnName": "itemNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variantSummarySnapshot",
+            "columnName": "variantSummarySnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantitySold",
+            "columnName": "quantitySold",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitSnapshot",
+            "columnName": "unitSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPurchasePricePaise",
+            "columnName": "unitPurchasePricePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitSellingPricePaise",
+            "columnName": "unitSellingPricePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalCostPaise",
+            "columnName": "totalCostPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalRevenuePaise",
+            "columnName": "totalRevenuePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalProfitPaise",
+            "columnName": "totalProfitPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gainMarkupPercent",
+            "columnName": "gainMarkupPercent",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grossMarginPercent",
+            "columnName": "grossMarginPercent",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paymentMode",
+            "columnName": "paymentMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountPaidPaise",
+            "columnName": "amountPaidPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balanceDuePaise",
+            "columnName": "balanceDuePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "discountPaise",
+            "columnName": "discountPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gstPaise",
+            "columnName": "gstPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soldAt",
+            "columnName": "soldAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "yearInt",
+            "columnName": "yearInt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "monthInt",
+            "columnName": "monthInt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dayInt",
+            "columnName": "dayInt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isReturned",
+            "columnName": "isReturned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncStatus",
+            "columnName": "syncStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sale_records_soldAt",
+            "unique": false,
+            "columnNames": [
+              "soldAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_soldAt` ON `${TABLE_NAME}` (`soldAt`)"
+          },
+          {
+            "name": "index_sale_records_yearInt_monthInt_dayInt",
+            "unique": false,
+            "columnNames": [
+              "yearInt",
+              "monthInt",
+              "dayInt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_yearInt_monthInt_dayInt` ON `${TABLE_NAME}` (`yearInt`, `monthInt`, `dayInt`)"
+          },
+          {
+            "name": "index_sale_records_receiptNumber",
+            "unique": false,
+            "columnNames": [
+              "receiptNumber"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_receiptNumber` ON `${TABLE_NAME}` (`receiptNumber`)"
+          },
+          {
+            "name": "index_sale_records_syncStatus",
+            "unique": false,
+            "columnNames": [
+              "syncStatus"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_syncStatus` ON `${TABLE_NAME}` (`syncStatus`)"
+          },
+          {
+            "name": "index_sale_records_shopId_soldAt",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "soldAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_records_shopId_soldAt` ON `${TABLE_NAME}` (`shopId`, `soldAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "search_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `shopId` TEXT NOT NULL, `rawQuery` TEXT NOT NULL, `normalizedQuery` TEXT NOT NULL, `resultCount` INTEGER NOT NULL, `searchFrequency` INTEGER NOT NULL, `lastSearchedAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawQuery",
+            "columnName": "rawQuery",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedQuery",
+            "columnName": "normalizedQuery",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resultCount",
+            "columnName": "resultCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "searchFrequency",
+            "columnName": "searchFrequency",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSearchedAt",
+            "columnName": "lastSearchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_search_history_shopId_normalizedQuery",
+            "unique": true,
+            "columnNames": [
+              "shopId",
+              "normalizedQuery"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_search_history_shopId_normalizedQuery` ON `${TABLE_NAME}` (`shopId`, `normalizedQuery`)"
+          },
+          {
+            "name": "index_search_history_lastSearchedAt",
+            "unique": false,
+            "columnNames": [
+              "lastSearchedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_search_history_lastSearchedAt` ON `${TABLE_NAME}` (`lastSearchedAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "shops",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`shopId` TEXT NOT NULL, `shopName` TEXT NOT NULL, `verticalType` TEXT NOT NULL, `ownerUid` TEXT NOT NULL, `gstin` TEXT NOT NULL, `stateCode` TEXT NOT NULL, `gstEnabled` INTEGER NOT NULL, `upiId` TEXT NOT NULL, `whatsappPhone` TEXT NOT NULL, `deviceShortCode` TEXT NOT NULL, `invoicePrefix` TEXT NOT NULL, `cipherMode` TEXT NOT NULL, `cipherWord10` TEXT NOT NULL, `ownerPinHash` TEXT NOT NULL, `isSetupCompleted` INTEGER NOT NULL, `maxStaffDiscountBps` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`shopId`))",
+        "fields": [
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopName",
+            "columnName": "shopName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verticalType",
+            "columnName": "verticalType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUid",
+            "columnName": "ownerUid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gstin",
+            "columnName": "gstin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stateCode",
+            "columnName": "stateCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gstEnabled",
+            "columnName": "gstEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "upiId",
+            "columnName": "upiId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "whatsappPhone",
+            "columnName": "whatsappPhone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceShortCode",
+            "columnName": "deviceShortCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "invoicePrefix",
+            "columnName": "invoicePrefix",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cipherMode",
+            "columnName": "cipherMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cipherWord10",
+            "columnName": "cipherWord10",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerPinHash",
+            "columnName": "ownerPinHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSetupCompleted",
+            "columnName": "isSetupCompleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxStaffDiscountBps",
+            "columnName": "maxStaffDiscountBps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "shopId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "parties",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `partyType` TEXT NOT NULL, `name` TEXT NOT NULL, `phone` TEXT NOT NULL, `gstin` TEXT NOT NULL, `billingAddress` TEXT NOT NULL, `currentBalancePaise` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL, `createdByUid` TEXT NOT NULL, `deviceId` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyType",
+            "columnName": "partyType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phone",
+            "columnName": "phone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gstin",
+            "columnName": "gstin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "billingAddress",
+            "columnName": "billingAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentBalancePaise",
+            "columnName": "currentBalancePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDeleted",
+            "columnName": "isDeleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdByUid",
+            "columnName": "createdByUid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_parties_shopId_partyType",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "partyType"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_parties_shopId_partyType` ON `${TABLE_NAME}` (`shopId`, `partyType`)"
+          },
+          {
+            "name": "index_parties_shopId_phone",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "phone"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_parties_shopId_phone` ON `${TABLE_NAME}` (`shopId`, `phone`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "invoice_headers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `deviceShortCode` TEXT NOT NULL, `invoiceNumber` TEXT NOT NULL, `docType` TEXT NOT NULL, `partyId` TEXT, `buyerName` TEXT NOT NULL, `buyerPhone` TEXT NOT NULL, `paymentMode` TEXT NOT NULL, `subtotalPaise` INTEGER NOT NULL, `discountPaise` INTEGER NOT NULL, `cgstPaise` INTEGER NOT NULL, `sgstPaise` INTEGER NOT NULL, `igstPaise` INTEGER NOT NULL, `grandTotalPaise` INTEGER NOT NULL, `amountPaidPaise` INTEGER NOT NULL, `balanceDuePaise` INTEGER NOT NULL, `issuedAt` INTEGER NOT NULL, `yearInt` INTEGER NOT NULL, `monthInt` INTEGER NOT NULL, `dayInt` INTEGER NOT NULL, `isReturned` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceShortCode",
+            "columnName": "deviceShortCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "invoiceNumber",
+            "columnName": "invoiceNumber",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "docType",
+            "columnName": "docType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "buyerName",
+            "columnName": "buyerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPhone",
+            "columnName": "buyerPhone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paymentMode",
+            "columnName": "paymentMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subtotalPaise",
+            "columnName": "subtotalPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "discountPaise",
+            "columnName": "discountPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cgstPaise",
+            "columnName": "cgstPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sgstPaise",
+            "columnName": "sgstPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "igstPaise",
+            "columnName": "igstPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grandTotalPaise",
+            "columnName": "grandTotalPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountPaidPaise",
+            "columnName": "amountPaidPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balanceDuePaise",
+            "columnName": "balanceDuePaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issuedAt",
+            "columnName": "issuedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "yearInt",
+            "columnName": "yearInt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "monthInt",
+            "columnName": "monthInt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dayInt",
+            "columnName": "dayInt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isReturned",
+            "columnName": "isReturned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncStatus",
+            "columnName": "syncStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_invoice_headers_shopId_invoiceNumber",
+            "unique": true,
+            "columnNames": [
+              "shopId",
+              "invoiceNumber"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_invoice_headers_shopId_invoiceNumber` ON `${TABLE_NAME}` (`shopId`, `invoiceNumber`)"
+          },
+          {
+            "name": "index_invoice_headers_shopId_issuedAt",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "issuedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_headers_shopId_issuedAt` ON `${TABLE_NAME}` (`shopId`, `issuedAt`)"
+          },
+          {
+            "name": "index_invoice_headers_shopId_docType",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "docType"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_headers_shopId_docType` ON `${TABLE_NAME}` (`shopId`, `docType`)"
+          },
+          {
+            "name": "index_invoice_headers_syncStatus",
+            "unique": false,
+            "columnNames": [
+              "syncStatus"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_headers_syncStatus` ON `${TABLE_NAME}` (`syncStatus`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "invoice_lines",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `shopId` TEXT NOT NULL, `invoiceId` TEXT NOT NULL, `productId` TEXT NOT NULL, `skuId` TEXT NOT NULL, `itemNameSnapshot` TEXT NOT NULL, `variantSummarySnapshot` TEXT NOT NULL, `hsnSnapshot` TEXT NOT NULL, `qtyMilliUnits` INTEGER NOT NULL, `unitSnapshot` TEXT NOT NULL, `unitCostPaise` INTEGER NOT NULL, `unitSellPaise` INTEGER NOT NULL, `gstRateBps` INTEGER NOT NULL, `lineTaxPaise` INTEGER NOT NULL, `lineTotalPaise` INTEGER NOT NULL, `lineProfitPaise` INTEGER NOT NULL, `isReturned` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`invoiceId`) REFERENCES `invoice_headers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "invoiceId",
+            "columnName": "invoiceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skuId",
+            "columnName": "skuId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemNameSnapshot",
+            "columnName": "itemNameSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variantSummarySnapshot",
+            "columnName": "variantSummarySnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hsnSnapshot",
+            "columnName": "hsnSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "qtyMilliUnits",
+            "columnName": "qtyMilliUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitSnapshot",
+            "columnName": "unitSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitCostPaise",
+            "columnName": "unitCostPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitSellPaise",
+            "columnName": "unitSellPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gstRateBps",
+            "columnName": "gstRateBps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineTaxPaise",
+            "columnName": "lineTaxPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineTotalPaise",
+            "columnName": "lineTotalPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineProfitPaise",
+            "columnName": "lineProfitPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isReturned",
+            "columnName": "isReturned",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_invoice_lines_invoiceId",
+            "unique": false,
+            "columnNames": [
+              "invoiceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_lines_invoiceId` ON `${TABLE_NAME}` (`invoiceId`)"
+          },
+          {
+            "name": "index_invoice_lines_shopId_invoiceId",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "invoiceId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_lines_shopId_invoiceId` ON `${TABLE_NAME}` (`shopId`, `invoiceId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "invoice_headers",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "invoiceId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "stock_movements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`movementId` TEXT NOT NULL, `shopId` TEXT NOT NULL, `skuId` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `deviceShortCode` TEXT NOT NULL, `deltaMilliUnits` INTEGER NOT NULL, `movementType` TEXT NOT NULL, `refDocId` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `createdByUid` TEXT NOT NULL, PRIMARY KEY(`movementId`))",
+        "fields": [
+          {
+            "fieldPath": "movementId",
+            "columnName": "movementId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "skuId",
+            "columnName": "skuId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceShortCode",
+            "columnName": "deviceShortCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deltaMilliUnits",
+            "columnName": "deltaMilliUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "movementType",
+            "columnName": "movementType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "refDocId",
+            "columnName": "refDocId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdByUid",
+            "columnName": "createdByUid",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "movementId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_stock_movements_shopId_skuId",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "skuId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movements_shopId_skuId` ON `${TABLE_NAME}` (`shopId`, `skuId`)"
+          },
+          {
+            "name": "index_stock_movements_refDocId",
+            "unique": false,
+            "columnNames": [
+              "refDocId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movements_refDocId` ON `${TABLE_NAME}` (`refDocId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_ledger_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`entryId` TEXT NOT NULL, `shopId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `refDocId` TEXT NOT NULL, `entryType` TEXT NOT NULL, `amountDeltaPaise` INTEGER NOT NULL, `paymentMode` TEXT NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `createdByUid` TEXT NOT NULL, `deviceId` TEXT NOT NULL, PRIMARY KEY(`entryId`))",
+        "fields": [
+          {
+            "fieldPath": "entryId",
+            "columnName": "entryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "refDocId",
+            "columnName": "refDocId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryType",
+            "columnName": "entryType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountDeltaPaise",
+            "columnName": "amountDeltaPaise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paymentMode",
+            "columnName": "paymentMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdByUid",
+            "columnName": "createdByUid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "entryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_ledger_entries_shopId_partyId",
+            "unique": false,
+            "columnNames": [
+              "shopId",
+              "partyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_ledger_entries_shopId_partyId` ON `${TABLE_NAME}` (`shopId`, `partyId`)"
+          },
+          {
+            "name": "index_party_ledger_entries_refDocId",
+            "unique": false,
+            "columnNames": [
+              "refDocId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_ledger_entries_refDocId` ON `${TABLE_NAME}` (`refDocId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "devices",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`deviceId` TEXT NOT NULL, `shopId` TEXT NOT NULL, `deviceCode` TEXT NOT NULL, `label` TEXT NOT NULL, `isLocal` INTEGER NOT NULL, `lastInvoiceSeq` INTEGER NOT NULL, `lastSeqDate` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`deviceId`))",
+        "fields": [
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shopId",
+            "columnName": "shopId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceCode",
+            "columnName": "deviceCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isLocal",
+            "columnName": "isLocal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastInvoiceSeq",
+            "columnName": "lastInvoiceSeq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeqDate",
+            "columnName": "lastSeqDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "deviceId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_devices_shopId_deviceCode",
+            "unique": true,
+            "columnNames": [
+              "shopId",
+              "deviceCode"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_devices_shopId_deviceCode` ON `${TABLE_NAME}` (`shopId`, `deviceCode`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "sync_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `docType` TEXT NOT NULL, `docId` TEXT NOT NULL, `op` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `attempts` INTEGER NOT NULL, `lastError` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "seq",
+            "columnName": "seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "docType",
+            "columnName": "docType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "docId",
+            "columnName": "docId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "op",
+            "columnName": "op",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_outbox_docType_docId",
+            "unique": false,
+            "columnNames": [
+              "docType",
+              "docId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_outbox_docType_docId` ON `${TABLE_NAME}` (`docType`, `docId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "applied_actions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`actionId` TEXT NOT NULL, `kind` TEXT NOT NULL, `resultRef` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`actionId`))",
+        "fields": [
+          {
+            "fieldPath": "actionId",
+            "columnName": "actionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resultRef",
+            "columnName": "resultRef",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "actionId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8fa38fda439e30c05713e17a69d159bc')"
+    ]
+  }
+}

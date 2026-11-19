@@ -5,11 +5,12 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+const val DEFAULT_SHOP_ID = "default_shop"
+
+/** Only the v2-shaped invoice and sale tables still use this; Task 4 deletes it. */
 object SyncState {
     const val SYNCED = "SYNCED"
     const val PENDING_UPLOAD = "PENDING_UPLOAD"
-    /** Used for initial first-install demo items so they never overwrite a user's cloud inventory on a new device */
-    const val DEMO_SEED = "DEMO_SEED"
 }
 
 typealias CatalogProductEntity = InventoryItemEntity
@@ -20,21 +21,24 @@ typealias CatalogProductEntity = InventoryItemEntity
     indices = [
         Index(value = ["sortKey"]),
         Index(value = ["shopId", "sortKey"]),
-        Index(value = ["syncStatus"]),
         Index(value = ["isDeleted"])
     ]
 )
 data class InventoryItemEntity(
     @PrimaryKey
     val id: String,
-    val shopId: String = "default_shop",
+    val shopId: String = DEFAULT_SHOP_ID,
     val displayName: String,
     val sortKey: String,
     val category: String = "Uncategorized",
     val defaultHsnCode: String = "",
     val defaultGstRateBps: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Last catalog edit. Stock changes never touch this (stock lives in stock_movements). */
     val updatedAt: Long = System.currentTimeMillis(),
     val isDeleted: Boolean = false,
-    val syncStatus: String = SyncState.PENDING_UPLOAD
+    /** Starter-catalog rows: never queued for cloud sync. */
+    val isDemo: Boolean = false,
+    val createdByUid: String = "",
+    val deviceId: String = ""
 )

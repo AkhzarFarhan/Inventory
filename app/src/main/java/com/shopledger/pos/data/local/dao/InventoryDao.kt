@@ -8,7 +8,6 @@ import androidx.room.Transaction
 import androidx.room.Update
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
-import com.shopledger.pos.data.local.entity.SyncState
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import kotlinx.coroutines.flow.Flow
 
@@ -29,115 +28,46 @@ interface InventoryDao {
     @Query("SELECT * FROM item_variants")
     suspend fun getAllRawVariants(): List<ItemVariantEntity>
 
-    @Query("SELECT * FROM inventory_items WHERE syncStatus = :pendingStatus")
-    suspend fun getPendingSyncItems(pendingStatus: String = SyncState.PENDING_UPLOAD): List<InventoryItemEntity>
+    @Query("SELECT COUNT(*) FROM inventory_items")
+    suspend fun countItems(): Int
 
-    @Query("SELECT * FROM item_variants WHERE syncStatus = :pendingStatus")
-    suspend fun getPendingSyncVariants(pendingStatus: String = SyncState.PENDING_UPLOAD): List<ItemVariantEntity>
-
-    @Query("SELECT COUNT(*) FROM inventory_items WHERE syncStatus = :pendingStatus")
-    fun observePendingItemCount(pendingStatus: String = SyncState.PENDING_UPLOAD): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM item_variants WHERE syncStatus = :pendingStatus")
-    fun observePendingVariantCount(pendingStatus: String = SyncState.PENDING_UPLOAD): Flow<Int>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertItem(item: InventoryItemEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertItems(items: List<InventoryItemEntity>)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertVariant(variant: ItemVariantEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertVariants(variants: List<ItemVariantEntity>)
-
-    @Update
-    suspend fun updateVariant(variant: ItemVariantEntity)
+    @Query("SELECT * FROM inventory_items WHERE id = :itemId LIMIT 1")
+    suspend fun getItemById(itemId: String): InventoryItemEntity?
 
     @Query("SELECT * FROM item_variants WHERE id = :variantId LIMIT 1")
     suspend fun getVariantById(variantId: String): ItemVariantEntity?
 
-    @Query("DELETE FROM item_variants WHERE syncStatus = :demoSeedStatus")
-    suspend fun deleteDemoSeedVariants(demoSeedStatus: String = SyncState.DEMO_SEED)
+    @Query("SELECT * FROM item_variants WHERE itemId = :itemId")
+    suspend fun getVariantsForItem(itemId: String): List<ItemVariantEntity>
 
-    @Query("DELETE FROM inventory_items WHERE syncStatus = :demoSeedStatus")
-    suspend fun deleteDemoSeedItems(demoSeedStatus: String = SyncState.DEMO_SEED)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertItem(item: InventoryItemEntity)
 
-    @Query(
-        """
-        UPDATE item_variants 
-        SET stockQuantity = CASE WHEN (stockQuantity - :qtySold) < 0 THEN 0 ELSE (stockQuantity - :qtySold) END,
-            stockMilliUnits = CASE WHEN (stockMilliUnits - CAST(ROUND(:qtySold * 1000.0) AS INTEGER)) < 0 THEN 0 ELSE (stockMilliUnits - CAST(ROUND(:qtySold * 1000.0) AS INTEGER)) END,
-            updatedAt = :now,
-            syncStatus = :syncStatus
-        WHERE id = :variantId
-        """
-    )
-    suspend fun deductVariantStock(
-        variantId: String,
-        qtySold: Double,
-        now: Long = System.currentTimeMillis(),
-        syncStatus: String = SyncState.PENDING_UPLOAD
-    )
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertVariant(variant: ItemVariantEntity)
+
+    @Update
+    suspend fun updateItem(item: InventoryItemEntity): Int
+
+    @Update
+    suspend fun updateVariant(variant: ItemVariantEntity): Int
+
+    /** Projection update; called only by LedgerWriter right after inserting the matching movement. */
+    @Query("UPDATE item_variants SET stockMilliUnits = stockMilliUnits + :deltaMilli WHERE id = :variantId")
+    suspend fun addToStockProjection(variantId: String, deltaMilli: Long): Int
 
     @Query(
-        """
-        UPDATE item_variants 
-        SET stockQuantity = stockQuantity + :qtyRestored,
-            stockMilliUnits = stockMilliUnits + CAST(ROUND(:qtyRestored * 1000.0) AS INTEGER),
-            updatedAt = :now,
-            syncStatus = :syncStatus
-        WHERE id = :variantId
-        """
+        "UPDATE item_variants SET stockMilliUnits = " +
+            "(SELECT COALESCE(SUM(m.deltaMilliUnits), 0) FROM stock_movements m WHERE m.skuId = item_variants.id)"
     )
-    suspend fun restoreVariantStock(
-        variantId: String,
-        qtyRestored: Double,
-        now: Long = System.currentTimeMillis(),
-        syncStatus: String = SyncState.PENDING_UPLOAD
-    )
+    suspend fun rebuildAllStockProjections()
 
-    @Query(
-        """
-        UPDATE item_variants
-        SET stockMilliUnits = CASE WHEN (stockMilliUnits + :deltaMilli) < 0 THEN 0 ELSE (stockMilliUnits + :deltaMilli) END,
-            stockQuantity = CASE WHEN ((stockMilliUnits + :deltaMilli) / 1000.0) < 0 THEN 0.0 ELSE ((stockMilliUnits + :deltaMilli) / 1000.0) END,
-            updatedAt = :now
-        WHERE id = :variantId
-        """
-    )
-    suspend fun applyRemoteStockDeltaMilliUnits(
-        variantId: String,
-        deltaMilli: Long,
-        now: Long = System.currentTimeMillis()
-    )
+    @Query("UPDATE inventory_items SET isDeleted = 1, updatedAt = :now WHERE id = :itemId")
+    suspend fun softDeleteItem(itemId: String, now: Long)
 
-    @Query("UPDATE inventory_items SET isDeleted = 1, updatedAt = :now, syncStatus = :syncStatus WHERE id = :itemId")
-    suspend fun softDeleteItem(
-        itemId: String,
-        now: Long = System.currentTimeMillis(),
-        syncStatus: String = SyncState.PENDING_UPLOAD
-    )
+    @Query("UPDATE item_variants SET isDeleted = 1, updatedAt = :now WHERE itemId = :itemId")
+    suspend fun softDeleteVariantsForItem(itemId: String, now: Long)
 
-    @Query("UPDATE item_variants SET isDeleted = 1, updatedAt = :now, syncStatus = :syncStatus WHERE itemId = :itemId")
-    suspend fun softDeleteVariantsForItem(
-        itemId: String,
-        now: Long = System.currentTimeMillis(),
-        syncStatus: String = SyncState.PENDING_UPLOAD
-    )
-
-    @Query("UPDATE item_variants SET isDeleted = 1, updatedAt = :now, syncStatus = :syncStatus WHERE id = :variantId")
-    suspend fun softDeleteSingleVariant(
-        variantId: String,
-        now: Long = System.currentTimeMillis(),
-        syncStatus: String = SyncState.PENDING_UPLOAD
-    )
-
-    @Query("UPDATE inventory_items SET syncStatus = :syncedStatus WHERE id IN (:ids)")
-    suspend fun markItemsSynced(ids: List<String>, syncedStatus: String = SyncState.SYNCED)
-
-    @Query("UPDATE item_variants SET syncStatus = :syncedStatus WHERE id IN (:ids)")
-    suspend fun markVariantsSynced(ids: List<String>, syncedStatus: String = SyncState.SYNCED)
+    @Query("UPDATE item_variants SET isDeleted = 1, updatedAt = :now WHERE id = :variantId")
+    suspend fun softDeleteSingleVariant(variantId: String, now: Long)
 }
