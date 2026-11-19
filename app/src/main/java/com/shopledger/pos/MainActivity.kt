@@ -23,8 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -221,9 +220,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             modifier = Modifier.clickable { showCloudSyncSheet = true }
                         ) {
                             Icon(
-                                imageVector = if (pendingSyncCount == 0) Icons.Default.CloudDone else Icons.Default.CloudSync,
-                                contentDescription = "Cloud Sync Status",
-                                tint = if (pendingSyncCount == 0) CupertinoColors.EmeraldGreen else CupertinoColors.SystemBlue,
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Saved on this phone",
+                                tint = CupertinoColors.EmeraldGreen,
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
@@ -235,8 +234,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                     } else {
                                         append("Google Sign-In • ")
                                     }
-                                    if (pendingSyncCount == 0) append("Cloud Synced")
-                                    else append("$pendingSyncCount pending sync")
+                                    append("Saved on this phone")
                                 },
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,

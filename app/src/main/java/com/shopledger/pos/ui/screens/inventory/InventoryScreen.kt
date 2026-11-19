@@ -813,6 +813,7 @@ private fun InventoryItemCard(
         // SUBTITLE ROW: Small In-Stock Label Moved Below (Doesn't hide item name) + Category
         val stockQty = IndianCurrencyFormatter.formatQuantity(activeVariant.stockQuantity)
         val (stockLabel, stockColor) = when {
+            activeVariant.isOversold -> "Oversold: $stockQty ${activeVariant.unit} (please recount)" to CupertinoColors.DestructiveRed
             activeVariant.isOutOfStock -> "Out of Stock" to CupertinoColors.DestructiveRed
             activeVariant.isLowStock -> "Low Stock: $stockQty ${activeVariant.unit}" to CupertinoColors.AmberWarning
             else -> "In Stock: $stockQty ${activeVariant.unit}" to CupertinoColors.EmeraldGreen

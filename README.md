@@ -13,5 +13,6 @@ Ultra-lightweight, offline-first Android application built for **LPS Hardware** 
    - Strict `A–Z` alphabetical sorting with a right-edge **iOS Alphabet Scrubber**, Low-Stock filter with 1-tap WhatsApp supplier reorder sharing, and persistent **Search History** (recent & frequent searches).
 4. **Sales History with `₹` Margin, `%` Gain & WhatsApp Image Receipts**:
    - Collapsible `Year -> Month -> Day` sale history with Indian Rupee (`₹`) formatting, bargaining price override at sale time, 1-tap Sale Return (*Wapsi*), and automatic **Sale Receipt PNG Image generation** sharable directly to the buyer's WhatsApp phone number.
-5. **Offline-First Room SQLite + Firebase Cloud Firestore Sync**:
-   - 100% offline Room SQLite (WAL mode) primary database with background `WorkManager` delta sync to Firebase Cloud Firestore + local JSON backup export/restore.
+5. **Offline-First Ledger Database with Backups**:
+   - Room SQLite (WAL) where stock and Khata balances are calculated from append-only ledgers, every sale/return/payment is one atomic, double-tap-safe transaction, and returns are GST-style credit notes.
+   - Nightly encrypted on-device backups (last 7) plus shareable backup files for Google Drive or a new phone. Restore stages the file and restarts the app, with automatic rollback if the restored data fails its health check; a "Restore last night's backup" action is in the Cloud Sync & Backup sheet. Multi-device cloud sync arrives in the next release.
