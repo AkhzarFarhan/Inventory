@@ -19,7 +19,7 @@ class PreMigrationGuardTest {
     @After
     fun cleanUp() {
         context.deleteDatabase(name)
-        context.getDatabasePath(name).parentFile?.listFiles { f -> f.name.contains(".pre-v") }?.forEach { it.delete() }
+        context.getDatabasePath(name).parentFile?.listFiles { f -> f.name.contains(".pre-v") || f.name.contains(".corrupt-") }?.forEach { it.delete() }
     }
 
     private fun createDb(version: Int) {
@@ -61,5 +61,66 @@ class PreMigrationGuardTest {
         copy.setLastModified(1_000L)
         PreMigrationGuard.deleteSafetyCopiesOlderThan(context, maxAgeMs = 14L * 86_400_000L, now = 30L * 86_400_000L)
         assertFalse(copy.exists())
+    }
+
+    @Test
+    fun garbageHeader_neverThrows_keepsOriginalAndMakesEvidenceCopy() {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val garbage = ByteArray(4096).also { java.util.Random(7).nextBytes(it) }
+        // user_version (offset 60) = 0 so the cheap header check cannot short-circuit to NotNeeded.
+        for (i in 60..63) garbage[i] = 0
+        file.writeBytes(garbage)
+
+        val outcome = PreMigrationGuard.prepare(context, name, 3)
+
+        assertTrue(outcome.toString(), outcome is PreMigrationGuard.Outcome.Failed || outcome is PreMigrationGuard.Outcome.Corrupt)
+        assertTrue("original file must still exist", file.exists())
+        assertTrue("original must be byte-for-byte unchanged", garbage.contentEquals(file.readBytes()))
+        val evidence = when (outcome) {
+            is PreMigrationGuard.Outcome.Failed -> outcome.evidenceCopy
+            is PreMigrationGuard.Outcome.Corrupt -> outcome.evidenceCopy
+            else -> null
+        }
+        assertTrue("evidence copy returned", evidence != null && evidence.exists())
+        assertTrue(evidence!!.name.contains(".corrupt-"))
+        assertTrue(garbage.contentEquals(evidence.readBytes()))
+        assertTrue(file.parentFile!!.listFiles { f -> f.name.contains(".corrupt-") }!!.isNotEmpty())
+    }
+
+    @Test
+    fun corruptCopies_areNotDeletedByCleanup() {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val evidence = java.io.File(file.parentFile, "guard-test.corrupt-1.db")
+        evidence.writeBytes(ByteArray(10))
+        evidence.setLastModified(1_000L)
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, maxAgeMs = 1L, now = 30L * 86_400_000L)
+        assertTrue(evidence.exists())
+    }
+
+    @Test
+    fun currentDatabase_isNotModified() {
+        createDb(3)
+        val file = context.getDatabasePath(name)
+        file.setLastModified(123_000L)
+        val before = file.readBytes()
+        val mtime = file.lastModified()
+        assertEquals(PreMigrationGuard.Outcome.NotNeeded, PreMigrationGuard.prepare(context, name, 3))
+        assertTrue(before.contentEquals(file.readBytes()))
+        assertEquals(mtime, file.lastModified())
+        assertFalse(java.io.File(file.path + "-wal").exists())
+    }
+
+    @Test
+    fun secondUpgradeAttempt_rewritesSafetyCopyWithFreshMtime() {
+        createDb(2)
+        val copy = (PreMigrationGuard.prepare(context, name, 3) as PreMigrationGuard.Outcome.BackedUp).safetyCopy
+        copy.setLastModified(1_000L)
+        val again = (PreMigrationGuard.prepare(context, name, 3) as PreMigrationGuard.Outcome.BackedUp).safetyCopy
+        assertEquals(copy, again)
+        assertTrue("fresh mtime", again.lastModified() > 1_000L)
+        assertEquals(context.getDatabasePath(name).length(), again.length())
+        assertFalse(java.io.File(copy.path + ".tmp").exists())
     }
 }

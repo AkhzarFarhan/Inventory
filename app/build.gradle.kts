@@ -96,11 +96,9 @@ android {
         }
     }
     sourceSets {
-        getByName("test") {
-            assets.srcDir("$projectDir/schemas")
-        }
         // MigrationTestHelper under Robolectric reads schemas from the merged app assets, not the test source set.
-        // Debug only, so release APKs never carry them.
+        // CI ships the DEBUG APK, so these do end up in it. The schema JSON is harmless table metadata and is
+        // only ever read by the migration tests.
         getByName("debug") {
             assets.srcDir("$projectDir/schemas")
         }

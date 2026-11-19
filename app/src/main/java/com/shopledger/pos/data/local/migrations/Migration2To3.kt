@@ -3,6 +3,7 @@ package com.shopledger.pos.data.local.migrations
 import android.util.Log
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.shopledger.pos.data.command.FaultInjector
 import com.shopledger.pos.data.local.DatabaseSeed
 import com.shopledger.pos.data.local.IntegrityChecker
 import com.shopledger.pos.data.local.OutboxRebuilder
@@ -24,7 +25,8 @@ data class MigrationContext(
 class Migration2To3(
     private val context: MigrationContext = MigrationContext(),
     private val clock: () -> Long = { System.currentTimeMillis() },
-    private val newDeviceId: () -> String = { UUID.randomUUID().toString() }
+    private val newDeviceId: () -> String = { UUID.randomUUID().toString() },
+    private val faults: FaultInjector = FaultInjector.NONE
 ) : Migration(2, 3) {
 
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -36,13 +38,21 @@ class Migration2To3(
         val variantsBefore = count(db, "item_variants")
         val partiesBefore = count(db, "parties")
         val saleLinesBefore = count(db, "sale_records")
+        val ledgerBefore = count(db, "party_ledger_entries")
+        val headersBefore = count(db, "invoice_headers")
+        val linesBefore = count(db, "invoice_lines")
+        val movementsBefore = count(db, "stock_movements")
 
         shopsAndDevices(db, now, deviceId, deviceCode)
         rebuildInventoryItems(db)
         rebuildItemVariants(db)
         rebuildStockMovements(db, now, deviceId, deviceCode)
         rebuildParties(db)
-        rebuildLedger(db, now, deviceId)
+        rebuildLedger(db)
+        // The migration and IntegrityChecker look rows up by skuId / partyId alone, which the (shopId, ...)
+        // composite indexes cannot serve. Without these, large shops would scan quadratically (ANR risk).
+        createTempIndexes(db)
+        insertLedgerOpening(db, now, deviceId)
         rebuildInvoices(db)
         convertLegacySales(db)
         replaceSaleRecordsWithView(db)
@@ -55,8 +65,29 @@ class Migration2To3(
         check(count(db, "item_variants") == variantsBefore) { "Variant count changed during upgrade" }
         check(count(db, "parties") == partiesBefore) { "Party count changed during upgrade" }
         check(count(db, "sale_records") >= saleLinesBefore) { "Sale lines were lost during upgrade" }
+        faults.at("POST_MIGRATE")
+        check(count(db, "party_ledger_entries") >= ledgerBefore) { "Ledger entries were lost during upgrade" }
+        check(count(db, "invoice_headers") >= headersBefore) { "Invoice headers were lost during upgrade" }
+        check(count(db, "invoice_lines") >= linesBefore) { "Invoice lines were lost during upgrade" }
+        check(count(db, "stock_movements_v2_archive") == movementsBefore) { "Stock movement archive is incomplete" }
+        val missingSaleLines = db.query(
+            "SELECT COUNT(*) FROM sale_records_v2_archive s WHERE NOT EXISTS (SELECT 1 FROM invoice_lines l WHERE l.id = s.id)"
+        ).use { it.moveToFirst(); it.getLong(0) }
+        check(missingSaleLines == 0L) { "$missingSaleLines v2 sale line(s) have no invoice line after upgrade" }
         val violations = IntegrityChecker.findViolations(db)
         check(violations.isEmpty()) { "v3 upgrade check failed: ${violations.take(5)}" }
+        dropTempIndexes(db)
+    }
+
+    private fun createTempIndexes(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS `$TMP_STOCK_INDEX` ON `stock_movements` (`skuId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `$TMP_LEDGER_INDEX` ON `party_ledger_entries` (`partyId`)")
+    }
+
+    /** Room validates indices, so the temporary ones must not survive the migration. */
+    private fun dropTempIndexes(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP INDEX IF EXISTS `$TMP_STOCK_INDEX`")
+        db.execSQL("DROP INDEX IF EXISTS `$TMP_LEDGER_INDEX`")
     }
 
     private fun shopsAndDevices(db: SupportSQLiteDatabase, now: Long, deviceId: String, deviceCode: String) {
@@ -152,7 +183,7 @@ class Migration2To3(
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_parties_shopId_phone` ON `parties` (`shopId`, `phone`)")
     }
 
-    private fun rebuildLedger(db: SupportSQLiteDatabase, now: Long, deviceId: String) {
+    private fun rebuildLedger(db: SupportSQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `party_ledger_entries_v3` (`entryId` TEXT NOT NULL, `shopId` TEXT NOT NULL, `partyId` TEXT NOT NULL, " +
                 "`refDocId` TEXT NOT NULL, `entryType` TEXT NOT NULL, `amountDeltaPaise` INTEGER NOT NULL, `paymentMode` TEXT NOT NULL, " +
@@ -167,6 +198,9 @@ class Migration2To3(
         db.execSQL("ALTER TABLE party_ledger_entries_v3 RENAME TO party_ledger_entries")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_party_ledger_entries_shopId_partyId` ON `party_ledger_entries` (`shopId`, `partyId`)")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_party_ledger_entries_refDocId` ON `party_ledger_entries` (`refDocId`)")
+    }
+
+    private fun insertLedgerOpening(db: SupportSQLiteDatabase, now: Long, deviceId: String) {
         // v2 clamped payments at zero, so entries may not add up to the balance the shopkeeper saw.
         // An OPENING entry for the difference makes I2 hold without changing any balance.
         db.execSQL(
@@ -232,7 +266,11 @@ class Migration2To3(
                 "SELECT 'v3mig_' || s.shopId || '_' || s.receiptNumber, s.shopId, '', '', " +
                 "CASE WHEN EXISTS (SELECT 1 FROM invoice_headers x WHERE x.shopId = s.shopId AND x.invoiceNumber = s.receiptNumber) " +
                 "THEN s.receiptNumber || '-M' ELSE s.receiptNumber END, 'SALE', NULL, MAX(s.partyId), MAX(s.buyerName), MAX(s.buyerPhone), " +
-                "MAX(s.paymentMode), SUM(s.totalRevenuePaise), 0, 0, 0, 0, SUM(s.totalRevenuePaise), SUM(s.totalRevenuePaise), 0, " +
+                "MAX(s.paymentMode), SUM(s.totalRevenuePaise), MAX(s.discountPaise), MAX(s.gstPaise) / 2, MAX(s.gstPaise) - MAX(s.gstPaise) / 2, 0, " +
+                "SUM(s.totalRevenuePaise) - MAX(s.discountPaise) + MAX(s.gstPaise), " +
+                "(SUM(s.totalRevenuePaise) - MAX(s.discountPaise) + MAX(s.gstPaise)) - " +
+                "MIN(MAX(MAX(s.balanceDuePaise), 0), SUM(s.totalRevenuePaise) - MAX(s.discountPaise) + MAX(s.gstPaise)), " +
+                "MIN(MAX(MAX(s.balanceDuePaise), 0), SUM(s.totalRevenuePaise) - MAX(s.discountPaise) + MAX(s.gstPaise)), " +
                 "MAX(s.soldAt), MAX(s.yearInt), MAX(s.monthInt), MAX(s.dayInt), '' FROM sale_records s " +
                 "WHERE NOT EXISTS (SELECT 1 FROM invoice_lines l WHERE l.id = s.id) GROUP BY s.shopId, s.receiptNumber"
         )
@@ -253,19 +291,21 @@ class Migration2To3(
                 "SELECT 'v3cn_' || h.id, h.shopId, '', h.deviceShortCode, h.invoiceNumber || '-R', 'CREDIT_NOTE', h.id, h.partyId, h.buyerName, " +
                 "h.buyerPhone, h.paymentMode, -SUM(l.lineTotalPaise), 0, 0, 0, 0, -SUM(l.lineTotalPaise), -SUM(l.lineTotalPaise), 0, " +
                 "h.issuedAt, h.yearInt, h.monthInt, h.dayInt, '' FROM sale_records s " +
-                "JOIN invoice_lines l ON l.id = s.id JOIN invoice_headers h ON h.id = l.invoiceId WHERE s.isReturned = 1 GROUP BY h.id"
+                "JOIN invoice_lines l ON l.id = s.id JOIN invoice_headers h ON h.id = l.invoiceId WHERE s.isReturned = 1 AND l.qtyMilliUnits > 0 GROUP BY h.id"
         )
         db.execSQL(
             "INSERT INTO invoice_lines (id, shopId, invoiceId, originalLineId, productId, skuId, itemNameSnapshot, variantSummarySnapshot, " +
                 "hsnSnapshot, qtyMilliUnits, unitSnapshot, unitCostPaise, unitSellPaise, gstRateBps, lineTaxPaise, lineTotalPaise, lineProfitPaise) " +
                 "SELECT 'v3cn_' || l.id, l.shopId, 'v3cn_' || l.invoiceId, l.id, l.productId, l.skuId, l.itemNameSnapshot, l.variantSummarySnapshot, " +
                 "l.hsnSnapshot, -l.qtyMilliUnits, l.unitSnapshot, l.unitCostPaise, l.unitSellPaise, l.gstRateBps, 0, -l.lineTotalPaise, " +
-                "-l.lineProfitPaise FROM sale_records s JOIN invoice_lines l ON l.id = s.id WHERE s.isReturned = 1"
+                "-l.lineProfitPaise FROM sale_records s JOIN invoice_lines l ON l.id = s.id " +
+                "WHERE s.isReturned = 1 AND l.qtyMilliUnits > 0"
         )
     }
 
     private fun replaceSaleRecordsWithView(db: SupportSQLiteDatabase) {
-        db.execSQL("DROP TABLE IF EXISTS `sale_records`")
+        // Kept (not dropped) so the original v2 sale rows stay recoverable.
+        db.execSQL("ALTER TABLE `sale_records` RENAME TO `sale_records_v2_archive`")
         db.execSQL("CREATE VIEW `sale_records` AS $SALE_RECORDS_VIEW_SQL")
     }
 
@@ -308,4 +348,9 @@ class Migration2To3(
 
     private fun count(db: SupportSQLiteDatabase, table: String): Long =
         db.query("SELECT COUNT(*) FROM $table").use { it.moveToFirst(); it.getLong(0) }
+
+    private companion object {
+        const val TMP_STOCK_INDEX = "tmp_v3_stock_movements_skuId"
+        const val TMP_LEDGER_INDEX = "tmp_v3_party_ledger_partyId"
+    }
 }

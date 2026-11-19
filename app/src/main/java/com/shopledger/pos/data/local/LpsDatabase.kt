@@ -365,11 +365,17 @@ abstract class LpsDatabase : RoomDatabase() {
                 runCatching {
                     targetDbFile.parentFile?.mkdirs()
                     legacyDbFile.copyTo(targetDbFile, overwrite = false)
+                    // A WAL-mode database keeps recent commits in -wal; without it they would be lost.
+                    val legacyWal = java.io.File(legacyDbFile.path + "-wal")
+                    if (legacyWal.exists()) legacyWal.copyTo(java.io.File(targetDbFile.path + "-wal"), overwrite = false)
                 }
             }
             when (val outcome = PreMigrationGuard.prepare(appContext, DB_NAME, SCHEMA_VERSION)) {
                 is PreMigrationGuard.Outcome.Corrupt -> DatabaseHealth.markFailed(
-                    "Your data file failed its safety check (${outcome.detail}). Nothing was changed.", null
+                    "Your data file failed its safety check (${outcome.detail}). Nothing was changed.", outcome.evidenceCopy
+                )
+                is PreMigrationGuard.Outcome.Failed -> DatabaseHealth.markFailed(
+                    "Your data file could not be checked before the upgrade (${outcome.detail}). Nothing was changed.", outcome.evidenceCopy
                 )
                 else -> Unit
             }
