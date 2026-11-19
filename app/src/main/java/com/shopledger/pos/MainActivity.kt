@@ -64,6 +64,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.shopledger.pos.core.backup.AppRestarter
 import com.shopledger.pos.core.backup.BackupException
+import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.PendingRestore
 import com.shopledger.pos.core.backup.BackupShare
 import com.shopledger.pos.data.local.DatabaseHealth
 import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
@@ -117,17 +119,28 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Runs a restore staging step off the main thread and out of reach of cancellation (closing the sheet must not
- * abandon it half-way). Returns null when the backup was staged, otherwise a message the user can read.
+ * Stages a restore off the main thread and out of reach of cancellation, then restarts the app from inside that same
+ * non-cancellable section: once a backup is staged the restart always follows, whatever happens to the UI (rotation,
+ * closing the sheet). Returns null when the restart is under way (the process ends), otherwise a message for the user;
+ * staging is undone in every failure case so a staged file can never be applied later without the user's restart.
  */
-private suspend fun stageRestore(stage: () -> Int): String? =
+private suspend fun stageRestore(app: ShopLedgerApp, stage: () -> Int): String? =
     withContext(NonCancellable + Dispatchers.IO) {
+        val dbName = LpsDatabase.DB_NAME
         try {
             stage()
-            null
+            PendingRestore.armStaged(app, dbName)
+            if (!AppRestarter.restart(app)) {
+                PendingRestore.discardStaged(app, dbName)
+                "The restore did not start because the app could not restart. Your data is unchanged."
+            } else {
+                null
+            }
         } catch (e: BackupException) {
+            runCatching { PendingRestore.discardStaged(app, dbName) }
             e.message ?: "The backup could not be read"
         } catch (e: Exception) {
+            runCatching { PendingRestore.discardStaged(app, dbName) }
             "The backup could not be read"
         }
     }
@@ -643,12 +656,15 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         .getOrNull()
                 }
             },
-            onRestoreBackupFile = { stream ->
-                stageRestore { app.backupManager.stageRestoreFromShareable(stream) }
+            onRestoreBackupFile = { uri ->
+                stageRestore(app) {
+                    val stream = app.contentResolver.openInputStream(uri) ?: throw BackupException("That file could not be opened")
+                    stream.use { app.backupManager.stageRestoreFromShareable(it) }
+                }
             },
             latestSnapshotTime = { app.backupManager.latestSnapshot()?.lastModified() },
             onRestoreLatestSnapshot = {
-                stageRestore {
+                stageRestore(app) {
                     val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet")
                     app.backupManager.stageRestoreFromSnapshot(latest)
                 }

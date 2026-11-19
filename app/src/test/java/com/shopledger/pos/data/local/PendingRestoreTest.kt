@@ -21,8 +21,19 @@ class PendingRestoreTest {
 
     private fun file(suffix: String) = File(live.path + suffix)
 
+    private val now = 1_000_000_000L
+
+    /** Stages [content] the way BackupManager + the sheet do, with a restart token made at [at]. */
+    private fun stage(content: String, at: Long? = now) {
+        file(".restore-staged").writeText(content)
+        if (at != null) PendingRestore.armStaged(context, dbName, at)
+    }
+
+    private fun apply() = PendingRestore.applyStaged(context, dbName, now)
+
     @After
     fun tearDown() {
+        DatabaseHealth.reset()
         live.parentFile?.listFiles { f -> f.name.startsWith("pending-test") }?.forEach { it.delete() }
     }
 
@@ -36,7 +47,7 @@ class PendingRestoreTest {
     @Test
     fun noStagedFile_isANoOp() {
         writeOriginal()
-        assertFalse(PendingRestore.applyStaged(context, dbName))
+        assertFalse(apply())
         assertEquals("original", live.readText())
         assertFalse(file(".restore-pending").exists())
     }
@@ -44,9 +55,9 @@ class PendingRestoreTest {
     @Test
     fun applyStaged_movesOriginalAside_andLeavesAMarker() {
         writeOriginal()
-        file(".restore-staged").writeText("restored")
+        stage("restored")
 
-        assertTrue(PendingRestore.applyStaged(context, dbName))
+        assertTrue(apply())
 
         assertEquals("restored", live.readText())
         assertFalse(file("-wal").exists())
@@ -62,11 +73,11 @@ class PendingRestoreTest {
     @Test
     fun anUnconfirmedRestore_isNeverOverwrittenByAnotherStagedFile() {
         writeOriginal()
-        file(".restore-staged").writeText("first")
-        assertTrue(PendingRestore.applyStaged(context, dbName))
-        file(".restore-staged").writeText("second")
+        stage("first")
+        assertTrue(apply())
+        stage("second")
 
-        assertFalse(PendingRestore.applyStaged(context, dbName))
+        assertFalse(apply())
 
         assertEquals("first", live.readText())
         assertEquals("original", file(".pre-restore").readText())
@@ -84,8 +95,8 @@ class PendingRestoreTest {
     @Test
     fun whenOpeningFails_originalFilesComeBack_andTheMarkerIsRemoved() {
         writeOriginal()
-        file(".restore-staged").writeText("restored")
-        PendingRestore.applyStaged(context, dbName)
+        stage("restored")
+        apply()
         file("-wal").writeText("restored-wal") // what Room would have left behind
         var closed = false
 
@@ -125,10 +136,172 @@ class PendingRestoreTest {
     fun cleanup_keepsAFreshUndoSet() {
         writeOriginal()
         live.setLastModified(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30))
-        file(".restore-staged").writeText("restored")
-        PendingRestore.applyStaged(context, dbName)
+        stage("restored")
+        apply()
         // The original db was old, but the undo window starts when it was moved aside.
         PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14))
         assertTrue(file(".pre-restore").exists())
+    }
+
+    @Test
+    fun stagedFileWithoutARestartToken_isDiscarded_andLiveDataIsUntouched() {
+        writeOriginal()
+        stage("restored", at = null)
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertFalse(file(".restore-staged").exists())
+        assertFalse(file(".restore-staged.go").exists())
+        assertFalse(file(".restore-pending").exists())
+        assertFalse(file(".pre-restore").exists())
+        assertTrue(PendingRestore.takeDiscardedNotice())
+    }
+
+    @Test
+    fun stagedFileWithAnExpiredToken_isDiscarded() {
+        writeOriginal()
+        stage("restored", at = now - PendingRestore.TOKEN_MAX_AGE_MS - 1)
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertFalse(file(".restore-staged").exists())
+        assertFalse(file(".restore-staged.go").exists())
+    }
+
+    @Test
+    fun aTokenJustInsideTheWindow_isAccepted_andConsumed() {
+        writeOriginal()
+        stage("restored", at = now - PendingRestore.TOKEN_MAX_AGE_MS + 1)
+
+        assertTrue(apply())
+
+        assertEquals("restored", live.readText())
+        assertFalse(file(".restore-staged.go").exists())
+    }
+
+    @Test
+    fun discardStaged_removesStagedFileAndToken_butNotTheLiveData() {
+        writeOriginal()
+        stage("restored")
+
+        PendingRestore.discardStaged(context, dbName)
+
+        assertFalse(file(".restore-staged").exists())
+        assertFalse(file(".restore-staged.go").exists())
+        assertEquals("original", live.readText())
+    }
+
+    private fun simulateKillAfterOriginalMovedAside() {
+        // The process died after: marker written, db set moved to .pre-restore, before staged -> live.
+        file(".restore-pending").writeText("swapping")
+        assertTrue(live.renameTo(file(".pre-restore")))
+        assertTrue(file("-wal").renameTo(file(".pre-restore-wal")))
+        assertTrue(file("-shm").renameTo(file(".pre-restore-shm")))
+        assertFalse(live.exists())
+    }
+
+    @Test
+    fun killedAfterTheLiveFileWasMovedAside_withAValidStagedBackup_neverLosesTheOriginal() {
+        writeOriginal()
+        stage("restored")
+        simulateKillAfterOriginalMovedAside()
+
+        assertTrue(apply())
+
+        // The interrupted swap was undone first, then the staged backup applied; the original is the undo set again.
+        assertEquals("restored", live.readText())
+        assertEquals("original", file(".pre-restore").readText())
+        assertEquals("original-wal", file(".pre-restore-wal").readText())
+        assertEquals("original-shm", file(".pre-restore-shm").readText())
+        assertTrue(PendingRestore.isPending(context, dbName))
+    }
+
+    @Test
+    fun killedAfterTheLiveFileWasMovedAside_withoutAToken_putsTheOriginalBackAndAppliesNothing() {
+        writeOriginal()
+        stage("restored", at = null)
+        simulateKillAfterOriginalMovedAside()
+
+        assertFalse(apply())
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertEquals("original-shm", file("-shm").readText())
+        assertFalse(file(".pre-restore").exists())
+        assertFalse(file(".restore-pending").exists())
+        assertFalse(file(".restore-staged").exists())
+    }
+
+    @Test
+    fun killedAfterStagedWasMovedIn_butBeforeTheMarkerFlipped_isCompletedAndKeepsTheUndoSet() {
+        writeOriginal()
+        file(".restore-pending").writeText("swapping")
+        file(".pre-restore").writeText("original")
+        live.writeText("restored")
+        file("-wal").delete()
+        file("-shm").delete()
+
+        apply()
+
+        assertTrue(PendingRestore.isPending(context, dbName))
+        assertEquals("pending", file(".restore-pending").readText())
+        assertEquals("restored", live.readText())
+        assertEquals("original", file(".pre-restore").readText())
+    }
+
+    @Test
+    fun anExistingUndoSet_isNeverDeletedWhenTheLiveDbIsMissing() {
+        live.parentFile?.mkdirs()
+        file(".pre-restore").writeText("original")
+        stage("restored")
+
+        apply()
+
+        // Live was missing and an undo set existed: the original went back first, then the backup was applied and the
+        // original became the undo set again. At no point did it disappear.
+        assertEquals("restored", live.readText())
+        assertEquals("original", file(".pre-restore").readText())
+    }
+
+    @Test
+    fun rollBack_whenThePreRestoreFileIsMissing_keepsTheRestoredFileAndTheMarker_andMarksHealthFailed() {
+        writeOriginal()
+        stage("restored")
+        apply()
+        file(".pre-restore").delete()
+
+        val ok = PendingRestore.rollBack(context, dbName)
+
+        assertFalse(ok)
+        assertEquals("restored", live.readText())
+        assertTrue(file(".restore-pending").exists())
+        assertTrue(DatabaseHealth.state.value is DatabaseHealth.State.Failed)
+    }
+
+    @Test
+    fun rollBack_putsTheOriginalBack_andResetsHealth() {
+        writeOriginal()
+        stage("restored")
+        apply()
+        DatabaseHealth.markFailed("restored file broke", null)
+
+        assertTrue(PendingRestore.rollBack(context, dbName))
+
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertFalse(file(".restore-pending").exists())
+        assertEquals(DatabaseHealth.State.Ok, DatabaseHealth.state.value)
+    }
+
+    @Test
+    fun latestSafetyCopy_fallsBackToThePreRestoreFile() {
+        writeOriginal()
+        stage("restored")
+        apply()
+
+        assertEquals(file(".pre-restore").name, PreMigrationGuard.latestSafetyCopy(context)?.name)
     }
 }

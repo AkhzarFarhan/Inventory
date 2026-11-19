@@ -42,13 +42,12 @@ class ShopLedgerApp : Application() {
         database = LpsDatabase.getInstance(this)
         // getInstance has already swapped in a staged restore (if any); the marker says it still needs confirming.
         val restoring = PendingRestore.isPending(this, LpsDatabase.DB_NAME)
-        if (DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
-            // Open (and migrate) now, so a failed upgrade shows the recovery screen instead of a random crash later.
-            // While a restore is pending, a failure here is handled by the rollback below instead.
-            runCatching { database.openHelper.writableDatabase }
-                .onFailure { if (!restoring) markUpgradeFailed(it) }
+        if (PendingRestore.takeDiscardedNotice()) {
+            AppErrorManager.reportWarning("Restore cancelled", "An unfinished restore was discarded. Your data was not changed.")
         }
-        if (restoring && DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
+        if (restoring) {
+            // Always resolve a pending restore first: any failure caused by the restored file (open, migration,
+            // health flagged by the guard or the corruption handler) rolls back to the original data.
             when (
                 val outcome = PendingRestore.finishOrRollback(
                     this, LpsDatabase.DB_NAME, { LpsDatabase.getInstance(this) }, { LpsDatabase.closeInstance() }
@@ -64,14 +63,23 @@ class ShopLedgerApp : Application() {
                         )
                     }
                 is PendingRestore.Outcome.RolledBack -> {
+                    // Health was reset when the original came back; only a failure of the original shows recovery.
                     database = LpsDatabase.getInstance(this)
-                    runCatching { database.openHelper.writableDatabase }.onFailure { markUpgradeFailed(it) }
-                    AppErrorManager.reportError(
-                        "Restore failed",
-                        customDetail = "The backup could not be opened. Your previous data was kept."
-                    )
+                    if (outcome.originalBack) {
+                        runCatching { database.openHelper.writableDatabase }.onFailure { markUpgradeFailed(it) }
+                        AppErrorManager.reportError(
+                            "Restore failed",
+                            customDetail = "The backup could not be opened. Your previous data was kept."
+                        )
+                    }
                 }
                 PendingRestore.Outcome.NotPending -> Unit
+            }
+            database = LpsDatabase.getInstance(this)
+        } else {
+            if (DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
+                // Open (and migrate) now, so a failed upgrade shows the recovery screen instead of a random crash later.
+                runCatching { database.openHelper.writableDatabase }.onFailure { markUpgradeFailed(it) }
             }
         }
         repository = LpsRepository(this, database)

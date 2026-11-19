@@ -19,4 +19,9 @@ object DatabaseHealth {
     fun markFailed(reason: String, safetyCopy: File?) {
         if (_state.value is State.Ok) _state.value = State.Failed(reason, safetyCopy)
     }
+
+    /** Only for a restore rolled back to the original data: forget the failure caused by the restored file. */
+    fun reset() {
+        _state.value = State.Ok
+    }
 }

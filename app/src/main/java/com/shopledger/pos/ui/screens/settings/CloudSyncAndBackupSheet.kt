@@ -67,7 +67,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.shopledger.pos.core.auth.GoogleAuthManager
-import com.shopledger.pos.core.backup.AppRestarter
 import com.shopledger.pos.core.backup.BackupShare
 import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CipherReferenceStrip
@@ -86,7 +85,8 @@ import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.SemanticPillBadge
 import kotlinx.coroutines.launch
 import java.io.File
-import java.io.InputStream
+import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -106,7 +106,7 @@ fun CloudSyncAndBackupSheet(
     isSellerUnlocked: Boolean,
     onExportBackupFile: suspend () -> File?,
     /** Stages the chosen backup file for restore. Returns null when it was staged, otherwise an error message to show. */
-    onRestoreBackupFile: suspend (InputStream) -> String?,
+    onRestoreBackupFile: suspend (Uri) -> String?,
     /** Modification time of the newest automatic (nightly) snapshot, or null when there is none. */
     latestSnapshotTime: () -> Long?,
     /** Stages the newest automatic snapshot for restore. Returns null when staged, otherwise an error message. */
@@ -151,16 +151,22 @@ fun CloudSyncAndBackupSheet(
         lastSnapshotMillis?.let { SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(Date(it)) }
     }
 
-    /** Check and stage a backup behind a blocking dialog, then restart so the swap happens before the database opens. */
+    /**
+     * Check and stage a backup behind a blocking dialog. The restart itself happens inside [stage] (non-cancellable),
+     * so a null result means the app is already restarting and the dialog simply stays until the process ends.
+     */
     fun stageThenRestart(stage: suspend () -> String?) {
         coroutineScope.launch {
             checkingBackup = true
-            val error = runCatching { stage() }.getOrElse { "The backup could not be read" }
-            checkingBackup = false
-            if (error == null) {
-                Toast.makeText(context, "Backup checked. Restarting to restore…", Toast.LENGTH_SHORT).show()
-                AppRestarter.restart(context)
-            } else {
+            val error = try {
+                stage()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "The backup could not be read"
+            }
+            if (error != null) {
+                checkingBackup = false
                 Toast.makeText(context, error, Toast.LENGTH_LONG).show()
             }
         }
@@ -168,17 +174,14 @@ fun CloudSyncAndBackupSheet(
 
     val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            stageThenRestart {
-                val stream = context.contentResolver.openInputStream(uri) ?: return@stageThenRestart "That file could not be opened"
-                stream.use { onRestoreBackupFile(it) }
-            }
+            stageThenRestart { onRestoreBackupFile(uri) }
         }
     }
     if (checkingBackup) {
         AlertDialog(
             onDismissRequest = {},
             properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-            title = { Text("Checking backup…") },
+            title = { Text("Checking backupâ€¦") },
             text = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)

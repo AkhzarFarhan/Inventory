@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shopledger.pos.data.command.CatalogCommands
 import com.shopledger.pos.data.command.VariantSpec
+import com.shopledger.pos.data.local.DatabaseHealth
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.PendingRestore
 import com.shopledger.pos.data.local.withShopLedgerDefaults
@@ -56,6 +57,7 @@ class BackupManagerTest {
 
     @After
     fun tearDown() {
+        DatabaseHealth.reset()
         close()
         context.deleteDatabase(dbName)
         dbDir.listFiles { f -> f.name.startsWith(dbName) }?.forEach { it.delete() }
@@ -74,7 +76,8 @@ class BackupManagerTest {
     /** What the next app start does: close everything, swap in the staged file, then confirm or roll back. */
     private fun simulateRestart(): PendingRestore.Outcome {
         close()
-        PendingRestore.applyStaged(context, dbName)
+        PendingRestore.armStaged(context, dbName, clock) // what the sheet does just before it restarts the app
+        PendingRestore.applyStaged(context, dbName, clock)
         return PendingRestore.finishOrRollback(context, dbName, open = ::open, close = ::close, now = { clock })
     }
 
@@ -250,5 +253,25 @@ class BackupManagerTest {
 
         assertEquals(listOf(second.name), exports.map { it.name })
         assertTrue(unrelated.exists())
+    }
+
+    @Test
+    fun healthFailedWhileOpeningTheRestoredFile_stillRollsBack_andHealthIsOkAgain() = runBlocking<Unit> {
+        addItem("a1", "Butt Hinge", 10_000L)
+        val file = manager.exportShareableBackup()
+        addItem("a2", "Tower Bolt", 1_000L)
+        file.inputStream().use { manager.stageRestoreFromShareable(it) }
+        close()
+        PendingRestore.armStaged(context, dbName, clock)
+        assertTrue(PendingRestore.applyStaged(context, dbName, clock))
+        // What PreMigrationGuard / the corruption handler do when the restored file is the problem.
+        DatabaseHealth.markFailed("restored file looked damaged", null)
+
+        val outcome = PendingRestore.finishOrRollback(context, dbName, open = ::open, close = ::close, now = { clock })
+
+        assertTrue("expected RolledBack but was $outcome", outcome is PendingRestore.Outcome.RolledBack)
+        assertEquals(DatabaseHealth.State.Ok, DatabaseHealth.state.value)
+        assertEquals(2L, itemCount())
+        assertFalse(dbSibling(".restore-pending").exists())
     }
 }

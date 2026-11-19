@@ -137,8 +137,12 @@ object PreMigrationGuard {
 
     private fun describe(t: Throwable): String = "${t.javaClass.simpleName}: ${t.message ?: "no detail"}"
 
-    fun latestSafetyCopy(context: Context): File? =
-        databaseDir(context)?.listFiles { f -> f.name.contains(MARKER) && f.name.endsWith(".db") }?.maxByOrNull { it.lastModified() }
+    /** Newest `.pre-v` copy; when there is none, the newest `.pre-restore` database (the original data of a restore). */
+    fun latestSafetyCopy(context: Context): File? {
+        val dir = databaseDir(context) ?: return null
+        return dir.listFiles { f -> f.name.contains(MARKER) && f.name.endsWith(".db") }?.maxByOrNull { it.lastModified() }
+            ?: dir.listFiles { f -> f.isFile && f.name.endsWith(PendingRestore.PRE_RESTORE_MARKER) }?.maxByOrNull { it.lastModified() }
+    }
 
     /** Only `.pre-v` safety copies and `.pre-restore` undo sets are removed; `.corrupt-` evidence copies and the live db are never touched. */
     fun deleteSafetyCopiesOlderThan(context: Context, maxAgeMs: Long, now: Long = System.currentTimeMillis()) {
