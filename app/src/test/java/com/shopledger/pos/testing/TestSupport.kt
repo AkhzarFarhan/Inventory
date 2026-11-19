@@ -3,6 +3,7 @@ package com.shopledger.pos.testing
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.shopledger.pos.core.backup.SnapshotCipher
 import com.shopledger.pos.data.command.Actor
 import com.shopledger.pos.data.command.CatalogCommands
 import com.shopledger.pos.data.command.CommandEnvironment
@@ -13,6 +14,9 @@ import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.DEFAULT_SHOP_ID
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.withShopLedgerDefaults
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -90,4 +94,21 @@ suspend fun seedHinge(
         listOf(VariantSpec(sizeLabel = "4 inch", purchasePricePaise = 4_800L, sellingPricePaise = 7_500L, openingStockMilli = openingMilli))
     )
     return db.inventoryDao().getVariantsForItem(itemId).single().id
+}
+
+/** Fixed-key AES-GCM (Robolectric has no AndroidKeyStore). Output = 12-byte IV + ciphertext. */
+class AesTestCipher : SnapshotCipher {
+    private val key = SecretKeySpec(ByteArray(32) { it.toByte() }, "AES")
+
+    override fun encrypt(plain: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        return cipher.iv + cipher.doFinal(plain)
+    }
+
+    override fun decrypt(blob: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, blob, 0, 12))
+        return cipher.doFinal(blob, 12, blob.size - 12)
+    }
 }

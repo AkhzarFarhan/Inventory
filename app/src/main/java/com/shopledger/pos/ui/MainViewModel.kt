@@ -760,12 +760,6 @@ class MainViewModel(
         }
     }
 
-    suspend fun exportBackupJson(): String {
-        return runCatching { repository.exportBackupJson() }
-            .onFailure { AppErrorManager.reportError("Backup Export Failed", it) }
-            .getOrDefault("")
-    }
-
     suspend fun importBackupJson(json: String): Boolean {
         return runCatching { repository.importBackupJson(json) }
             .onFailure { AppErrorManager.reportError("Backup Restore Failed", it) }

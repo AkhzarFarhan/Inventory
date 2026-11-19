@@ -2,9 +2,6 @@ package com.shopledger.pos.ui.screens.settings
 
 import android.accounts.AccountManager
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +34,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -44,6 +42,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -67,6 +66,8 @@ import androidx.compose.ui.unit.sp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.shopledger.pos.core.auth.GoogleAuthManager
+import com.shopledger.pos.core.backup.AppRestarter
+import com.shopledger.pos.core.backup.BackupShare
 import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CipherReferenceStrip
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
@@ -74,7 +75,6 @@ import com.shopledger.pos.core.cipher.CostCipherEngine
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.nlp.ShopVertical
-import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.core.update.AppUpdateManager
 import com.shopledger.pos.core.update.UpdateStatus
@@ -84,6 +84,8 @@ import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
 import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.SemanticPillBadge
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.InputStream
 import java.util.Locale
 
 /**
@@ -98,7 +100,8 @@ import java.util.Locale
 fun CloudSyncAndBackupSheet(
     pendingSyncCount: Int,
     isSellerUnlocked: Boolean,
-    onExportBackupJson: suspend () -> String,
+    onExportBackupFile: suspend () -> File?,
+    onRestoreBackupFile: suspend (InputStream) -> Boolean,
     onImportBackupJson: suspend (String) -> Boolean,
     onDismiss: () -> Unit
 ) {
@@ -131,6 +134,36 @@ fun CloudSyncAndBackupSheet(
     var newPinInput by remember { mutableStateOf("") }
     var importJsonText by remember { mutableStateOf("") }
     var showImportBox by remember { mutableStateOf(false) }
+    var showRestoreConfirm by remember { mutableStateOf(false) }
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val ok = runCatching {
+                    context.contentResolver.openInputStream(uri)!!.use { onRestoreBackupFile(it) }
+                }.getOrDefault(false)
+                if (ok) {
+                    Toast.makeText(context, "Backup restored. Restarting…", Toast.LENGTH_SHORT).show()
+                    AppRestarter.restart(context)
+                } else {
+                    Toast.makeText(context, "That file is not a ShopLedger backup", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    if (showRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirm = false },
+            title = { Text("Replace all data on this phone?") },
+            text = { Text("Everything on this phone will be replaced by the backup file. Export a backup first if you might need today's data.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreConfirm = false
+                    restorePicker.launch(arrayOf("*/*"))
+                }) { Text("Choose backup file", color = CupertinoColors.DestructiveRed) }
+            },
+            dismissButton = { TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel") } }
+        )
+    }
 
     // Single-Tap Native Google Account Picker Launcher (Zero SHA-1 / Code 10 issues)
     val googleAccountPickerLauncher = rememberLauncherForActivityResult(
@@ -850,22 +883,21 @@ fun CloudSyncAndBackupSheet(
                 }
             }
 
-            // 4. Local JSON Backup Export / Restore
+            // 4. Backup & Restore
             CupertinoCard {
                 Text(
-                    text = "Offline JSON Backup & Restore",
+                    text = "Backup & Restore",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = CupertinoColors.LabelPrimary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Export a complete snapshot of all items, variants, Khata parties, and sales to WhatsApp or Clipboard.",
+                    text = "This phone keeps an encrypted backup every night (last 7 days). Export a backup file to keep a copy on Google Drive or move to a new phone. The file contains your prices and customers, so share it only with yourself.",
                     fontSize = 12.sp,
                     color = CupertinoColors.LabelSecondary
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -873,11 +905,8 @@ fun CloudSyncAndBackupSheet(
                     OutlinedButton(
                         onClick = {
                             coroutineScope.launch {
-                                val json = onExportBackupJson()
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                clipboard?.setPrimaryClip(ClipData.newPlainText("ShopLedger_Backup", json))
-                                Toast.makeText(context, "Backup JSON copied to Clipboard!", Toast.LENGTH_SHORT).show()
-                                ReceiptShareManager.shareTextToWhatsApp(context, json)
+                                val file = onExportBackupFile()
+                                if (file != null) BackupShare.share(context, file, "Save ShopLedger backup")
                             }
                         },
                         shape = RoundedCornerShape(10.dp),
@@ -885,14 +914,17 @@ fun CloudSyncAndBackupSheet(
                     ) {
                         Text("Export Backup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
-
                     OutlinedButton(
-                        onClick = { showImportBox = !showImportBox },
+                        onClick = { showRestoreConfirm = true },
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Restore Backup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(onClick = { showImportBox = !showImportBox }) {
+                    Text("Import an old JSON backup (merge)", fontSize = 12.sp)
                 }
 
                 if (showImportBox) {
@@ -911,7 +943,7 @@ fun CloudSyncAndBackupSheet(
                                 val ok = onImportBackupJson(importJsonText)
                                 Toast.makeText(
                                     context,
-                                    if (ok) "Backup Restored Successfully!" else "Invalid Backup JSON",
+                                    if (ok) "Backup merged successfully!" else "Invalid Backup JSON",
                                     Toast.LENGTH_SHORT
                                 ).show()
                                 if (ok) {

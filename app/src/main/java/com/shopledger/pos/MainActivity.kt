@@ -54,6 +54,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -114,6 +116,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun LpsHardwareMainApp(viewModel: MainViewModel) {
+    val app = LocalContext.current.applicationContext as ShopLedgerApp
     val filteredInventory by viewModel.filteredInventoryState.collectAsState()
     val allInventory by viewModel.allInventoryState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -615,7 +618,20 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         CloudSyncAndBackupSheet(
             pendingSyncCount = pendingSyncCount,
             isSellerUnlocked = isSellerUnlocked,
-            onExportBackupJson = viewModel::exportBackupJson,
+            onExportBackupFile = {
+                withContext(Dispatchers.IO) {
+                    runCatching { app.backupManager.exportShareableBackup() }
+                        .onFailure { AppErrorManager.reportError("Backup Export Failed", it) }
+                        .getOrNull()
+                }
+            },
+            onRestoreBackupFile = { stream ->
+                withContext(Dispatchers.IO) {
+                    runCatching { app.backupManager.restoreFromShareable(stream) }
+                        .onFailure { AppErrorManager.reportError("Restore Failed", it) }
+                        .isSuccess
+                }
+            },
             onImportBackupJson = viewModel::importBackupJson,
             onDismiss = { showCloudSyncSheet = false }
         )
