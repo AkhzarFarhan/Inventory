@@ -4,9 +4,10 @@ import android.content.Context
 import android.content.res.Configuration
 import java.util.Locale
 
-enum class AppLanguage(val tag: String) {
-    ENGLISH("en"),
-    HINDI("hi");
+enum class AppLanguage(val tag: String, val locale: Locale) {
+    // Region-qualified so number formatting keeps Indian (lakh/crore) grouping.
+    ENGLISH("en", Locale.forLanguageTag("en-IN")),
+    HINDI("hi", Locale.forLanguageTag("hi-IN"));
 
     companion object {
         fun fromTag(tag: String?): AppLanguage = entries.firstOrNull { it.tag == tag } ?: ENGLISH
@@ -29,7 +30,7 @@ object AppLanguageStore {
 
     /** Returns a context whose resources use the saved app language. */
     fun wrap(base: Context): Context {
-        val locale = Locale(get(base).tag)
+        val locale = get(base).locale
         Locale.setDefault(locale)
         val config = Configuration(base.resources.configuration)
         config.setLocale(locale)
