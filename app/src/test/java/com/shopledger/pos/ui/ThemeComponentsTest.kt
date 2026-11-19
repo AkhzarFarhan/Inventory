@@ -1,6 +1,7 @@
 package com.shopledger.pos.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -18,6 +19,7 @@ import com.shopledger.pos.ui.theme.ItemRow
 import com.shopledger.pos.ui.theme.MoneyField
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.QtyStepper
+import com.shopledger.pos.ui.theme.SectionCard
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 import com.shopledger.pos.ui.theme.StockStatus
 import org.junit.Assert.assertEquals
@@ -83,6 +85,46 @@ class ThemeComponentsTest {
         compose.onNodeWithText("12.50").performTextClearance()
         compose.waitForIdle()
         assertEquals(null, value.value)
+    }
+
+    @Test
+    fun moneyFieldAcceptsCommaAsDecimalSeparator() {
+        val value = mutableStateOf<Long?>(null)
+        compose.setContent {
+            ShopLedgerTheme { MoneyField(valuePaise = value.value, onValueChange = { value.value = it }, label = "Price") }
+        }
+        compose.onNodeWithText("Price").performTextInput("12,5")
+        compose.waitForIdle()
+        assertEquals(1250L, value.value)
+    }
+
+    @Test
+    fun moneyFieldIgnoresNonAsciiDigits() {
+        val value = mutableStateOf<Long?>(null)
+        compose.setContent {
+            ShopLedgerTheme { MoneyField(valuePaise = value.value, onValueChange = { value.value = it }, label = "Price") }
+        }
+        compose.onNodeWithText("Price").performTextInput("1٣" + "2")
+        compose.waitForIdle()
+        assertEquals(1200L, value.value)
+    }
+
+    @Test
+    fun moneyFieldZeroIsZeroPaise() {
+        val value = mutableStateOf<Long?>(null)
+        compose.setContent {
+            ShopLedgerTheme { MoneyField(valuePaise = value.value, onValueChange = { value.value = it }, label = "Price") }
+        }
+        compose.onNodeWithText("Price").performTextInput("0")
+        compose.waitForIdle()
+        assertEquals(0L, value.value)
+    }
+
+    @Test
+    fun sectionCardRendersTitle() {
+        compose.setContent { ShopLedgerTheme { SectionCard("Title") { Text("x") } } }
+        compose.onNodeWithText("Title").assertIsDisplayed()
+        compose.onNodeWithText("x").assertIsDisplayed()
     }
 
     @Test

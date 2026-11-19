@@ -1,13 +1,16 @@
 package com.shopledger.pos.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -39,8 +42,16 @@ fun ShopLedgerTheme(
             colorScheme = if (darkTheme) DarkColors else LightColors,
             typography = ShopLedgerTypography,
             shapes = ShopLedgerShapes,
-            content = content,
-        )
+        ) {
+            // Gives default text and icons the scheme's on-background colour, so they stay readable in dark mode.
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground,
+            ) {
+                content()
+            }
+        }
     }
 }
 

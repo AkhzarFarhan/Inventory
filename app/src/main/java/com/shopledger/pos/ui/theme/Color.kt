@@ -30,6 +30,14 @@ internal val LightColors: ColorScheme = lightColorScheme(
     onSurfaceVariant = Color(0xFF404943),
     outline = Color(0xFF707972),
     outlineVariant = Color(0xFFC0C9C1),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF3F7F3),
+    surfaceContainer = Color(0xFFEDF2ED),
+    surfaceContainerHigh = Color(0xFFE7EDE7),
+    surfaceContainerHighest = Color(0xFFE1E8E1),
+    inverseSurface = Color(0xFF2D322E),
+    inverseOnSurface = Color(0xFFEFF2EE),
+    inversePrimary = Color(0xFF7DDBA3),
 )
 
 internal val DarkColors: ColorScheme = darkColorScheme(
@@ -57,6 +65,14 @@ internal val DarkColors: ColorScheme = darkColorScheme(
     onSurfaceVariant = Color(0xFFC0C9C1),
     outline = Color(0xFF8A938B),
     outlineVariant = Color(0xFF404943),
+    surfaceContainerLowest = Color(0xFF151A16),
+    surfaceContainerLow = Color(0xFF1A1F1B),
+    surfaceContainer = Color(0xFF1E241F),
+    surfaceContainerHigh = Color(0xFF262D27),
+    surfaceContainerHighest = Color(0xFF313731),
+    inverseSurface = Color(0xFFE0E3DE),
+    inverseOnSurface = Color(0xFF2D322E),
+    inversePrimary = Color(0xFF1A7F4B),
 )
 
 /** Semantic colours that Material 3's scheme has no slot for. */

@@ -169,6 +169,22 @@ private fun editable(paise: Long?): String =
 private fun parse(text: String): Long? =
     if (text.isBlank()) null else IndianCurrencyFormatter.parseRupeesToPaise(text)
 
+private const val MAX_INTEGER_DIGITS = 9
+private const val MAX_DECIMAL_DIGITS = 2
+
+/**
+ * Normalises raw keyboard input: a single ',' becomes the decimal separator '.', only ASCII digits
+ * and '.' are kept, and the result is rejected (null) if it has more than one '.', more than
+ * [MAX_INTEGER_DIGITS] integer digits, or more than [MAX_DECIMAL_DIGITS] decimal digits.
+ */
+internal fun sanitiseMoneyInput(input: String): String? {
+    val normalised = input.replace(',', '.').filter { it in '0'..'9' || it == '.' }
+    if (normalised.count { it == '.' } > 1) return null
+    if (normalised.substringBefore('.').length > MAX_INTEGER_DIGITS) return null
+    if (normalised.substringAfter('.', "").length > MAX_DECIMAL_DIGITS) return null
+    return normalised
+}
+
 @Composable
 fun MoneyField(
     valuePaise: Long?,
@@ -186,8 +202,7 @@ fun MoneyField(
     OutlinedTextField(
         value = text,
         onValueChange = { input ->
-            val filtered = input.filter { it.isDigit() || it == '.' }
-            if (filtered.count { it == '.' } <= 1 && filtered.substringAfter('.', "").length <= 2) {
+            sanitiseMoneyInput(input)?.let { filtered ->
                 text = filtered
                 onValueChange(parse(filtered))
             }
@@ -234,7 +249,12 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+        )
         Text(
             message,
             style = MaterialTheme.typography.bodyLarge,
@@ -282,8 +302,8 @@ fun ConfirmDialog(
 
 @Composable
 fun SectionCard(
-    modifier: Modifier = Modifier,
     title: String? = null,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
