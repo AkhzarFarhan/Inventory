@@ -59,7 +59,7 @@ Returns a summary (items created, restocked, total qty, supplier due). Failure a
 `ShopLedgerTheme` (Material 3): green primary (e.g. `#1A7F4B`), light + dark colour schemes (follow system), typography with 16 sp body / 20 sp titles, shapes (12–16 dp corners), spacing tokens. Components: `PrimaryActionButton` (≥ 56 dp tall), `ItemRow`, `QtyStepper`, `MoneyField` (₹, paise-exact), `StatusChip`, `EmptyState`, `ConfirmDialog`, `SectionCard`. The Cupertino theme/components are removed once no screen uses them.
 
 ### 3.2 Strings & Hindi
-All user-visible text → `res/values/strings.xml`; Hindi in `res/values-hi/strings.xml`. Language chosen in setup/More via `AppCompatDelegate.setApplicationLocales` (androidx.appcompat per-app locales, works API 24+; requires AppCompat dependency and `AppLocalesMetadataHolderService` autoStoreLocales). A unit test asserts every key in `values` exists in `values-hi`. Formatting stays Indian (₹, lakh grouping) in both languages.
+All user-visible text → `res/values/strings.xml`; Hindi in `res/values-hi/strings.xml`. Language chosen in setup/More, stored in SharedPreferences and applied by wrapping the Activity context in `attachBaseContext` (`createConfigurationContext` with `en-IN` / `hi-IN`, then `recreate()` on change) — no AppCompat dependency; non-Activity code resolves strings through `AppLanguageStore.localizedContext`. A unit test asserts every key in `values` exists in `values-hi`. Formatting stays Indian (₹, lakh grouping) in both languages.
 
 ### 3.3 Navigation & home
 Bottom navigation: **Items · Bills · Khata · More**.
