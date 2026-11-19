@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ShopLedger POS</string>
+    <string name="tab_items">Items</string>
+    <string name="tab_bills">Bills</string>
+    <string name="tab_khata">Khata</string>
+    <string name="tab_more">More</string>
+    <string name="action_sell">Sell</string>
+    <string name="action_stock_in">Stock In</string>
+    <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
+    <string name="action_done">Done</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_retry">Try again</string>
+    <string name="status_saved_on_phone">Saved on this phone</string>
+    <string name="language_english">English</string>
+    <string name="language_hindi">हिन्दी</string>
+    <string name="settings_language">Language</string>
     <string name="cd_increase_quantity">Increase quantity</string>
     <string name="cd_decrease_quantity">Decrease quantity</string>
 </resources>

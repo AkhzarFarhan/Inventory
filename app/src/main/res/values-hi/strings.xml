@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">शॉपलेजर POS</string>
+    <string name="tab_items">सामान</string>
+    <string name="tab_bills">बिल</string>
+    <string name="tab_khata">खाता</string>
+    <string name="tab_more">और</string>
+    <string name="action_sell">बेचें</string>
+    <string name="action_stock_in">माल आया</string>
+    <string name="action_save">सेव करें</string>
+    <string name="action_cancel">रद्द करें</string>
+    <string name="action_done">हो गया</string>
+    <string name="action_delete">हटाएँ</string>
+    <string name="action_retry">फिर से कोशिश करें</string>
+    <string name="status_saved_on_phone">इस फ़ोन में सेव है</string>
+    <string name="language_english">English</string>
+    <string name="language_hindi">हिन्दी</string>
+    <string name="settings_language">भाषा</string>
+    <string name="cd_increase_quantity">मात्रा बढ़ाएँ</string>
+    <string name="cd_decrease_quantity">मात्रा घटाएँ</string>
+</resources>

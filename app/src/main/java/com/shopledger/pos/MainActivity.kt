@@ -1,5 +1,6 @@
 package com.shopledger.pos
 
+import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -89,6 +90,7 @@ import com.shopledger.pos.ui.screens.settings.CloudSyncAndBackupSheet
 import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.LpsCupertinoTheme
+import com.shopledger.pos.ui.i18n.AppLanguageStore
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 
 class MainActivity : ComponentActivity() {
@@ -96,6 +98,10 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels {
         val app = application as ShopLedgerApp
         MainViewModel.Factory(app.repository)
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLanguageStore.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
