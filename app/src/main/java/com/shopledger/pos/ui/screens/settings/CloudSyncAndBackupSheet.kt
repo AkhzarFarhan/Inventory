@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -85,6 +86,7 @@ import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
 import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.SemanticPillBadge
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 import android.net.Uri
@@ -144,8 +146,34 @@ fun CloudSyncAndBackupSheet(
     var upiIdInput by remember { mutableStateOf(SyncManager.getUpiId(context)) }
     var gstinInput by remember { mutableStateOf(SyncManager.getGstin(context)) }
     var deviceCodeInput by remember { mutableStateOf(SyncManager.getDeviceShortCode(context)) }
+    var storedDeviceCode by remember { mutableStateOf(deviceCodeInput) }
+    var deviceCodeWasFocused by remember { mutableStateOf(false) }
+    var deviceCodeSave by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(Unit) {
-        runCatching { loadDeviceCode() }.onSuccess { deviceCodeInput = it }
+        runCatching { loadDeviceCode() }.onSuccess { deviceCodeInput = it; storedDeviceCode = it }
+    }
+    // Saved once when editing ends (Done or focus lost); an earlier in-flight save is cancelled first so saves can't finish out of order.
+    val commitDeviceCode: () -> Unit = {
+        val code = deviceCodeInput
+        if (code.isEmpty()) {
+            deviceCodeInput = storedDeviceCode
+            Toast.makeText(context, "Counter code can't be empty", Toast.LENGTH_SHORT).show()
+        } else if (code != storedDeviceCode) {
+            deviceCodeSave?.cancel()
+            deviceCodeSave = coroutineScope.launch {
+                runCatching { onSaveDeviceCode(code) }
+                    .onSuccess { saved ->
+                        storedDeviceCode = saved
+                        deviceCodeInput = saved
+                        SyncManager.saveDeviceShortCode(context, saved)
+                    }
+                    .onFailure {
+                        if (it is CancellationException) throw it
+                        deviceCodeInput = storedDeviceCode
+                        Toast.makeText(context, it.message ?: "Could not save the counter code", Toast.LENGTH_LONG).show()
+                    }
+            }
+        }
     }
     var word10Input by remember(activeWord10) { mutableStateOf(activeWord10) }
     var customDigitInputs by remember(activeCustomDigitMap) { mutableStateOf(activeCustomDigitMap) }
@@ -523,20 +551,17 @@ fun CloudSyncAndBackupSheet(
                     CupertinoTextField(
                         value = deviceCodeInput,
                         onValueChange = { typed ->
-                            val cleaned = typed.uppercase(Locale.ROOT).filter { ch -> ch in 'A'..'Z' || ch in '0'..'9' }.take(4)
-                            deviceCodeInput = cleaned
-                            if (cleaned.isNotEmpty()) {
-                                coroutineScope.launch {
-                                    runCatching { onSaveDeviceCode(cleaned) }
-                                        .onSuccess { SyncManager.saveDeviceShortCode(context, it) }
-                                        .onFailure { Toast.makeText(context, it.message ?: "Could not save the counter code", Toast.LENGTH_LONG).show() }
-                                }
-                            }
+                            deviceCodeInput = typed.uppercase(Locale.ROOT).filter { ch -> ch in 'A'..'Z' || ch in '0'..'9' }.take(4)
                         },
                         label = "Counter Code",
                         placeholder = "D1 / blank",
                         capitalization = KeyboardCapitalization.Characters,
-                        modifier = Modifier.weight(0.8f)
+                        imeAction = ImeAction.Done,
+                        onImeAction = { commitDeviceCode() },
+                        modifier = Modifier.weight(0.8f).onFocusChanged { f ->
+                            if (deviceCodeWasFocused && !f.isFocused) commitDeviceCode()
+                            deviceCodeWasFocused = f.isFocused
+                        }
                     )
                 }
 

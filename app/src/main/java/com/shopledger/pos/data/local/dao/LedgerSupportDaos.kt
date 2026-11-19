@@ -21,8 +21,6 @@ interface DeviceDao {
     @Query("UPDATE devices SET deviceCode = :code WHERE deviceId = :deviceId")
     suspend fun updateDeviceCode(deviceId: String, code: String): Int
 
-    @Query("SELECT lastInvoiceSeq FROM devices WHERE deviceId = :deviceId")
-    suspend fun getLastInvoiceSeq(deviceId: String): Long
 }
 
 @Dao

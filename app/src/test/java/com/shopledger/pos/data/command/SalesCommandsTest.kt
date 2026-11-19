@@ -182,6 +182,23 @@ class SalesCommandsTest {
     }
 
     @Test
+    fun receiptNumbers_useTheInvoiceShopNotTheDeviceRowShop() = runBlocking<Unit> {
+        val acctEnv = TestEnv(shop = "acct-x")
+        val acctSales = SalesCommands(db, acctEnv)
+        val variantId = seedHinge(db, acctEnv)
+        val dayA = CalendarParts.of(acctEnv.clock).dayKey
+        val first = acctSales.checkout(twoHinges(variantId, actionId = "s1"))
+        assertEquals("acct-x", first.header.shopId)
+        acctSales.checkout(twoHinges(variantId, actionId = "s2"))
+        acctEnv.clock += 24L * 60 * 60 * 1000
+        assertEquals("L-${CalendarParts.of(acctEnv.clock).dayKey}-0001", acctSales.checkout(twoHinges(variantId, actionId = "s3")).header.invoiceNumber)
+        acctEnv.clock -= 24L * 60 * 60 * 1000
+        assertEquals("L-$dayA-0003", acctSales.checkout(twoHinges(variantId, actionId = "s4")).header.invoiceNumber)
+        val credit = acctSales.returnItems("s5", first.header.id, listOf(ReturnLine(first.lines.single().id, 1_000L)))
+        assertEquals("L-$dayA-0004", credit.header.invoiceNumber)
+    }
+
+    @Test
     fun clockMovedBackwards_neverReusesAReceiptNumber() = runBlocking<Unit> {
         val variantId = seedHinge(db, env)
         val dayA = dayKey()

@@ -101,7 +101,7 @@ class SalesCommands(
             val party = resolveParty(buyerName, buyerPhone, due, device)
 
             val parts = CalendarParts.of(now)
-            val number = nextReceiptNumber(device, parts.dayKey)
+            val number = nextReceiptNumber(device, shopId, parts.dayKey)
             faults.at(CheckoutStep.NUMBER)
 
             val invoiceId = env.newId()
@@ -230,7 +230,7 @@ class SalesCommands(
             val cashRefund = creditTotal - khataCredit
 
             val parts = CalendarParts.of(now)
-            val number = nextReceiptNumber(device, parts.dayKey)
+            val number = nextReceiptNumber(device, original.shopId, parts.dayKey)
             val header = InvoiceHeaderEntity(
                 id = creditNoteId,
                 shopId = original.shopId,
@@ -275,10 +275,10 @@ class SalesCommands(
      * Next receipt number for [dayKey]. Never trusts the counter alone: if the clock moved backwards the
      * counter was reset, so also look at the numbers already issued for this device and day.
      */
-    private suspend fun nextReceiptNumber(device: DeviceEntity, dayKey: String): String {
+    private suspend fun nextReceiptNumber(device: DeviceEntity, shopId: String, dayKey: String): String {
         val prefix = "${device.deviceCode}-$dayKey-"
         val counter = if (device.lastSeqDate == dayKey) device.lastInvoiceSeq else 0L
-        val highestIssued = ledger.getInvoiceNumbersWithPrefix(device.shopId, prefix)
+        val highestIssued = ledger.getInvoiceNumbersWithPrefix(shopId, prefix)
             .mapNotNull { it.substring(prefix.length).toLongOrNull() }
             .maxOrNull() ?: 0L
         val next = maxOf(counter, highestIssued) + 1

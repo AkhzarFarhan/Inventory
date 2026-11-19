@@ -25,6 +25,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.PendingRestore
 import com.shopledger.pos.ui.theme.CupertinoColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -46,6 +48,7 @@ fun DatabaseRecoveryScreen(
     val scope = rememberCoroutineScope()
     var confirming by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf(false) }
+    val restorePending = remember { PendingRestore.isPending(context, LpsDatabase.DB_NAME) }
     val snapshotLabel = latestSnapshotTime?.let { SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(Date(it)) }
 
     Column(
@@ -66,7 +69,7 @@ fun DatabaseRecoveryScreen(
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onRetry, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
-        if (snapshotLabel != null) {
+        if (snapshotLabel != null && !restorePending) {
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(onClick = { confirming = true }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) {
                 Text("Restore last automatic backup ($snapshotLabel)")
