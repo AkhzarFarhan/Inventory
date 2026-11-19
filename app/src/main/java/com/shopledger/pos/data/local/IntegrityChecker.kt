@@ -33,6 +33,10 @@ object IntegrityChecker {
                 "(SELECT COALESCE(-SUM(r.qtyMilliUnits), 0) FROM invoice_lines r WHERE r.originalLineId = l.id) > l.qtyMilliUnits"
         )
         collect(
+            "I4 return line not negative",
+            "SELECT l.id FROM invoice_lines l WHERE l.originalLineId IS NOT NULL AND l.qtyMilliUnits >= 0"
+        )
+        collect(
             "I5 duplicate invoice number",
             "SELECT h.invoiceNumber FROM invoice_headers h GROUP BY h.shopId, h.invoiceNumber HAVING COUNT(*) > 1"
         )
