@@ -89,6 +89,7 @@ import com.shopledger.pos.ui.screens.settings.CloudSyncAndBackupSheet
 import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.LpsCupertinoTheme
+import com.shopledger.pos.ui.theme.ShopLedgerTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -100,7 +101,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            LpsCupertinoTheme {
+            ShopLedgerTheme { LpsCupertinoTheme {
                 val health by DatabaseHealth.state.collectAsState()
                 when (val current = health) {
                     is DatabaseHealth.State.Failed -> DatabaseRecoveryScreen(
@@ -121,7 +122,7 @@ class MainActivity : ComponentActivity() {
                     )
                     DatabaseHealth.State.Ok -> LpsHardwareMainApp(viewModel = viewModel)
                 }
-            }
+            } }
         }
     }
 }
