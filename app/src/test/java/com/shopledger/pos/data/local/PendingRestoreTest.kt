@@ -709,26 +709,111 @@ class PendingRestoreTest {
         assertEquals("original-wal", file("-wal").readText())
     }
 
-    @Test
-    fun swappingMarkerWithTheSplitLayout_neverDeletesThePreRestoreWal() {
-        splitUndoLayout("swapping")
-
-        assertFalse(apply())
-
-        assertEquals("original", live.readText())
-        assertEquals("original-wal", file("-wal").readText())
-        assertFalse(file(".restore-pending").exists())
-        assertFalse(file(".restore-staged").exists())
+    /** Kill during the forward swap's deletion of an OLD undo set: live original, stale `.pre-restore-wal`, no `.pre-restore` main. */
+    private fun staleUndoWalLayout(withLiveWal: Boolean) {
+        live.parentFile?.mkdirs()
+        live.writeText("original")
+        if (withLiveWal) file("-wal").writeText("original-wal")
+        file(".pre-restore-wal").writeText("stale-wal")
+        stage("restored")
+        file(".restore-pending").writeText("swapping")
     }
 
     @Test
-    fun swappingMarkerWithTheSplitLayout_andAnExpiredToken_stillRestoresTheOriginalWal() {
-        splitUndoLayout("swapping")
-        PendingRestore.armStaged(context, dbName, now - PendingRestore.TOKEN_MAX_AGE_MS - 1)
+    fun swappingMarkerWithAStaleUndoWal_neverReplacesTheOriginalLiveWal() {
+        staleUndoWalLayout(withLiveWal = true)
 
-        assertFalse(apply())
+        apply()
 
+        // The original WAL is either still the live -wal or became .pre-restore-wal when the swap re-ran.
+        val originalWalHome = listOf(file("-wal"), file(".pre-restore-wal")).filter { it.exists() }
+        assertTrue(originalWalHome.any { it.readText() == "original-wal" })
+        assertTrue(originalWalHome.none { it.readText() == "stale-wal" })
+        assertEquals("original", if (live.readText() == "original") "original" else file(".pre-restore").readText())
+    }
+
+    @Test
+    fun swappingMarkerWithAStaleUndoWal_andNoLiveWal_neverMakesTheStaleWalLive() {
+        staleUndoWalLayout(withLiveWal = false)
+
+        apply()
+
+        assertFalse(file("-wal").exists() && file("-wal").readText() == "stale-wal")
+        assertFalse(file(".pre-restore-wal").exists() && file(".pre-restore-wal").readText() == "stale-wal")
+    }
+
+    @Test
+    fun forwardSwap_whenDeletingTheOldUndoSetFails_writesNoMarker_keepsStaged_andLeavesLiveUntouched() {
+        writeOriginal()
+        file(".pre-restore").writeText("old-undo")
+        file(".pre-restore-wal").writeText("old-undo-wal")
+        stage("restored")
+
+        val result = PendingRestore.applyStaged(context, dbName, now, { it.name.endsWith(".pre-restore-wal") == false && it.delete() }) { it.readText() }
+
+        assertFalse(result)
+        assertFalse(file(".restore-pending").exists())
+        assertEquals("restored", file(".restore-staged").readText())
+        assertTrue(file(".restore-staged.go").exists())
+        assertEquals("original", live.readText())
         assertEquals("original-wal", file("-wal").readText())
+        assertEquals("original-shm", file("-shm").readText())
+        assertEquals("old-undo", file(".pre-restore").readText())
+    }
+
+    @Test
+    fun forwardSwap_deletesTheOldUndoSetSidecarsBeforeTheMainFile() {
+        writeOriginal()
+        file(".pre-restore").writeText("old-undo")
+        file(".pre-restore-wal").writeText("old-undo-wal")
+        file(".pre-restore-shm").writeText("old-undo-shm")
+        stage("restored")
+        val order = mutableListOf<String>()
+
+        assertTrue(PendingRestore.applyStaged(context, dbName, now, { order += it.name; it.delete() }) { it.readText() })
+
+        assertEquals(listOf("$dbName.pre-restore-shm", "$dbName.pre-restore-wal", "$dbName.pre-restore"), order)
+        assertEquals("original", file(".pre-restore").readText())
+    }
+
+    @Test
+    fun undoSwapResume_killedAfterDiscardStagedButBeforeTheMarkerDelete_doesNotReApplyTheRestore() {
+        splitUndoLayout("undoing-swap")
+        // The marker cannot be deleted (a non-empty directory); its text is supplied by the injected reader.
+        file(".restore-pending").delete()
+        file(".restore-pending").mkdirs()
+        File(file(".restore-pending"), "x").writeText("x")
+
+        assertFalse(PendingRestore.applyStaged(context, dbName, now) { "undoing-swap" })
+
+        // Staged file and token went first, while the marker was still there.
+        assertFalse(file(".restore-staged").exists())
+        assertFalse(file(".restore-staged.go").exists())
+        assertTrue(file(".restore-pending").exists())
+        // Next launch (marker now gone as after a kill + cleanup of nothing else): nothing is re-applied.
+        File(file(".restore-pending"), "x").delete()
+        file(".restore-pending").delete()
+        file(".restore-pending").writeText("undoing-swap")
+        assertFalse(apply())
+        assertEquals("original", live.readText())
+        assertEquals("original-wal", file("-wal").readText())
+        assertFalse(file(".restore-pending").exists())
+    }
+
+    @Test
+    fun cleanup_withARestoreMarker_keepsEveryPreRestoreFile() {
+        writeOriginal()
+        val old = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
+        val undo = listOf(".pre-restore", ".pre-restore-wal", ".pre-restore-shm")
+            .map { file(it).apply { writeText("x"); setLastModified(old) } }
+        file(".restore-pending").writeText("pending")
+
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
+
+        undo.forEach { assertTrue(it.name, it.exists()) }
+        file(".restore-pending").delete()
+        PreMigrationGuard.deleteSafetyCopiesOlderThan(context, TimeUnit.DAYS.toMillis(14), dbName = dbName)
+        undo.forEach { assertFalse(it.name, it.exists()) }
     }
 
     @Test
@@ -773,12 +858,13 @@ class PendingRestoreTest {
     }
 
     @Test
-    fun supportCopy_forTheSplitLayout_foldsEvenWithoutAKnownMarkerState() {
+    fun supportCopy_withASwappingMarker_neverFoldsTheLiveMainWithAPreRestoreWal() {
         live.parentFile?.mkdirs()
-        writeWalPair(live, file(".pre-restore-wal"))
+        writeWalPair(live, file(".pre-restore-wal")) // possibly a stale undo WAL
         file(".restore-pending").writeText("swapping")
 
-        assertFoldedHasWalRow(PendingRestore.supportCopy(context, dbName)!!)
+        val copy = PendingRestore.supportCopy(context, dbName)
+        assertFalse(copy?.name?.endsWith("-support.db") == true)
     }
 
     @Test

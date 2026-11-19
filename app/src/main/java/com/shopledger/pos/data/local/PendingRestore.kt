@@ -82,8 +82,14 @@ object PendingRestore {
     fun applyStaged(context: Context, dbName: String, now: Long = System.currentTimeMillis()): Boolean =
         applyStaged(context, dbName, now) { it.readText() }
 
-    /** [readMarker] is injectable so tests can simulate a transient I/O failure while reading the marker. */
-    internal fun applyStaged(context: Context, dbName: String, now: Long, readMarker: (File) -> String): Boolean {
+    /** [readMarker] and [delete] are injectable so tests can simulate a transient I/O failure reading the marker / deleting the old undo set. */
+    internal fun applyStaged(
+        context: Context,
+        dbName: String,
+        now: Long,
+        delete: (File) -> Boolean = { it.delete() },
+        readMarker: (File) -> String
+    ): Boolean {
         val live = context.getDatabasePath(dbName)
         val staged = File(live.path + STAGED)
         val token = File(live.path + TOKEN)
@@ -102,8 +108,6 @@ object PendingRestore {
         } else {
             null
         }
-        val preWal = File(live.path + PRE_RESTORE + "-wal")
-        val preShm = File(live.path + PRE_RESTORE + "-shm")
 
         // 0. An interrupted rollback is resumed first: the original's files go back over the live names, then the
         // marker goes. Nothing else happens in this launch, and it is never reported as a restore.
@@ -118,17 +122,15 @@ object PendingRestore {
             }
         }
 
-        // 0b. An interrupted undo of a forward swap is resumed (and the restore abandoned). The same applies to a
-        // `swapping` marker with the original main already back but its sidecars still `.pre-restore-*` (an undo cut
-        // short by a build that did not log it). Live sidecars here are the original's and are never deleted.
-        val orphanedOriginalSidecars = state == STATE_SWAPPING && live.exists() && !preMain.exists() &&
-            (preWal.exists() || preShm.exists())
-        if (state == STATE_UNDOING_SWAP || orphanedOriginalSidecars) {
+        // 0b. An interrupted undo of a forward swap is resumed (and the restore abandoned). Only the explicit
+        // `undoing-swap` marker proves a `.pre-restore-wal` is the original's: a `swapping` marker with the live main and
+        // no `.pre-restore` main is a kill while deleting an OLD undo set, whose WAL is stale. The staged file is discarded
+        // BEFORE the marker goes, so a kill in between cannot re-apply a cancelled restore.
+        if (state == STATE_UNDOING_SWAP) {
             return try {
-                if (state != STATE_UNDOING_SWAP) writeDurably(marker, STATE_UNDOING_SWAP)
                 restoreFromPre(live)
-                marker.delete()
                 discardStaged(context, dbName)
+                marker.delete()
                 rollbackResumedNotice.set(true)
                 false
             } catch (t: Throwable) {
@@ -169,13 +171,25 @@ object PendingRestore {
             return false
         }
 
+        // The live file is present (or there is nothing to protect), so an older undo set may go. It goes BEFORE the
+        // marker is written (a kill while deleting must not look like an interrupted swap), sidecars before the main
+        // file, and every delete is checked: on failure nothing is marked or moved and the staged file is kept.
+        if (live.exists()) {
+            try {
+                SUFFIXES.asReversed().forEach { suffix ->
+                    val old = File(live.path + PRE_RESTORE + suffix)
+                    if (old.exists() && !delete(old)) throw IllegalStateException("Could not delete ${old.name}")
+                }
+            } catch (t: Throwable) {
+                return false
+            }
+        }
+
         val moved = mutableListOf<Pair<File, File>>() // from live name -> pre-restore name
         var stagedInPlace = false
         try {
             // 3. Intent log first, then move files.
             writeDurably(marker, STATE_SWAPPING)
-            // The live file is present (or there is nothing to protect), so an older undo set may go.
-            if (live.exists()) SUFFIXES.forEach { deleteIfExists(File(live.path + PRE_RESTORE + it)) }
             for (suffix in SUFFIXES) {
                 val from = File(live.path + suffix)
                 if (!from.exists()) continue
@@ -366,9 +380,11 @@ object PendingRestore {
             }
             return foldedSupportCopy(pre, wal, pre)
         }
-        // A rollback or swap-undo got as far as moving the original main back but not its WAL (marker `rolling-back`,
-        // `undoing-swap`, or any other): fold live main + `.pre-restore-wal`.
-        if (live.exists() && preWal.exists()) {
+        // A rollback or swap-undo got as far as moving the original main back but not its WAL: only under those two
+        // markers is `.pre-restore-wal` known to be the original's (otherwise it may be a stale one).
+        val marker = File(live.path + MARKER)
+        val state = if (marker.exists()) markerState(marker) else null
+        if (live.exists() && preWal.exists() && (state == STATE_ROLLING_BACK || state == STATE_UNDOING_SWAP)) {
             return foldedSupportCopy(live, preWal, pre)
         }
         return PreMigrationGuard.latestSafetyCopy(context) ?: live.takeIf { it.exists() }
