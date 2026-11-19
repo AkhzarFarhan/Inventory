@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.dao.AppliedActionDao
 import com.shopledger.pos.data.local.dao.DeviceDao
 import com.shopledger.pos.data.local.dao.InventoryDao
@@ -26,6 +27,8 @@ import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.local.entity.ShopProfileEntity
 import com.shopledger.pos.data.local.entity.StockMovementEntity
 import com.shopledger.pos.data.local.entity.SyncOutboxEntity
+import com.shopledger.pos.data.local.migrations.Migration2To3
+import com.shopledger.pos.data.local.migrations.MigrationContext
 
 typealias ShopDatabase = LpsDatabase
 
@@ -45,7 +48,7 @@ typealias ShopDatabase = LpsDatabase
         AppliedActionEntity::class
     ],
     views = [SaleRecordEntity::class],
-    version = 3,
+    version = LpsDatabase.SCHEMA_VERSION,
     exportSchema = true
 )
 abstract class LpsDatabase : RoomDatabase() {
@@ -61,6 +64,9 @@ abstract class LpsDatabase : RoomDatabase() {
     companion object {
         private const val LEGACY_DB_NAME = "lps_hardware_inventory.db"
         const val DB_NAME = "shop_ledger.db"
+
+        /** Keep in sync with the newest migration. */
+        const val SCHEMA_VERSION = 3
 
         @Volatile
         private var INSTANCE: LpsDatabase? = null
@@ -344,29 +350,47 @@ abstract class LpsDatabase : RoomDatabase() {
             }
         }
 
+        /** Used by backup restore: the next getInstance() reopens (and migrates) the swapped file. */
+        fun closeInstance() {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
+            }
+        }
+
         private fun buildDatabase(appContext: Context): LpsDatabase {
             val legacyDbFile = appContext.getDatabasePath(LEGACY_DB_NAME)
             val targetDbFile = appContext.getDatabasePath(DB_NAME)
             if (legacyDbFile.exists() && !targetDbFile.exists()) {
-                try {
+                runCatching {
                     targetDbFile.parentFile?.mkdirs()
                     legacyDbFile.copyTo(targetDbFile, overwrite = false)
-                } catch (_: Exception) {
                 }
             }
-
+            when (val outcome = PreMigrationGuard.prepare(appContext, DB_NAME, SCHEMA_VERSION)) {
+                is PreMigrationGuard.Outcome.Corrupt -> DatabaseHealth.markFailed(
+                    "Your data file failed its safety check (${outcome.detail}). Nothing was changed.", null
+                )
+                else -> Unit
+            }
+            val migrationContext = MigrationContext(
+                activeShopId = SyncManager.getConfig(appContext).shopCollectionId,
+                legacyDeviceCode = SyncManager.getDeviceShortCode(appContext)
+            )
             return Room.databaseBuilder(appContext, LpsDatabase::class.java, DB_NAME)
-                // WRITE_AHEAD_LOGGING allows concurrent UI reads while background work writes
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .withShopLedgerDefaults()
+                .openHelperFactory(QuarantiningOpenHelperFactory())
+                .withShopLedgerDefaults(migrationContext)
                 .build()
         }
     }
 }
 
 /** Shared by the app and tests so every database gets the same migrations and seed rows. */
-fun RoomDatabase.Builder<LpsDatabase>.withShopLedgerDefaults(): RoomDatabase.Builder<LpsDatabase> =
-    addMigrations(LpsDatabase.MIGRATION_1_2)
+fun RoomDatabase.Builder<LpsDatabase>.withShopLedgerDefaults(
+    migrationContext: MigrationContext = MigrationContext()
+): RoomDatabase.Builder<LpsDatabase> =
+    addMigrations(LpsDatabase.MIGRATION_1_2, Migration2To3(migrationContext))
         .addCallback(object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 DatabaseSeed.seedFreshDatabase(db, System.currentTimeMillis())

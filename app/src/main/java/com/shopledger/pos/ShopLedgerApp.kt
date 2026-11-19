@@ -5,9 +5,12 @@ import com.shopledger.pos.core.auth.GoogleAuthManager
 import com.shopledger.pos.core.draft.ItemDraftManager
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.sync.SyncManager
+import com.shopledger.pos.data.local.DatabaseHealth
 import com.shopledger.pos.data.local.IntegrityChecker
 import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.PreMigrationGuard
 import com.shopledger.pos.data.repository.LpsRepository
+import java.util.concurrent.TimeUnit
 
 /**
  * Lightweight Application class using deterministic Manual Dependency Injection (`appContainer`)
@@ -31,10 +34,23 @@ class ShopLedgerApp : Application() {
         runCatching { SyncManager.init(this) }
             .onFailure { AppErrorManager.reportError("Settings initialization issue", it) }
         database = LpsDatabase.getInstance(this)
+        if (DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
+            // Open (and migrate) now, so a failed upgrade shows the recovery screen instead of a random crash later.
+            runCatching { database.openHelper.writableDatabase }
+                .onFailure {
+                    DatabaseHealth.markFailed(
+                        "Upgrading your data failed (${it.message ?: it.javaClass.simpleName}). Your data is safe.",
+                        PreMigrationGuard.latestSafetyCopy(this)
+                    )
+                }
+        }
         repository = LpsRepository(this, database)
-        runCatching { SyncManager.scheduleDeltaSync(this) }
-            .onFailure { AppErrorManager.reportError("Background sync scheduling failed", it) }
-        if (BuildConfig.DEBUG) verifyLedgerInBackground()
+        if (DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
+            PreMigrationGuard.deleteSafetyCopiesOlderThan(this, TimeUnit.DAYS.toMillis(14))
+            runCatching { SyncManager.scheduleDeltaSync(this) }
+                .onFailure { AppErrorManager.reportError("Background sync scheduling failed", it) }
+            if (BuildConfig.DEBUG) verifyLedgerInBackground()
+        }
     }
 
     /** Debug builds only: loudly report any ledger/projection drift so bugs surface during development. */

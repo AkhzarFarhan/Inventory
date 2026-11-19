@@ -59,6 +59,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.shopledger.pos.core.backup.AppRestarter
+import com.shopledger.pos.core.backup.BackupShare
+import com.shopledger.pos.data.local.DatabaseHealth
+import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
 import com.shopledger.pos.core.auth.GoogleAuthManager
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.FloatingAppMessageHost
@@ -91,7 +95,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             LpsCupertinoTheme {
-                LpsHardwareMainApp(viewModel = viewModel)
+                val health by DatabaseHealth.state.collectAsState()
+                when (val current = health) {
+                    is DatabaseHealth.State.Failed -> DatabaseRecoveryScreen(
+                        reason = current.reason,
+                        hasSafetyCopy = current.safetyCopy != null,
+                        onShareSafetyCopy = {
+                            current.safetyCopy?.let { BackupShare.share(this, it, "Send ShopLedger data file") }
+                        },
+                        onRetry = { AppRestarter.restart(this) }
+                    )
+                    DatabaseHealth.State.Ok -> LpsHardwareMainApp(viewModel = viewModel)
+                }
             }
         }
     }
