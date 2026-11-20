@@ -99,7 +99,6 @@ class StockInEntrySheetTest {
                         onLowStockOnlyChange = {},
                         isSellerUnlocked = true,
                         onToggleSeller = {},
-                        cartLineCount = 0,
                         onSell = {},
                         onOpenItem = { _, _, _ -> },
                         onEditItem = { _, _ -> },
@@ -152,7 +151,7 @@ class StockInEntrySheetTest {
                 ItemsHomeScreen(
                     shopName = "Shop", items = emptyList(), searchQuery = "", onSearchQueryChange = {},
                     lowStockOnly = false, onLowStockOnlyChange = {}, isSellerUnlocked = false, onToggleSeller = {},
-                    cartLineCount = 0, onSell = {}, onOpenItem = { _, _, _ -> }, onEditItem = { _, _ -> },
+                    onSell = {}, onOpenItem = { _, _, _ -> }, onEditItem = { _, _ -> },
                     onAddToCart = { _, _ -> },
                     resumeStockInRows = 3, onResumeStockIn = { unlockTaps++ },
                 )

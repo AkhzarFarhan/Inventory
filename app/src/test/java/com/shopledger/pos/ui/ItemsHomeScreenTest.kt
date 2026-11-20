@@ -22,6 +22,7 @@ import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CostCipherEngine
 import org.junit.After
 import com.shopledger.pos.data.model.InventoryItemWithVariants
+import com.shopledger.pos.ui.screens.cart.CartChip
 import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 import org.junit.Assert.assertEquals
@@ -56,6 +57,10 @@ class ItemsHomeScreenTest {
         onCart: (String) -> Unit = {},
         recent: List<SearchHistoryEntity> = emptyList(),
         onDeleteRecent: (Long) -> Unit = {},
+        carts: List<CartChip> = emptyList(),
+        activeCartId: String = "",
+        onSwitchCart: (String) -> Unit = {},
+        onNewCart: () -> Unit = {},
     ) {
         compose.setContent {
             ShopLedgerTheme {
@@ -71,7 +76,10 @@ class ItemsHomeScreenTest {
                     onLowStockOnlyChange = { low = it },
                     isSellerUnlocked = unlocked,
                     onToggleSeller = {},
-                    cartLineCount = 0,
+                    carts = carts,
+                    activeCartId = activeCartId,
+                    onSwitchCart = onSwitchCart,
+                    onNewCart = onNewCart,
                     onSell = onSell,
                     onStockIn = onStockIn,
                     onOpenItem = { _, v, _ -> onOpen(v.id) },
@@ -191,7 +199,7 @@ class ItemsHomeScreenTest {
     )
 
     @Test
-    fun cartTapOnMultiVariantOpensQuickSellInsteadOfAdding() {
+    fun cartTapOnMultiVariantOpensItemSheetInsteadOfAdding() {
         val opened = mutableListOf<String>()
         val added = mutableListOf<String>()
         show(items = listOf(multiVariantItem()), onOpen = { opened += it }, onCart = { added += it })
@@ -222,5 +230,46 @@ class ItemsHomeScreenTest {
         compose.waitForIdle()
         compose.onNodeWithContentDescription("Remove \"Screws\" from recent searches").performClick()
         assertEquals(listOf(9L), deleted)
+    }
+
+    @Test
+    fun cartSwitcherHiddenWithOneEmptyCart() {
+        show(
+            carts = listOf(CartChip("c1", "Cart 1", 0)),
+            activeCartId = "c1",
+        )
+        compose.onNodeWithText("New cart").assertDoesNotExist()
+        compose.onNodeWithText("Sell").assertIsDisplayed()
+    }
+
+    @Test
+    fun cartSwitcherShownWhenActiveCartHasItems() {
+        show(
+            carts = listOf(CartChip("c1", "Cart 1", 2)),
+            activeCartId = "c1",
+        )
+        compose.onNodeWithText("Cart 1 · 2 items").assertIsDisplayed()
+        compose.onNodeWithText("New cart").assertIsDisplayed()
+    }
+
+    @Test
+    fun cartSwitcherShownWithTwoCarts() {
+        show(
+            carts = listOf(CartChip("c1", "Cart 1", 0), CartChip("c2", "Cart 2", 0)),
+            activeCartId = "c1",
+        )
+        compose.onNodeWithText("Cart 1 · 0 items").assertIsDisplayed()
+        compose.onNodeWithText("Cart 2 · 0 items").assertIsDisplayed()
+    }
+
+    @Test
+    fun sellButtonNamesActiveCartAndCountsOnlyIt() {
+        show(
+            carts = listOf(CartChip("c1", "Cart 1", 3), CartChip("c2", "Cart 2", 1)),
+            activeCartId = "c2",
+        )
+        compose.onNodeWithText("Sell · Cart 2").assertIsDisplayed()
+        compose.onNodeWithContentDescription("1 items in cart").assertIsDisplayed()
+        compose.onNodeWithContentDescription("4 items in cart").assertDoesNotExist()
     }
 }

@@ -70,6 +70,8 @@ import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
+import com.shopledger.pos.ui.screens.cart.CartChip
+import com.shopledger.pos.ui.screens.cart.CartSwitcher
 import com.shopledger.pos.ui.text.UiText
 import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
@@ -95,7 +97,10 @@ fun ItemsHomeScreen(
     onLowStockOnlyChange: (Boolean) -> Unit,
     isSellerUnlocked: Boolean,
     onToggleSeller: () -> Unit,
-    cartLineCount: Int,
+    carts: List<CartChip> = emptyList(),
+    activeCartId: String = "",
+    onSwitchCart: (String) -> Unit = {},
+    onNewCart: () -> Unit = {},
     onSell: () -> Unit,
     onOpenItem: (InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>) -> Unit,
     onEditItem: (InventoryItemWithVariants, ItemVariantEntity) -> Unit,
@@ -273,6 +278,19 @@ fun ItemsHomeScreen(
             }
         }
 
+        val active = carts.firstOrNull { it.cartId == activeCartId }
+        val activeLines = active?.lineCount ?: 0
+        if (carts.size > 1 || activeLines > 0) {
+            Surface(tonalElevation = 1.dp) {
+                CartSwitcher(
+                    carts = carts,
+                    activeCartId = activeCartId,
+                    onSwitch = onSwitchCart,
+                    onNewCart = onNewCart,
+                )
+            }
+        }
+
         Surface(tonalElevation = 3.dp, shadowElevation = 6.dp) {
             Row(
                 Modifier.fillMaxWidth().padding(ShopLedgerTokens.spacingL),
@@ -280,19 +298,23 @@ fun ItemsHomeScreen(
             ) {
                 Box(Modifier.weight(1f)) {
                     PrimaryActionButton(
-                        text = stringResource(R.string.action_sell),
+                        text = if (active != null && (carts.size > 1 || activeLines > 0)) {
+                            stringResource(R.string.action_sell_cart, active.label)
+                        } else {
+                            stringResource(R.string.action_sell)
+                        },
                         onClick = onSell,
                         icon = Icons.Filled.ShoppingCart,
                     )
-                    if (cartLineCount > 0) {
-                        val cartDesc = stringResource(R.string.cd_cart_lines, cartLineCount)
+                    if (activeLines > 0) {
+                        val cartDesc = stringResource(R.string.cd_cart_lines, activeLines)
                         Badge(
                             Modifier
                                 .align(Alignment.TopEnd)
                                 .padding(ShopLedgerTokens.spacingXs)
                                 .semantics { contentDescription = cartDesc },
                         ) {
-                            Text(cartLineCount.toString())
+                            Text(activeLines.toString())
                         }
                     }
                 }

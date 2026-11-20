@@ -176,6 +176,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val salesHistory by viewModel.salesHistoryState.collectAsState()
     val knownBuyers by viewModel.knownBuyersState.collectAsState()
     val carts by viewModel.cartsState.collectAsState()
+    val activeCartId by viewModel.activeCartIdState.collectAsState()
     val activeCartSession by viewModel.activeCartSessionState.collectAsState()
     val cartItems by viewModel.cartItems.collectAsState()
     val activeReceipt by viewModel.activeReceiptForSharing.collectAsState()
@@ -184,6 +185,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val savedItemDraft by ItemDraftManager.draftFlow.collectAsState()
     val parties by viewModel.partiesState.collectAsState()
     val context = LocalContext.current
+    val activeCartLabel = activeCartSession.displayLabel(context)
     val stockInViewModel: StockInViewModel = viewModel(factory = StockInViewModel.Factory(app.repository))
     val stockInReview by stockInViewModel.state.collectAsState()
     var showStockInSheet by rememberSaveable { mutableStateOf(false) }
@@ -249,14 +251,28 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         },
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSeller = requestToggleSeller,
-                        cartLineCount = carts.sumOf { it.items.size },
+                        carts = carts.map { com.shopledger.pos.ui.screens.cart.CartChip(it.cartId, it.displayLabel(context), it.items.size) },
+                        activeCartId = activeCartId,
+                        onSwitchCart = viewModel::switchActiveCart,
+                        onNewCart = {
+                            if (viewModel.createNewCart() == null) AppErrorManager.reportInfo(
+                                UiText.Res(R.string.cart_limit_title),
+                                UiText.Res(R.string.cart_limit_message, listOf(com.shopledger.pos.ui.MAX_OPEN_CARTS)),
+                            )
+                        },
                         onSell = { showCheckout = true },
                         onOpenItem = { item, variant, variants -> quickSellTarget = Triple(item, variant, variants) },
                         onEditItem = { group, variant ->
                             if (!isSellerUnlocked) requestToggleSeller()
                             else activeEditorMode = ItemEditorMode.ManageItem(group, variant.id)
                         },
-                        onAddToCart = { item, variant -> viewModel.addOrUpdateCartItem(item, variant, 1.0) },
+                        onAddToCart = { item, variant ->
+                            viewModel.addOrUpdateCartItem(item, variant, 1.0)
+                            AppErrorManager.reportSuccess(
+                                UiText.Res(R.string.cart_added_title),
+                                UiText.Res(R.string.cart_added_message, listOf(item.displayName, activeCartLabel)),
+                            )
+                        },
                         onCommitSearch = viewModel::commitSearchToHistory,
                         recentSearches = recentSearches,
                         onDeleteRecentSearch = viewModel::deleteSearchHistoryItem,
