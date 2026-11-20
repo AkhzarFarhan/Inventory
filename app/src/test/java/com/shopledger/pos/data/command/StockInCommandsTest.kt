@@ -145,4 +145,108 @@ class StockInCommandsTest {
         }
         assertEquals(before, snapshot(db))
     }
+
+    private fun hingeRow(id: String, cost: Long) = StockInRow(id, qtyMilli = 1_000L, costPaise = cost, sellPaise = null)
+
+    @Test
+    fun staff_changedCost_isDeniedAndWritesNothing() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        env.role = Role.STAFF
+        val before = snapshot(db)
+        expectFailure<CommandException.PermissionDenied> {
+            stockIn.receiveScannedStock(StockInRequest("s1", listOf(hingeRow(hingeId, 5_000L)), newSupplierName = "S"))
+        }
+        assertEquals(before, snapshot(db))
+    }
+
+    @Test
+    fun staff_unchangedCost_succeeds() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        env.role = Role.STAFF
+        val result = stockIn.receiveScannedStock(StockInRequest("s2", listOf(hingeRow(hingeId, 4_800L))))
+        assertEquals(1, result.restockedItems)
+        assertEquals(11_000L, db.inventoryDao().getVariantById(hingeId)!!.stockMilliUnits)
+    }
+
+    @Test
+    fun existingParty_mustBeSupplierOrBoth() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val customer = KhataCommands(db, env).createParty("c1", "Ramesh", "", "CUSTOMER")
+        val before = snapshot(db)
+        expectFailure<CommandException.Validation> {
+            stockIn.receiveScannedStock(StockInRequest("p1", listOf(hingeRow(hingeId, 4_800L)), supplierPartyId = customer, billTotalPaise = 100L))
+        }
+        assertEquals(before, snapshot(db))
+    }
+
+    @Test
+    fun unpaidWithoutSupplier_isRejected() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val before = snapshot(db)
+        for (name in listOf(null, "", "   ")) {
+            expectFailure<CommandException.Validation> {
+                stockIn.receiveScannedStock(
+                    StockInRequest("u-$name", listOf(hingeRow(hingeId, 4_800L)), newSupplierName = name, billTotalPaise = 100L)
+                )
+            }
+        }
+        assertEquals(before, snapshot(db))
+    }
+
+    @Test
+    fun existingSupplierId_postsNegativeDue() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val supplier = KhataCommands(db, env).createParty("s1", "Gupta", "", "SUPPLIER")
+        val result = stockIn.receiveScannedStock(
+            StockInRequest("e1", listOf(hingeRow(hingeId, 4_800L)), supplierPartyId = supplier, billTotalPaise = 3_000L, amountPaidPaise = 1_000L)
+        )
+        assertEquals(2_000L, result.supplierDuePaise)
+        assertEquals(-2_000L, db.shopPartyAndLedgerDao().getPartyById(supplier)!!.currentBalancePaise)
+    }
+
+    @Test
+    fun unchangedCost_writesNoVariantOutboxAndKeepsUpdatedAt() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val updatedAt = db.inventoryDao().getVariantById(hingeId)!!.updatedAt
+        val outboxBefore = db.scalar("SELECT COUNT(*) FROM sync_outbox WHERE docType = 'VARIANT'")
+        env.clock += 1_000L
+        stockIn.receiveScannedStock(StockInRequest("k1", listOf(hingeRow(hingeId, 4_800L))))
+        assertEquals(outboxBefore, db.scalar("SELECT COUNT(*) FROM sync_outbox WHERE docType = 'VARIANT'"))
+        assertEquals(updatedAt, db.inventoryDao().getVariantById(hingeId)!!.updatedAt)
+    }
+
+    @Test
+    fun changedCost_enqueuesOneVariantUpsert() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val sql = "SELECT COUNT(*) FROM sync_outbox WHERE docType = 'VARIANT' AND docId = '$hingeId' AND op = 'UPSERT'"
+        val outboxBefore = db.scalar(sql)
+        stockIn.receiveScannedStock(StockInRequest("k2", listOf(hingeRow(hingeId, 5_000L))))
+        assertEquals(outboxBefore + 1, db.scalar(sql))
+    }
+
+    @Test
+    fun fullyPaid_postsNoLedgerEntry() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val result = stockIn.receiveScannedStock(
+            StockInRequest("f1", listOf(hingeRow(hingeId, 4_800L)), newSupplierName = "Sharma", billTotalPaise = 4_000L, amountPaidPaise = 4_000L)
+        )
+        assertEquals(0L, result.supplierDuePaise)
+        assertEquals(0L, db.scalar("SELECT COUNT(*) FROM party_ledger_entries"))
+    }
+
+    @Test
+    fun negativeAmountsAndSellPrice_areRejected() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val before = snapshot(db)
+        val newRow = StockInRow(null, newItemName = "Lock", qtyMilli = 1_000L, costPaise = 100L, sellPaise = -1L)
+        val bad = listOf(
+            StockInRequest("n1", listOf(newRow)),
+            StockInRequest("n2", listOf(hingeRow(hingeId, 4_800L)), newSupplierName = "S", billTotalPaise = 100L, amountPaidPaise = -1L),
+            StockInRequest("n3", listOf(hingeRow(hingeId, 4_800L)), newSupplierName = "S", billTotalPaise = -100L, amountPaidPaise = -200L)
+        )
+        for (request in bad) {
+            expectFailure<CommandException.Validation> { stockIn.receiveScannedStock(request) }
+        }
+        assertEquals(before, snapshot(db))
+    }
 }

@@ -20,7 +20,7 @@ data class StockInRequest(
     val actionId: String,
     val rows: List<StockInRow>,
     val supplierPartyId: String? = null,
-    /** Creates a SUPPLIER party when set and no id is given. */
+    /** Creates a SUPPLIER party when set and no id is given. If both an id and a name are given, the id wins and the name is ignored. */
     val newSupplierName: String? = null,
     val billTotalPaise: Long = 0L,
     val amountPaidPaise: Long = 0L
@@ -59,6 +59,15 @@ class StockInCommands(
     suspend fun receiveScannedStock(request: StockInRequest): StockInResult =
         writer.runIdempotent(request.actionId, "RECEIVE_SCANNED_STOCK", replay = { ref -> replayResult(ref) }) {
             validate(request)
+            if (env.actor().role == Role.STAFF) {
+                for (row in request.rows) {
+                    val id = row.existingVariantId ?: continue
+                    val variant = inventory.getVariantById(id)?.takeUnless { it.isDeleted } ?: continue
+                    if (variant.purchasePricePaise != row.costPaise) {
+                        throw CommandException.PermissionDenied("Only the owner can change the cost price")
+                    }
+                }
+            }
             val device = writer.localDevice()
             val purchaseId = env.newId()
 
@@ -66,8 +75,11 @@ class StockInCommands(
             val newSupplier = request.newSupplierName?.trim().orEmpty()
             val supplierId: String? = when {
                 request.supplierPartyId != null -> {
-                    parties.getPartyById(request.supplierPartyId)?.takeUnless { it.isDeleted }
+                    val party = parties.getPartyById(request.supplierPartyId)?.takeUnless { it.isDeleted }
                         ?: throw CommandException.NotFound("Supplier")
+                    if (party.partyType != "SUPPLIER" && party.partyType != "BOTH") {
+                        throw CommandException.Validation("Choose a supplier for this bill")
+                    }
                     request.supplierPartyId
                 }
                 newSupplier.isNotEmpty() -> khata.insertParty("SUPPLIER", newSupplier, "", "", device)
@@ -131,17 +143,17 @@ class StockInCommands(
             val result = StockInResult(
                 purchaseId, created, restocked, request.rows.sumOf { it.qtyMilli }, recordedDue, replayed = false
             )
-            result to "$purchaseId|$created|$restocked"
+            result to listOf(purchaseId, created, restocked, result.totalQtyMilli, recordedDue).joinToString("|")
         }
 
-    private suspend fun replayResult(ref: String): StockInResult {
-        val (purchaseId, created, restocked) = ref.split("|")
+    private fun replayResult(ref: String): StockInResult {
+        val (purchaseId, created, restocked, totalQty, due) = ref.split("|")
         return StockInResult(
             purchaseId = purchaseId,
             createdItems = created.toInt(),
             restockedItems = restocked.toInt(),
-            totalQtyMilli = parties.sumMovementMilliForRef(purchaseId),
-            supplierDuePaise = -parties.sumLedgerPaiseForRef(purchaseId),
+            totalQtyMilli = totalQty.toLong(),
+            supplierDuePaise = due.toLong(),
             replayed = true
         )
     }
@@ -161,6 +173,10 @@ class StockInCommands(
         }
         if (request.billTotalPaise < 0L || request.amountPaidPaise < 0L || request.amountPaidPaise > request.billTotalPaise) {
             throw CommandException.Validation("Paid amount must be between 0 and the bill total")
+        }
+        val hasSupplier = request.supplierPartyId != null || !request.newSupplierName.isNullOrBlank()
+        if (request.billTotalPaise > request.amountPaidPaise && !hasSupplier) {
+            throw CommandException.Validation("Add the supplier's name to record the unpaid amount")
         }
     }
 }
