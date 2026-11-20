@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui
 
+import androidx.lifecycle.SavedStateHandle
 import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.scanner.MatchStatus
 import com.shopledger.pos.core.scanner.ParsedStockLine
@@ -16,7 +17,9 @@ import com.shopledger.pos.ui.screens.stockin.BlockKind
 import com.shopledger.pos.ui.screens.stockin.StockInEvent
 import com.shopledger.pos.ui.screens.stockin.StockInSaver
 import com.shopledger.pos.ui.screens.stockin.StockInViewModel
+import com.shopledger.pos.ui.screens.stockin.parseMoneyPaise
 import com.shopledger.pos.ui.screens.stockin.parseQtyMilli
+import com.shopledger.pos.ui.screens.stockin.sumOfLinesPaise
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -82,8 +85,11 @@ class StockInViewModelTest {
         assertEquals(BlockKind.COST, v.state.value!!.blockReason!!.kind)
         val key = v.rows().single().key
         v.onEvent(StockInEvent.EditCost(key, 1000))
-        assertEquals(BlockKind.SELL, v.state.value!!.blockReason!!.kind)
+        // Entering the cost also suggests a sell price (usual markup 25%: Rs 12.50 -> Rs 13), so the row is complete.
+        assertEquals(1300L, v.rows().single().sellPaise)
+        assertNull(v.state.value!!.blockReason)
         v.onEvent(StockInEvent.EditSell(key, 1500))
+        assertEquals(1500L, v.rows().single().sellPaise)
         assertNull(v.state.value!!.blockReason)
     }
 
@@ -116,7 +122,45 @@ class StockInViewModelTest {
         assertEquals(MatchStatus.NEW, r.status)
         assertNull(r.variantId)
         assertEquals("Hnge 4", r.itemName)
-        assertEquals(BlockKind.SELL, v.state.value!!.blockReason!!.kind)
+        // Cost 48.00 plus the median markup of the shop (25%) = 60.00, already filled in.
+        assertEquals(4800L, r.costPaise)
+        assertEquals(6000L, r.sellPaise)
+        assertNull(v.state.value!!.blockReason)
+    }
+
+    @Test fun makeNewWithoutABillRateNeedsCostThenSuggestsSell() {
+        val v = vm()
+        v.openMatches(listOf(matched("1", null, name = "Hnge 4", status = MatchStatus.CHECK)), inventory, null, null)
+        val key = v.rows().single().key
+        v.onEvent(StockInEvent.MakeNew(key))
+        assertNull(v.rows().single().sellPaise)
+        assertEquals(BlockKind.COST, v.state.value!!.blockReason!!.kind)
+        v.onEvent(StockInEvent.EditCost(key, 2000))
+        assertEquals(2500L, v.rows().single().sellPaise)
+        // The suggestion follows the cost while the user has not typed a sell price ...
+        v.onEvent(StockInEvent.EditCost(key, 4000))
+        assertEquals(5000L, v.rows().single().sellPaise)
+        // ... and never overwrites one they typed.
+        v.onEvent(StockInEvent.EditSell(key, 9900))
+        v.onEvent(StockInEvent.EditCost(key, 6000))
+        assertEquals(9900L, v.rows().single().sellPaise)
+    }
+
+    @Test fun costOfZeroIsNeverSentAsUnknown() = runBlocking {
+        val saver = FakeSaver()
+        val v = vm(saver)
+        v.openMatches(listOf(newLine("Door Stopper", 0, 1500)), inventory, null, null)
+        assertEquals(BlockKind.COST, v.state.value!!.blockReason!!.kind)
+        v.save()
+        assertTrue(saver.requests.isEmpty())
+        // A matched item whose stored cost is 0 and whose bill has no rate is blocked too.
+        val free = listOf(inv("3", "Free Sample", 0, 100))
+        val w = vm(saver)
+        w.openMatches(listOf(StockLineMatch(line("Free Sample"), MatchStatus.MATCHED, "3", "v-3", 0, 100, null)), free, null, null)
+        assertEquals(0L, w.rows().single().costPaise)
+        assertEquals(BlockKind.COST, w.state.value!!.blockReason!!.kind)
+        w.onEvent(StockInEvent.EditCost(w.rows().single().key, 50))
+        assertNull(w.state.value!!.blockReason)
     }
 
     @Test fun sameVariantTwiceIsInvalid() {
@@ -147,6 +191,11 @@ class StockInViewModelTest {
         val v = vm()
         v.openMatches(listOf(matched("1", 4800)), inventory, 9600L, null)
         assertEquals(9600L, v.state.value!!.billTotalPaise)
+        // No supplier: the bill is assumed paid in full, so saving is allowed.
+        assertEquals(9600L, v.state.value!!.amountPaidPaise)
+        assertNull(v.state.value!!.blockReason)
+        // Paying less than the total needs a supplier to owe the rest to.
+        v.onEvent(StockInEvent.SetPaid(0))
         assertEquals(BlockKind.SUPPLIER, v.state.value!!.blockReason!!.kind)
         v.onEvent(StockInEvent.SetNewSupplier("Sharma Traders"))
         assertNull(v.state.value!!.blockReason)
@@ -154,6 +203,71 @@ class StockInViewModelTest {
         assertEquals(BlockKind.PAID, v.state.value!!.blockReason!!.kind)
         v.onEvent(StockInEvent.SetPaid(9600))
         assertNull(v.state.value!!.blockReason)
+    }
+
+    @Test fun paidFollowsTotalUntilEditedOrSupplierChosen() {
+        val v = vm()
+        v.openMatches(listOf(matched("1", 4800)), inventory, null, null)
+        v.onEvent(StockInEvent.SetBillTotal(5000))
+        assertEquals(5000L, v.state.value!!.amountPaidPaise)
+        assertNull(v.state.value!!.blockReason)
+        v.onEvent(StockInEvent.SetBillTotal(7000))
+        assertEquals(7000L, v.state.value!!.amountPaidPaise)
+        v.onEvent(StockInEvent.SetBillTotal(null))
+        assertEquals(0L, v.state.value!!.amountPaidPaise)
+        // Once the user edits paid, the total no longer drags it along.
+        v.onEvent(StockInEvent.SetBillTotal(7000))
+        v.onEvent(StockInEvent.SetPaid(2000))
+        v.onEvent(StockInEvent.SetBillTotal(8000))
+        assertEquals(2000L, v.state.value!!.amountPaidPaise)
+        assertEquals(BlockKind.SUPPLIER, v.state.value!!.blockReason!!.kind)
+        // With a supplier chosen it does not follow either.
+        val w = vm()
+        w.openMatches(listOf(matched("1", 4800)), inventory, null, null)
+        w.onEvent(StockInEvent.SetSupplier("s1"))
+        w.onEvent(StockInEvent.SetBillTotal(5000))
+        assertEquals(0L, w.state.value!!.amountPaidPaise)
+        assertNull(w.state.value!!.blockReason)
+    }
+
+    @Test fun billTotalComesFromRawTextWhenTheModelTidiedTheLines() {
+        val tidied = "Fevicol SH 1kg 5 pkt 235 1175"
+        val raw = "SHARMA TRADERS\nFevicol SH 1kg 5 pkt 235 1175\nGrand Total 1250"
+        val v = vm()
+        v.open(tidied, inventory, null, ShopVertical.HARDWARE, rawText = raw)
+        assertEquals(125000L, v.state.value!!.billTotalPaise)
+        assertEquals(1, v.rows().size)
+    }
+
+    @Test fun billTotalFallsBackToTheSumOfTheLines() {
+        val v = vm()
+        v.open("Fevicol SH 1kg 5 pkt 235 1175\nButt Hinge 4 SS 2 pc 48 96", inventory, null, ShopVertical.HARDWARE, rawText = "no total line here")
+        assertEquals(2, v.rows().size)
+        assertEquals(117500L + 9600L, v.state.value!!.billTotalPaise)
+    }
+
+    @Test fun billTotalFallsBackToQtyTimesRateWhenAmountIsMissing() {
+        val lines = listOf(line("A", qty = 2500, rate = 1000, amount = null), line("B", qty = 1000, rate = null, amount = 700))
+        assertEquals(2500L + 700L, sumOfLinesPaise(lines))
+        assertNull(sumOfLinesPaise(listOf(line("C", rate = null, amount = null))))
+    }
+
+    @Test fun reviewIsRestoredFromSavedStateWithTheSameActionId() {
+        val handle = SavedStateHandle()
+        val first = StockInViewModel(FakeSaver(), { Role.OWNER }, { "act-keep" }, handle)
+        first.openMatches(listOf(matched("1", 5000), newLine("Door Stopper", 1000, null)), inventory, 12000L, null)
+        first.onEvent(StockInEvent.SetNewSupplier("Sharma"))
+        // The process dies and comes back: a new view model gets the same saved state.
+        val second = StockInViewModel(FakeSaver(), { Role.OWNER }, { "act-other" }, handle)
+        second.setInventory(inventory)
+        val s = second.state.value!!
+        assertEquals("act-keep", s.actionId)
+        assertEquals(2, s.rows.size)
+        assertEquals("Sharma", s.newSupplierName)
+        assertEquals(12000L, s.billTotalPaise)
+        assertEquals(inventory, s.inventory)
+        second.close()
+        assertNull(StockInViewModel(FakeSaver(), { Role.OWNER }, { "x" }, handle).state.value)
     }
 
     @Test fun onlySupplierAndBothPartiesAreOffered() {
@@ -253,5 +367,12 @@ class StockInViewModelTest {
         assertEquals(2500L, parseQtyMilli("2.5"))
         assertNull(parseQtyMilli(""))
         assertNull(parseQtyMilli("abc"))
+    }
+
+    @Test fun moneyParsingIsExact() {
+        assertEquals(1250L, parseMoneyPaise("12.5"))
+        assertEquals(1005L, parseMoneyPaise("10.05"))
+        assertEquals(113L, parseMoneyPaise("1.13"))
+        assertNull(parseMoneyPaise("."))
     }
 }

@@ -1,12 +1,16 @@
 package com.shopledger.pos.ui.screens.stockin
 
 import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
 import com.shopledger.pos.BuildConfig
 import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.scanner.MatchStatus
+import com.shopledger.pos.core.scanner.ParsedStockLine
 import com.shopledger.pos.core.scanner.StockLineMatch
 import com.shopledger.pos.core.scanner.StockLineMatcher
 import com.shopledger.pos.core.scanner.StockListParser
@@ -21,6 +25,7 @@ import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.data.repository.LpsRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +33,7 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.UUID
+import kotlin.math.roundToLong
 
 /** The one thing the review screen needs from the data layer. */
 fun interface StockInSaver {
@@ -56,7 +62,11 @@ data class ReviewRow(
     val currentCostPaise: Long?,
     /** The rate printed on the bill, if any. */
     val scannedRatePaise: Long?,
-)
+    /** True once the user typed (or cleared) the sell price, so it is never overwritten by a suggestion. */
+    val sellEdited: Boolean = false,
+    /** True while [sellPaise] is a suggestion made from the cost, so it follows the cost. */
+    val sellAuto: Boolean = false,
+) : java.io.Serializable
 
 enum class BlockKind { EMPTY, QTY, NAME, COST, SELL, CHECK, DUPLICATE, SUPPLIER, PAID }
 
@@ -71,6 +81,8 @@ data class StockInUiState(
     val newSupplierName: String = "",
     val billTotalPaise: Long? = null,
     val amountPaidPaise: Long? = null,
+    /** True once the user typed the paid amount; until then it follows the bill total (when there is no supplier). */
+    val paidEdited: Boolean = false,
     val saving: Boolean = false,
     val saved: StockInResult? = null,
     val error: String? = null,
@@ -98,7 +110,7 @@ data class StockInUiState(
         return when {
             (row.qtyMilli ?: 0L) <= 0L -> BlockKind.QTY
             row.status == MatchStatus.NEW && row.itemName.isBlank() -> BlockKind.NAME
-            row.costPaise == null -> BlockKind.COST
+            (row.costPaise ?: 0L) <= 0L -> BlockKind.COST
             row.status == MatchStatus.NEW && row.sellPaise == null -> BlockKind.SELL
             row.status == MatchStatus.CHECK -> BlockKind.CHECK
             duplicate -> BlockKind.DUPLICATE
@@ -106,7 +118,7 @@ data class StockInUiState(
         }
     }
 
-    private val hasSupplier: Boolean get() = supplierId != null || newSupplierName.isNotBlank()
+    val hasSupplier: Boolean get() = supplierId != null || newSupplierName.isNotBlank()
 
     val blockReason: BlockReason?
         get() {
@@ -129,8 +141,8 @@ data class StockInUiState(
                 existingVariantId = r.variantId,
                 newItemName = if (r.variantId == null) r.itemName.trim() else "",
                 unit = r.unit,
-                qtyMilli = r.qtyMilli ?: 0L,
-                costPaise = r.costPaise ?: 0L,
+                qtyMilli = requireNotNull(r.qtyMilli) { "quantity is checked before saving" },
+                costPaise = requireNotNull(r.costPaise) { "cost is checked before saving" },
                 sellPaise = if (r.variantId == null) r.sellPaise else null,
             )
         },
@@ -168,10 +180,53 @@ fun parseQtyMilli(text: String): Long? {
     return d.multiply(BigDecimal(1000)).setScale(0, RoundingMode.HALF_UP).toLong()
 }
 
+/** "12.5" -> 1250 paise, computed exactly (no floating point); null when it is not a number. */
+fun parseMoneyPaise(text: String): Long? {
+    val d = text.trim().replace(",", "").toBigDecimalOrNull() ?: return null
+    if (d.signum() < 0 || d > BigDecimal("999999999")) return null
+    return d.movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
+}
+
+/** Sell price to suggest for a new item: cost plus the shop's usual markup, in whole rupees; null when there is no cost. */
+fun suggestSellPaise(costPaise: Long?, inventory: List<InventoryItemWithVariants>): Long? {
+    if (costPaise == null || costPaise <= 0L) return null
+    val markup = StockLineMatcher.medianMarkup(inventory)
+    val rupees = (costPaise * (1.0 + markup) / 100.0).roundToLong()
+    return if (rupees > 0L) rupees * 100L else null
+}
+
+/** What a bill adds up to when it prints no total: the amount of each line, or qty x rate where the amount is missing. */
+fun sumOfLinesPaise(lines: List<ParsedStockLine>): Long? {
+    if (lines.isEmpty()) return null
+    var sum = 0L
+    for (l in lines) {
+        val amount = l.amountPaise ?: l.ratePaise?.let {
+            BigDecimal(l.qtyMilli).multiply(BigDecimal(it)).divide(BigDecimal(1000), 0, RoundingMode.HALF_UP).toLong()
+        } ?: return null
+        sum += amount
+    }
+    return sum
+}
+
+/** What must survive the app being killed while the camera or gallery is open. */
+internal data class StockInSnapshot(
+    val actionId: String,
+    val rows: ArrayList<ReviewRow>,
+    val nextKey: Long,
+    val filter: String,
+    val supplierId: String?,
+    val newSupplierName: String,
+    val billTotalPaise: Long?,
+    val amountPaidPaise: Long?,
+    val paidEdited: Boolean,
+    val imageUri: String?,
+) : java.io.Serializable
+
 class StockInViewModel(
     private val saver: StockInSaver,
     private val role: () -> Role = { Role.OWNER },
     private val newId: () -> String = { UUID.randomUUID().toString() },
+    private val savedState: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
 
     private val lock = Any()
@@ -179,25 +234,91 @@ class StockInViewModel(
     /** null = no review open. */
     val state: StateFlow<StockInUiState?> = _state.asStateFlow()
 
+    // All three are guarded by [lock].
     private var suppliers: List<SupplierOption> = emptyList()
+    private var inventory: List<InventoryItemWithVariants> = emptyList()
     private var nextKey = 1L
 
-    fun setSuppliers(parties: List<PartyEntity>) {
-        suppliers = parties
-            .filter { !it.isDeleted && (it.partyType == "SUPPLIER" || it.partyType == "BOTH") }
-            .map { SupplierOption(it.id, it.name) }
-        synchronized(lock) { _state.value = _state.value?.copy(suppliers = suppliers) }
+    init {
+        savedState.get<StockInSnapshot>(SNAPSHOT_KEY)?.let { snap ->
+            nextKey = snap.nextKey
+            _state.value = StockInUiState(
+                actionId = snap.actionId,
+                rows = snap.rows.toList(),
+                filter = runCatching { ReviewFilter.valueOf(snap.filter) }.getOrDefault(ReviewFilter.ALL),
+                supplierId = snap.supplierId,
+                newSupplierName = snap.newSupplierName,
+                billTotalPaise = snap.billTotalPaise,
+                amountPaidPaise = snap.amountPaidPaise,
+                paidEdited = snap.paidEdited,
+                role = role(),
+                imageUri = snap.imageUri?.let { Uri.parse(it) },
+            )
+        }
     }
 
-    /** Parse OCR text, match it against the catalogue and open the review. Safe to call off the main thread. */
+    /** Every state change goes through here so the saved copy never lags behind. Call with [lock] held. */
+    private fun publish(next: StockInUiState?) {
+        _state.value = next
+        if (next == null || next.saved != null) {
+            savedState.remove<StockInSnapshot>(SNAPSHOT_KEY)
+        } else {
+            savedState[SNAPSHOT_KEY] = StockInSnapshot(
+                actionId = next.actionId,
+                rows = ArrayList(next.rows),
+                nextKey = nextKey,
+                filter = next.filter.name,
+                supplierId = next.supplierId,
+                newSupplierName = next.newSupplierName,
+                billTotalPaise = next.billTotalPaise,
+                amountPaidPaise = next.amountPaidPaise,
+                paidEdited = next.paidEdited,
+                imageUri = next.imageUri?.toString(),
+            )
+        }
+    }
+
+    fun setSuppliers(parties: List<PartyEntity>) {
+        val options = parties
+            .filter { !it.isDeleted && (it.partyType == "SUPPLIER" || it.partyType == "BOTH") }
+            .map { SupplierOption(it.id, it.name) }
+        synchronized(lock) {
+            suppliers = options
+            _state.value?.let { publish(it.copy(suppliers = options)) }
+        }
+    }
+
+    /** The catalogue the review matches against; this also fills it back in after the app was restarted. */
+    fun setInventory(items: List<InventoryItemWithVariants>) {
+        synchronized(lock) {
+            inventory = items
+            _state.value?.let { publish(it.copy(inventory = items)) }
+        }
+    }
+
+    /**
+     * Parse OCR text, match it against the catalogue and open the review. Safe to call off the main thread.
+     * [text] is parsed into lines (it may have been tidied by the on-device model); the printed bill total is read
+     * from [rawText], the plain OCR text, and falls back to the sum of the lines.
+     */
     fun open(
         text: String,
         inventory: List<InventoryItemWithVariants>,
         imageUri: Uri?,
         vertical: ShopVertical = SyncManager.getActiveVertical(),
+        rawText: String = text,
     ) {
-        val matches = StockLineMatcher.match(StockListParser.parse(text), inventory, vertical)
-        openMatches(matches, inventory, StockListParser.detectBillTotalPaise(text), imageUri)
+        val lines = StockListParser.parse(text)
+        val matches = StockLineMatcher.match(lines, inventory, vertical)
+        val total = StockListParser.detectPrintedTotalPaise(rawText)
+            ?: StockListParser.detectPrintedTotalPaise(text)
+            ?: sumOfLinesPaise(lines)
+        openMatches(matches, inventory, total, imageUri)
+    }
+
+    /** Same as [open], parsing off the main thread. */
+    fun openAsync(text: String, rawText: String, inventory: List<InventoryItemWithVariants>, imageUri: Uri?) {
+        viewModelScope.launch(Dispatchers.Default) { open(text, inventory, imageUri, rawText = rawText) }
     }
 
     fun openMatches(
@@ -207,28 +328,33 @@ class StockInViewModel(
         imageUri: Uri?,
     ) {
         val currentRole = role()
-        val rows = matches.map { buildRow(it, inventory, currentRole) }
         synchronized(lock) {
-            _state.value = StockInUiState(
-                actionId = newId(),
-                rows = rows,
-                suppliers = suppliers,
-                billTotalPaise = billTotalPaise,
-                amountPaidPaise = 0L,
-                role = currentRole,
-                inventory = inventory,
-                imageUri = imageUri,
+            this.inventory = inventory
+            val rows = matches.map { buildRow(it, inventory, currentRole) }
+            publish(
+                StockInUiState(
+                    actionId = newId(),
+                    rows = rows,
+                    suppliers = suppliers,
+                    billTotalPaise = billTotalPaise,
+                    // With no supplier yet the bill is paid in full, so paid starts at the total.
+                    amountPaidPaise = billTotalPaise ?: 0L,
+                    role = currentRole,
+                    inventory = inventory,
+                    imageUri = imageUri,
+                )
             )
         }
     }
 
     fun close() {
-        synchronized(lock) { _state.value = null }
+        synchronized(lock) { publish(null) }
     }
 
     private fun variantSummary(v: ItemVariantEntity): String =
         listOf(v.sizeLabel, v.materialLabel, v.colorFinishLabel).filter { it.isNotBlank() }.joinToString(" · ")
 
+    /** Call with [lock] held: it hands out row keys. */
     private fun buildRow(m: StockLineMatch, inventory: List<InventoryItemWithVariants>, role: Role): ReviewRow {
         val key = nextKey++
         val item = m.itemId?.let { id -> inventory.firstOrNull { it.item.id == id } }
@@ -240,6 +366,7 @@ class StockInViewModel(
                 unit = m.line.unit ?: "pcs", qtyMilli = m.line.qtyMilli,
                 costPaise = m.line.ratePaise, sellPaise = m.suggestedSellPaise,
                 currentCostPaise = null, scannedRatePaise = m.line.ratePaise,
+                sellAuto = m.suggestedSellPaise != null,
             )
         }
         return ReviewRow(
@@ -263,7 +390,7 @@ class StockInViewModel(
     private fun update(transform: (StockInUiState) -> StockInUiState) = synchronized(lock) {
         val s = _state.value ?: return@synchronized
         if (s.saving || s.saved != null) return@synchronized
-        _state.value = transform(s)
+        publish(transform(s))
     }
 
     fun onEvent(event: StockInEvent) {
@@ -271,9 +398,20 @@ class StockInViewModel(
             is StockInEvent.SetFilter -> update { it.copy(filter = event.filter) }
             is StockInEvent.EditQty -> updateRow(event.key) { it.copy(qtyMilli = event.qtyMilli) }
             is StockInEvent.EditCost -> update { s ->
-                s.copy(rows = s.rows.map { if (it.key == event.key && s.canEditCost(it)) it.copy(costPaise = event.paise) else it })
+                s.copy(rows = s.rows.map { r ->
+                    if (r.key != event.key || !s.canEditCost(r)) r else {
+                        // A new item's sell price follows its cost until the user types a sell price.
+                        val follows = r.variantId == null && !r.sellEdited && (r.sellPaise == null || r.sellAuto)
+                        if (!follows) r.copy(costPaise = event.paise) else {
+                            val suggestion = suggestSellPaise(event.paise, s.inventory)
+                            r.copy(costPaise = event.paise, sellPaise = suggestion, sellAuto = suggestion != null)
+                        }
+                    }
+                })
             }
-            is StockInEvent.EditSell -> updateRow(event.key) { if (it.variantId == null) it.copy(sellPaise = event.paise) else it }
+            is StockInEvent.EditSell -> updateRow(event.key) {
+                if (it.variantId == null) it.copy(sellPaise = event.paise, sellEdited = true, sellAuto = false) else it
+            }
             is StockInEvent.EditName -> updateRow(event.key) { if (it.variantId == null) it.copy(itemName = event.name) else it }
             is StockInEvent.DeleteRow -> update { s -> s.copy(rows = s.rows.filterNot { it.key == event.key }) }
             is StockInEvent.PickVariant -> update { s ->
@@ -283,25 +421,37 @@ class StockInViewModel(
                     if (r.key != event.key) r else r.copy(
                         status = MatchStatus.MATCHED, itemId = item.item.id, variantId = variant.id,
                         itemName = item.item.displayName, variantSummary = variantSummary(variant),
-                        unit = variant.unit, sellPaise = variant.sellingPricePaise,
+                        unit = variant.unit, sellPaise = variant.sellingPricePaise, sellEdited = false, sellAuto = false,
                         costPaise = costForExisting(s.role, r.scannedRatePaise, variant.purchasePricePaise),
                         currentCostPaise = variant.purchasePricePaise,
                     )
                 })
             }
-            is StockInEvent.MakeNew -> updateRow(event.key) { r ->
-                r.copy(
-                    status = MatchStatus.NEW, itemId = null, variantId = null,
-                    itemName = r.scannedName, variantSummary = "", sellPaise = null,
-                    costPaise = r.scannedRatePaise, currentCostPaise = null,
-                )
+            is StockInEvent.MakeNew -> update { s ->
+                s.copy(rows = s.rows.map { r ->
+                    if (r.key != event.key) r else {
+                        val suggestion = suggestSellPaise(r.scannedRatePaise, s.inventory)
+                        r.copy(
+                            status = MatchStatus.NEW, itemId = null, variantId = null,
+                            itemName = r.scannedName, variantSummary = "", sellPaise = suggestion,
+                            sellEdited = false, sellAuto = suggestion != null,
+                            costPaise = r.scannedRatePaise, currentCostPaise = null,
+                        )
+                    }
+                })
             }
             is StockInEvent.SetSupplier -> update { it.copy(supplierId = event.id, newSupplierName = if (event.id != null) "" else it.newSupplierName) }
             is StockInEvent.SetNewSupplier -> update { it.copy(newSupplierName = event.name, supplierId = null) }
-            is StockInEvent.SetBillTotal -> update { it.copy(billTotalPaise = event.paise) }
-            is StockInEvent.SetPaid -> update { it.copy(amountPaidPaise = event.paise) }
+            is StockInEvent.SetBillTotal -> update { s ->
+                // With no supplier the bill is paid in full, so paid follows the total until the user edits it.
+                val follows = !s.hasSupplier && !s.paidEdited
+                s.copy(billTotalPaise = event.paise, amountPaidPaise = if (follows) event.paise ?: 0L else s.amountPaidPaise)
+            }
+            is StockInEvent.SetPaid -> update { it.copy(amountPaidPaise = event.paise, paidEdited = true) }
             StockInEvent.Save -> viewModelScope.launch { save() }
-            StockInEvent.DismissError -> synchronized(lock) { _state.value = _state.value?.copy(error = null, errorIsGeneric = false) }
+            StockInEvent.DismissError -> synchronized(lock) {
+                _state.value?.let { publish(it.copy(error = null, errorIsGeneric = false)) }
+            }
             StockInEvent.Close -> close()
             StockInEvent.Rescan, StockInEvent.AddManually -> Unit // handled by the host, which closes the review
         }
@@ -311,26 +461,34 @@ class StockInViewModel(
         val request = synchronized(lock) {
             val s = _state.value ?: return
             if (s.saving || s.saved != null || s.blockReason != null) return
-            _state.value = s.copy(saving = true, error = null, errorIsGeneric = false)
+            publish(s.copy(saving = true, error = null, errorIsGeneric = false))
             s.buildRequest()
         }
         try {
             val result = saver.receive(request)
-            synchronized(lock) { _state.value = _state.value?.copy(saving = false, saved = result) }
+            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false, saved = result)) } }
         } catch (e: CancellationException) {
-            synchronized(lock) { _state.value = _state.value?.copy(saving = false) }
+            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false)) } }
             throw e
         } catch (e: CommandException) {
-            synchronized(lock) { _state.value = _state.value?.copy(saving = false, error = e.message ?: "", errorIsGeneric = false) }
+            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false, error = e.message ?: "", errorIsGeneric = false)) } }
         } catch (t: Throwable) {
             val detail = if (BuildConfig.DEBUG) t.localizedMessage.orEmpty() else ""
-            synchronized(lock) { _state.value = _state.value?.copy(saving = false, error = detail, errorIsGeneric = true) }
+            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false, error = detail, errorIsGeneric = true)) } }
         }
     }
 
     class Factory(private val repository: LpsRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            StockInViewModel({ repository.receiveScannedStock(it) }) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
+            StockInViewModel(
+                saver = { repository.receiveScannedStock(it) },
+                role = { repository.currentRole() },
+                savedState = extras.createSavedStateHandle(),
+            ) as T
+    }
+
+    private companion object {
+        const val SNAPSHOT_KEY = "stock_in_review"
     }
 }

@@ -69,7 +69,6 @@ import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
-import com.shopledger.pos.ui.screens.stockin.StockInEntrySheet
 import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.ItemRow
@@ -96,7 +95,6 @@ fun ItemsHomeScreen(
     onToggleSeller: () -> Unit,
     cartLineCount: Int,
     onSell: () -> Unit,
-    onAddItemManually: () -> Unit,
     onOpenItem: (InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>) -> Unit,
     onEditItem: (InventoryItemWithVariants, ItemVariantEntity) -> Unit,
     onAddToCart: (InventoryItemEntity, ItemVariantEntity) -> Unit,
@@ -109,16 +107,12 @@ fun ItemsHomeScreen(
     onResumeDraft: () -> Unit = {},
     onDiscardDraft: () -> Unit = {},
     onShareLowStock: (() -> Unit)? = null,
-    /** Called with the OCR text (and photo) of a scanned supplier bill or stock list. */
-    onStockScanned: (text: String, imageUri: android.net.Uri?) -> Unit = { _, _ -> },
-    /** Bump this number to re-open the Stock In sheet (e.g. "Try again" from the review screen). */
-    stockInRequest: Int = 0,
+    /** Opens the Stock In sheet. The sheet itself lives in the app shell so it survives tab changes and rotation. */
+    onStockIn: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var searchFocused by remember { mutableStateOf(false) }
-    var showStockIn by remember { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(stockInRequest) { if (stockInRequest > 0) showStockIn = true }
     val cipherMode by CostCipherEngine.activeModeFlow.collectAsState()
     val digitMap by CostCipherEngine.activeCustomDigitMapFlow.collectAsState()
     val scannerFailedTitle = stringResource(R.string.error_barcode_scanner_failed)
@@ -297,27 +291,13 @@ fun ItemsHomeScreen(
                 }
                 PrimaryActionButton(
                     text = stringResource(R.string.action_stock_in),
-                    onClick = { showStockIn = true },
+                    onClick = onStockIn,
                     icon = Icons.Filled.Inventory2,
                     containerColor = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.weight(1f),
                 )
             }
         }
-    }
-
-    if (showStockIn) {
-        StockInEntrySheet(
-            onAddManually = {
-                showStockIn = false
-                onAddItemManually()
-            },
-            onDismiss = { showStockIn = false },
-            onScanned = { text, uri ->
-                showStockIn = false
-                onStockScanned(text, uri)
-            },
-        )
     }
 }
 

@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,16 +51,24 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 
 /**
  * Entry point for adding stock: scan a bill or list with the camera, pick a photo, or add an item by hand.
- * Scanning reads the photo on this device and hands the text to [onScanned]; the sheet stays open while it works
- * (so the camera/gallery result is not lost) and the host closes it from [onScanned].
+ *
+ * Keep this composable in the tree at all times (the app shell does) and drive the sheet with [visible]: the camera
+ * and gallery launchers live here, so their results still arrive after the screen is rotated or the tab changed.
+ * Scanning needs seller mode; while it is locked the scan buttons call [onRequestUnlock] instead.
+ * The sheet reads the photo on this device and hands the text to [onScanned] as
+ * (text tidied for parsing, plain OCR text, photo); the host hides the sheet from there.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StockInEntrySheet(
+    visible: Boolean,
+    isSellerUnlocked: Boolean,
+    onRequestUnlock: () -> Unit,
     onAddManually: () -> Unit,
     onDismiss: () -> Unit,
-    onScanned: (text: String, imageUri: Uri?) -> Unit = { _, _ -> },
+    onScanned: (text: String, rawText: String, imageUri: Uri?) -> Unit = { _, _, _ -> },
 ) {
+    val currentOnScanned by rememberUpdatedState(onScanned)
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val scope = rememberCoroutineScope()
@@ -84,7 +93,7 @@ fun StockInEntrySheet(
                     AppErrorManager.reportError(failedTitle, firstError, failedTitle)
                 } else {
                     val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(context, raw) ?: raw
-                    onScanned(text, uris.first())
+                    currentOnScanned(text, raw, uris.first())
                 }
             } finally {
                 processing = false
@@ -100,7 +109,7 @@ fun StockInEntrySheet(
                     OnDeviceOrderScannerManager.extractTextFromBitmap(bitmap)
                         .onSuccess { raw ->
                             val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(context, raw) ?: raw
-                            onScanned(text, null)
+                            currentOnScanned(text, raw, null)
                         }
                         .onFailure { AppErrorManager.reportError(failedTitle, it, failedTitle) }
                 } finally {
@@ -121,6 +130,7 @@ fun StockInEntrySheet(
         if (uri != null) readPhotos(listOf(uri))
     }
 
+    if (!visible) return
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -138,10 +148,19 @@ fun StockInEntrySheet(
                     Text(stringResource(R.string.stock_in_reading), style = MaterialTheme.typography.bodyLarge)
                 }
             }
+            if (!isSellerUnlocked) {
+                Text(
+                    stringResource(R.string.stock_in_unlock_hint),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             PrimaryActionButton(
                 text = stringResource(R.string.stock_in_scan),
                 onClick = {
-                    if (activity != null) {
+                    if (!isSellerUnlocked) {
+                        onRequestUnlock()
+                    } else if (activity != null) {
                         val options = GmsDocumentScannerOptions.Builder()
                             .setGalleryImportAllowed(true)
                             .setPageLimit(3)
@@ -161,7 +180,7 @@ fun StockInEntrySheet(
             )
             SecondaryActionButton(
                 text = stringResource(R.string.stock_in_pick_photo),
-                onClick = { galleryLauncher.launch("image/*") },
+                onClick = { if (isSellerUnlocked) galleryLauncher.launch("image/*") else onRequestUnlock() },
                 icon = Icons.Filled.PhotoLibrary,
                 enabled = !processing,
             )

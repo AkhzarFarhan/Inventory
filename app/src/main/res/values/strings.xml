@@ -107,6 +107,13 @@
     <string name="stock_in_pick_photo">Pick a photo</string>
     <string name="stock_in_reading">Reading the photo…</string>
     <string name="stock_in_scan_failed">Could not read that photo. Try again with better light.</string>
+    <string name="stock_in_unlock_hint">Unlock seller mode to scan a bill or list.</string>
+    <string name="review_summary">%1$s · Total %2$s · Paid %3$s</string>
+    <string name="review_summary_total_unset">not set</string>
+    <string name="review_cd_summary_expand">Show supplier and amounts</string>
+    <string name="review_cd_summary_collapse">Hide supplier and amounts</string>
+    <string name="review_hint_remove">Press and hold an item to remove it.</string>
+    <string name="review_cell_cd">%1$s for %2$s: %3$s</string>
     <string name="review_title">Check before adding</string>
     <string name="review_cd_photo">View scanned photo</string>
     <string name="review_cd_close">Close</string>

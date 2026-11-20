@@ -50,7 +50,7 @@ class ItemsHomeScreenTest {
     private fun show(
         items: List<InventoryItemWithVariants> = all,
         onSell: () -> Unit = {},
-        onManual: () -> Unit = {},
+        onStockIn: () -> Unit = {},
         unlocked: Boolean = false,
         onOpen: (String) -> Unit = {},
         onCart: (String) -> Unit = {},
@@ -73,7 +73,7 @@ class ItemsHomeScreenTest {
                     onToggleSeller = {},
                     cartLineCount = 0,
                     onSell = onSell,
-                    onAddItemManually = onManual,
+                    onStockIn = onStockIn,
                     onOpenItem = { _, v, _ -> onOpen(v.id) },
                     onEditItem = { _, _ -> },
                     onAddToCart = { _, v -> onCart(v.id) },
@@ -103,15 +103,14 @@ class ItemsHomeScreenTest {
     }
 
     @Test
-    fun stockInOffersAddItemManually() {
-        var manual = 0
-        show(onManual = { manual++ })
+    fun stockInButtonAsksTheHostToOpenTheSheet() {
+        var opened = 0
+        show(onStockIn = { opened++ })
         compose.onNodeWithText("Stock In").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Add item manually").assertIsDisplayed()
-        compose.onNode(hasText("Add item manually") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitForIdle()
-        assertEquals(1, manual)
+        assertEquals(1, opened)
+        // The sheet lives in the app shell, not in this screen.
+        compose.onNodeWithText("Add item manually").assertDoesNotExist()
     }
 
     @Test

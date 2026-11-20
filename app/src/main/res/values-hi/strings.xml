@@ -107,6 +107,13 @@
     <string name="stock_in_pick_photo">फ़ोटो चुनें</string>
     <string name="stock_in_reading">फ़ोटो पढ़ रहे हैं…</string>
     <string name="stock_in_scan_failed">यह फ़ोटो पढ़ नहीं पाए। बेहतर रोशनी में दोबारा लें।</string>
+    <string name="stock_in_unlock_hint">बिल या लिस्ट स्कैन करने के लिए पहले सेलर मोड खोलें।</string>
+    <string name="review_summary">%1$s · कुल %2$s · दिया %3$s</string>
+    <string name="review_summary_total_unset">डाला नहीं</string>
+    <string name="review_cd_summary_expand">सप्लायर और रकम दिखाएँ</string>
+    <string name="review_cd_summary_collapse">सप्लायर और रकम छिपाएँ</string>
+    <string name="review_hint_remove">किसी सामान को हटाने के लिए उसे दबाकर रखें।</string>
+    <string name="review_cell_cd">%2$s का %1$s: %3$s</string>
     <string name="review_title">जोड़ने से पहले जाँचें</string>
     <string name="review_cd_photo">स्कैन की हुई फ़ोटो देखें</string>
     <string name="review_cd_close">बंद करें</string>

@@ -118,6 +118,9 @@ class LpsRepository(
     /** Saves a whole scanned stock list (items, costs, movements, supplier bill) atomically. */
     suspend fun receiveScannedStock(request: StockInRequest): StockInResult = stockIn.receiveScannedStock(request)
 
+    /** Role of whoever is using this device right now (OWNER until staff accounts exist). */
+    fun currentRole(): com.shopledger.pos.data.command.Role = env.actor().role
+
     suspend fun setDeviceCode(code: String): String = deviceCommands.setDeviceCode(newActionId(), code)
 
     /**

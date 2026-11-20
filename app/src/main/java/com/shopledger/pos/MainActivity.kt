@@ -23,15 +23,13 @@ import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.Surface
+import com.shopledger.pos.ui.screens.stockin.StockInEntrySheet
 import com.shopledger.pos.ui.screens.stockin.StockInEvent
 import com.shopledger.pos.ui.screens.stockin.StockInReviewScreen
 import com.shopledger.pos.ui.screens.stockin.StockInViewModel
 import com.shopledger.pos.ui.theme.ConfirmDialog
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -174,12 +172,12 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val savedItemDraft by ItemDraftManager.draftFlow.collectAsState()
     val parties by viewModel.partiesState.collectAsState()
     val context = LocalContext.current
-    val uiScope = rememberCoroutineScope()
     val stockInViewModel: StockInViewModel = viewModel(factory = StockInViewModel.Factory(app.repository))
     val stockInReview by stockInViewModel.state.collectAsState()
-    var stockInRequest by remember { mutableIntStateOf(0) }
+    var showStockInSheet by rememberSaveable { mutableStateOf(false) }
     var confirmDiscardStockIn by remember { mutableStateOf(false) }
     LaunchedEffect(parties) { stockInViewModel.setSuppliers(parties) }
+    LaunchedEffect(allInventory) { stockInViewModel.setInventory(allInventory) }
     LaunchedEffect(stockInReview?.saved) {
         val saved = stockInReview?.saved ?: return@LaunchedEffect
         val count = saved.createdItems + saved.restockedItems
@@ -237,7 +235,6 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onToggleSeller = requestToggleSeller,
                         cartLineCount = carts.sumOf { it.items.size },
                         onSell = { showCounterCartSheet = true },
-                        onAddItemManually = { activeEditorMode = ItemEditorMode.AddNewItem },
                         onOpenItem = { item, variant, variants -> quickSellTarget = Triple(item, variant, variants) },
                         onEditItem = { group, variant ->
                             activeEditorMode = ItemEditorMode.ManageItem(group, variant.id)
@@ -250,10 +247,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         draftName = savedItemDraft?.takeIf { it.hasContent }?.itemName,
                         onResumeDraft = { activeEditorMode = ItemEditorMode.AddNewItem },
                         onDiscardDraft = { ItemDraftManager.clearDraft(context) },
-                        onStockScanned = { text, uri ->
-                            uiScope.launch(Dispatchers.Default) { stockInViewModel.open(text, allInventory, uri) }
-                        },
-                        stockInRequest = stockInRequest,
+                        onStockIn = { showStockInSheet = true },
                         onShareLowStock = {
                             val orderText = buildString {
                                 append(
@@ -319,7 +313,24 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             }
         }
 
-        stockInReview?.let { review ->
+        // The Stock In sheet stays composed (its camera/gallery launchers must survive rotation and tab changes).
+        StockInEntrySheet(
+            visible = showStockInSheet,
+            isSellerUnlocked = isSellerUnlocked,
+            onRequestUnlock = requestToggleSeller,
+            onAddManually = {
+                showStockInSheet = false
+                activeEditorMode = ItemEditorMode.AddNewItem
+            },
+            onDismiss = { showStockInSheet = false },
+            onScanned = { text, rawText, uri ->
+                showStockInSheet = false
+                stockInViewModel.openAsync(text, rawText, allInventory, uri)
+            },
+        )
+
+        // A locked seller mode hides the review without losing it: unlock again and it is still there.
+        stockInReview?.takeIf { isSellerUnlocked }?.let { review ->
             val requestClose = {
                 if (!review.saving) {
                     if (review.rows.isEmpty()) stockInViewModel.close() else confirmDiscardStockIn = true
@@ -334,7 +345,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             StockInEvent.Close -> requestClose()
                             StockInEvent.Rescan -> {
                                 stockInViewModel.close()
-                                stockInRequest++
+                                showStockInSheet = true
                             }
                             StockInEvent.AddManually -> {
                                 stockInViewModel.close()

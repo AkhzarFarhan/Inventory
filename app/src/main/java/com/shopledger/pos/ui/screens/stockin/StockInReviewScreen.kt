@@ -1,9 +1,11 @@
 package com.shopledger.pos.ui.screens.stockin
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,9 +26,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FiberNew
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -49,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +65,11 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,16 +79,22 @@ import androidx.compose.ui.unit.dp
 import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.scanner.MatchStatus
+import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.MoneyField
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.SecondaryActionButton
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
+import com.shopledger.pos.ui.theme.sanitiseMoneyInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val QtyWidth = 56.dp
-private val MoneyWidth = 68.dp
+// Widths of the fixed columns. On a 360 dp screen the item column still gets about 146 dp.
+private val StatusWidth = 18.dp
+private val QtyWidth = 52.dp
+private val MoneyWidth = 66.dp
+private val RowPadding = 2.dp
+private val CellPadding = 4.dp
 
 /** Stateless review table for a scanned bill or stock list. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,6 +106,12 @@ fun StockInReviewScreen(
 ) {
     var showPhoto by remember { mutableStateOf(false) }
     var pickerKey by remember { mutableStateOf<Long?>(null) }
+    // Whether the user chose "New supplier…" (it must survive the header being collapsed).
+    var newSupplierMode by rememberSaveable { mutableStateOf(state.newSupplierName.isNotBlank()) }
+    // Open at first only when the supplier or the amounts are what stops the save.
+    var headerExpanded by rememberSaveable {
+        mutableStateOf(state.blockReason?.kind.let { it == BlockKind.SUPPLIER || it == BlockKind.PAID })
+    }
 
     Column(modifier.fillMaxSize().imePadding()) {
         TopAppBar(
@@ -124,10 +145,18 @@ fun StockInReviewScreen(
                 )
             }
         } else {
+            // Supplier and amounts, the filter and the column titles stay above the scrolling rows.
+            SummaryHeader(
+                state = state,
+                expanded = headerExpanded,
+                onToggle = { headerExpanded = !headerExpanded },
+                newMode = newSupplierMode,
+                onNewModeChange = { newSupplierMode = it },
+                onEvent = onEvent,
+            )
+            FilterTabs(state, onEvent)
+            ColumnHeaders()
             LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-                item(key = "header") { HeaderSection(state, onEvent) }
-                item(key = "tabs") { FilterTabs(state, onEvent) }
-                item(key = "columns") { ColumnHeaders() }
                 items(state.visibleRows, key = { it.key }) { row ->
                     ReviewRowView(
                         row = row,
@@ -137,6 +166,14 @@ fun StockInReviewScreen(
                     )
                     HorizontalDivider()
                 }
+                item(key = "hint") {
+                    Text(
+                        stringResource(R.string.review_hint_remove),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(ShopLedgerTokens.spacingL),
+                    )
+                }
             }
             BottomBar(state, onEvent)
         }
@@ -144,6 +181,11 @@ fun StockInReviewScreen(
 
     if (showPhoto && state.imageUri != null) PhotoDialog(state.imageUri, onDismiss = { showPhoto = false })
 
+    // The row being picked for can disappear (deleted, list replaced): close the picker then, outside composition.
+    LaunchedEffect(pickerKey, state.rows) {
+        val key = pickerKey
+        if (key != null && state.rows.none { it.key == key }) pickerKey = null
+    }
     pickerKey?.let { key ->
         state.rows.firstOrNull { it.key == key }?.let { row ->
             ItemPickerDialog(
@@ -159,14 +201,67 @@ fun StockInReviewScreen(
                 },
                 onDismiss = { pickerKey = null },
             )
-        } ?: run { pickerKey = null }
+        }
+    }
+}
+
+/** One line (supplier, total, paid) that opens into the full supplier and amounts form when tapped. */
+@Composable
+private fun SummaryHeader(
+    state: StockInUiState,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    newMode: Boolean,
+    onNewModeChange: (Boolean) -> Unit,
+    onEvent: (StockInEvent) -> Unit,
+) {
+    val supplierName = state.suppliers.firstOrNull { it.id == state.supplierId }?.name
+        ?: state.newSupplierName.trim().ifBlank { null }
+        ?: if (newMode) stringResource(R.string.review_supplier_new) else stringResource(R.string.review_supplier_none)
+    val total = state.billTotalPaise?.let { IndianCurrencyFormatter.formatPaise(it) }
+        ?: stringResource(R.string.review_summary_total_unset)
+    val paid = IndianCurrencyFormatter.formatPaise(state.amountPaidPaise ?: 0L)
+    val summary = stringResource(R.string.review_summary, supplierName, total, paid)
+    val problem = state.blockReason?.kind.let { it == BlockKind.SUPPLIER || it == BlockKind.PAID }
+    val toggleDesc = stringResource(if (expanded) R.string.review_cd_summary_collapse else R.string.review_cd_summary_expand)
+
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = ShopLedgerTokens.minTouch)
+                .clickable(onClick = onToggle)
+                .semantics(mergeDescendants = true) { contentDescription = "$toggleDesc: $summary" }
+                .padding(horizontal = ShopLedgerTokens.spacingL)
+                .testTag("header_summary"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (problem) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+            )
+        }
+        if (expanded) HeaderSection(state, newMode, onNewModeChange, onEvent)
+        HorizontalDivider()
     }
 }
 
 @Composable
-private fun HeaderSection(state: StockInUiState, onEvent: (StockInEvent) -> Unit) {
+private fun HeaderSection(
+    state: StockInUiState,
+    newMode: Boolean,
+    onNewModeChange: (Boolean) -> Unit,
+    onEvent: (StockInEvent) -> Unit,
+) {
     var menuOpen by remember { mutableStateOf(false) }
-    var newMode by remember { mutableStateOf(state.newSupplierName.isNotBlank()) }
     val supplierName = state.suppliers.firstOrNull { it.id == state.supplierId }?.name
         ?: if (newMode) stringResource(R.string.review_supplier_new) else stringResource(R.string.review_supplier_none)
 
@@ -188,17 +283,22 @@ private fun HeaderSection(state: StockInUiState, onEvent: (StockInEvent) -> Unit
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.review_supplier_none)) },
-                    onClick = { menuOpen = false; newMode = false; onEvent(StockInEvent.SetSupplier(null)); onEvent(StockInEvent.SetNewSupplier("")) },
+                    onClick = {
+                        menuOpen = false
+                        onNewModeChange(false)
+                        onEvent(StockInEvent.SetSupplier(null))
+                        onEvent(StockInEvent.SetNewSupplier(""))
+                    },
                 )
                 state.suppliers.forEach { s ->
                     DropdownMenuItem(
                         text = { Text(s.name) },
-                        onClick = { menuOpen = false; newMode = false; onEvent(StockInEvent.SetSupplier(s.id)) },
+                        onClick = { menuOpen = false; onNewModeChange(false); onEvent(StockInEvent.SetSupplier(s.id)) },
                     )
                 }
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.review_supplier_new)) },
-                    onClick = { menuOpen = false; newMode = true; onEvent(StockInEvent.SetSupplier(null)) },
+                    onClick = { menuOpen = false; onNewModeChange(true); onEvent(StockInEvent.SetSupplier(null)) },
                 )
             }
         }
@@ -257,19 +357,25 @@ private fun ColumnHeaders() {
     val style = MaterialTheme.typography.labelLarge
     val color = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingS, vertical = ShopLedgerTokens.spacingXs),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = RowPadding, vertical = ShopLedgerTokens.spacingXs)
+            .semantics(mergeDescendants = true) { heading() },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(28.dp))
-        Text(stringResource(R.string.review_col_item), style = style, color = color, modifier = Modifier.weight(1f))
-        Text(stringResource(R.string.review_col_qty), style = style, color = color, textAlign = TextAlign.End, modifier = Modifier.width(QtyWidth))
-        Text(stringResource(R.string.review_col_cost), style = style, color = color, textAlign = TextAlign.End, modifier = Modifier.width(MoneyWidth))
-        Text(stringResource(R.string.review_col_sell), style = style, color = color, textAlign = TextAlign.End, modifier = Modifier.width(MoneyWidth))
-        Box(Modifier.width(ShopLedgerTokens.minTouch))
+        Box(Modifier.width(StatusWidth))
+        Text(
+            stringResource(R.string.review_col_item), style = style, color = color,
+            modifier = Modifier.weight(1f).padding(horizontal = CellPadding),
+        )
+        Text(stringResource(R.string.review_col_qty), style = style, color = color, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.width(QtyWidth).padding(horizontal = CellPadding))
+        Text(stringResource(R.string.review_col_cost), style = style, color = color, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.width(MoneyWidth).padding(horizontal = CellPadding))
+        Text(stringResource(R.string.review_col_sell), style = style, color = color, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.width(MoneyWidth).padding(horizontal = CellPadding))
     }
     HorizontalDivider()
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReviewRowView(
     row: ReviewRow,
@@ -278,16 +384,22 @@ private fun ReviewRowView(
     onPickItem: () -> Unit,
 ) {
     val key = row.key
+    val itemLabel = row.itemName.ifBlank { row.scannedName }
+    var menuOpen by remember { mutableStateOf(false) }
+    val removeText = stringResource(R.string.review_cd_remove, itemLabel)
+    val onRemove = { onEvent(StockInEvent.DeleteRow(key)) }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingS),
+        Modifier.fillMaxWidth().padding(horizontal = RowPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StatusIcon(row.status)
-        // Item
-        Column(Modifier.weight(1f).padding(horizontal = ShopLedgerTokens.spacingXs)) {
+        // Item: tap to rename (new) or pick another item (matched); press and hold to remove the row.
+        Box(Modifier.weight(1f)) {
             if (row.status == MatchStatus.NEW) {
                 EditableCell(
                     tag = "cell_name_$key",
+                    columnLabel = stringResource(R.string.review_col_item),
+                    itemLabel = itemLabel,
                     display = row.itemName.ifBlank { null },
                     placeholder = stringResource(R.string.review_add_name),
                     initialText = row.itemName,
@@ -295,13 +407,26 @@ private fun ReviewRowView(
                     sanitize = { it },
                     onCommit = { onEvent(StockInEvent.EditName(key, it)) },
                     align = TextAlign.Start,
+                    onLongClick = { menuOpen = true },
+                    removeLabel = removeText,
+                    onRemove = onRemove,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } else {
                 Column(
-                    Modifier.clickable(onClick = onPickItem).heightIn(min = ShopLedgerTokens.minTouch).testTag("cell_item_$key"),
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = ShopLedgerTokens.minTouch)
+                        .semantics { customActions = listOf(CustomAccessibilityAction(removeText) { onRemove(); true }) }
+                        .combinedClickable(onClick = onPickItem, onLongClick = { menuOpen = true })
+                        .padding(horizontal = CellPadding)
+                        .testTag("cell_item_$key"),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text(row.itemName, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        row.itemName, style = MaterialTheme.typography.bodyLarge, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(),
+                    )
                     if (row.variantSummary.isNotBlank()) {
                         Text(row.variantSummary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -314,15 +439,24 @@ private fun ReviewRowView(
                     }
                 }
             }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(removeText) },
+                    onClick = { menuOpen = false; onRemove() },
+                    modifier = Modifier.testTag("remove_$key"),
+                )
+            }
         }
         // Qty
         EditableCell(
             tag = "cell_qty_$key",
+            columnLabel = stringResource(R.string.review_col_qty),
+            itemLabel = itemLabel,
             display = row.qtyMilli?.let { IndianCurrencyFormatter.formatMilliUnits(it) },
             placeholder = "–",
             initialText = row.qtyMilli?.let { IndianCurrencyFormatter.formatMilliUnits(it).replace(",", "") } ?: "",
             keyboardType = KeyboardType.Decimal,
-            sanitize = ::sanitiseNumber,
+            sanitize = ::sanitiseQtyInput,
             onCommit = { onEvent(StockInEvent.EditQty(key, parseQtyMilli(it))) },
             subText = row.unit,
             modifier = Modifier.width(QtyWidth),
@@ -330,12 +464,14 @@ private fun ReviewRowView(
         // Cost
         EditableCell(
             tag = "cell_cost_$key",
+            columnLabel = stringResource(R.string.review_col_cost),
+            itemLabel = itemLabel,
             display = row.costPaise?.let { IndianCurrencyFormatter.formatPaise(it) },
             placeholder = stringResource(R.string.review_add_price),
             initialText = row.costPaise?.let { IndianCurrencyFormatter.paiseToEditableString(it) } ?: "",
             keyboardType = KeyboardType.Decimal,
-            sanitize = ::sanitiseNumber,
-            onCommit = { onEvent(StockInEvent.EditCost(key, rupeesToPaise(it))) },
+            sanitize = ::sanitiseMoneyInput,
+            onCommit = { onEvent(StockInEvent.EditCost(key, moneyToPaise(it))) },
             readOnly = !canEditCost,
             subText = if (row.currentCostPaise != null && row.costPaise != null && row.costPaise != row.currentCostPaise) {
                 stringResource(R.string.review_was, IndianCurrencyFormatter.formatPaise(row.currentCostPaise))
@@ -345,22 +481,17 @@ private fun ReviewRowView(
         // Sell
         EditableCell(
             tag = "cell_sell_$key",
+            columnLabel = stringResource(R.string.review_col_sell),
+            itemLabel = itemLabel,
             display = row.sellPaise?.let { IndianCurrencyFormatter.formatPaise(it) },
             placeholder = stringResource(R.string.review_add_price),
             initialText = row.sellPaise?.let { IndianCurrencyFormatter.paiseToEditableString(it) } ?: "",
             keyboardType = KeyboardType.Decimal,
-            sanitize = ::sanitiseNumber,
-            onCommit = { onEvent(StockInEvent.EditSell(key, rupeesToPaise(it))) },
+            sanitize = ::sanitiseMoneyInput,
+            onCommit = { onEvent(StockInEvent.EditSell(key, moneyToPaise(it))) },
             readOnly = row.variantId != null,
             modifier = Modifier.width(MoneyWidth),
         )
-        val removeDesc = stringResource(R.string.review_cd_remove, row.itemName.ifBlank { row.scannedName })
-        IconButton(
-            onClick = { onEvent(StockInEvent.DeleteRow(key)) },
-            modifier = Modifier.size(ShopLedgerTokens.minTouch).testTag("delete_$key"),
-        ) {
-            Icon(Icons.Filled.Delete, contentDescription = removeDesc)
-        }
     }
 }
 
@@ -371,23 +502,32 @@ private fun StatusIcon(status: MatchStatus) {
         MatchStatus.CHECK -> Triple(Icons.Filled.Warning, stringResource(R.string.review_status_check), MaterialTheme.colorScheme.tertiary)
         MatchStatus.NEW -> Triple(Icons.Filled.FiberNew, stringResource(R.string.review_status_new), MaterialTheme.colorScheme.secondary)
     }
-    Icon(icon, contentDescription = desc, tint = tint, modifier = Modifier.width(24.dp).size(24.dp))
+    Icon(icon, contentDescription = desc, tint = tint, modifier = Modifier.size(StatusWidth))
 }
 
-private fun sanitiseNumber(input: String): String? {
+/** Quantity text: digits and at most one '.', up to 3 decimals. */
+internal fun sanitiseQtyInput(input: String): String? {
     if (!input.all { it.isDigit() || it == '.' }) return null
     if (input.count { it == '.' } > 1) return null
+    if (input.substringBefore('.').length > 9) return null
     if (input.substringAfter('.', "").length > 3) return null
     return input
 }
 
-private fun rupeesToPaise(text: String): Long? =
-    if (text.isBlank() || text == ".") null else IndianCurrencyFormatter.parseRupeesToPaise(text)
+/** "" and "." mean no value; otherwise rupees to paise exactly (no floating point). */
+private fun moneyToPaise(text: String): Long? =
+    if (text.isBlank() || text == ".") null else parseMoneyPaise(text)
 
-/** A table cell that shows its value and turns into a text field when tapped. */
+/**
+ * A table cell that shows its value and turns into a text field when tapped. The whole cell (at least 48 dp tall)
+ * is the tap target, and it is announced as "column for item: value".
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EditableCell(
     tag: String,
+    columnLabel: String,
+    itemLabel: String,
     display: String?,
     placeholder: String,
     initialText: String,
@@ -398,15 +538,38 @@ private fun EditableCell(
     readOnly: Boolean = false,
     subText: String? = null,
     align: TextAlign = TextAlign.End,
+    onLongClick: (() -> Unit)? = null,
+    removeLabel: String? = null,
+    onRemove: (() -> Unit)? = null,
 ) {
     var editing by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val description = stringResource(R.string.review_cell_cd, columnLabel, itemLabel, display ?: placeholder)
+    val isEditing = editing && !readOnly
+    // While editing, only the text field carries the tag, so tests and services see a single node.
+    val cellModifier = if (isEditing) {
+        modifier.heightIn(min = ShopLedgerTokens.minTouch)
+    } else {
+        modifier
+            .heightIn(min = ShopLedgerTokens.minTouch)
+            .semantics(mergeDescendants = true) {
+                contentDescription = description
+                if (removeLabel != null && onRemove != null) {
+                    customActions = listOf(CustomAccessibilityAction(removeLabel) { onRemove(); true })
+                }
+            }
+            .then(
+                if (readOnly) Modifier
+                else Modifier.combinedClickable(onClick = { editing = true }, onLongClick = onLongClick)
+            )
+            .testTag(tag)
+    }
     Column(
-        modifier.heightIn(min = ShopLedgerTokens.minTouch),
+        cellModifier.padding(horizontal = CellPadding),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = if (align == TextAlign.End) Alignment.End else Alignment.Start,
     ) {
-        if (editing && !readOnly) {
+        if (isEditing) {
             var text by remember { mutableStateOf(initialText) }
             var hadFocus by remember { mutableStateOf(false) }
             val requester = remember { FocusRequester() }
@@ -441,21 +604,17 @@ private fun EditableCell(
                 color = if (empty) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                 textAlign = align,
                 maxLines = 2,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 32.dp)
-                    .then(if (readOnly) Modifier else Modifier.clickable { editing = true })
-                    .testTag(tag),
+                modifier = Modifier.fillMaxWidth(),
             )
-        }
-        if (subText != null) {
-            Text(
-                subText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = align,
-                maxLines = 1,
-            )
+            if (subText != null) {
+                Text(
+                    subText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = align,
+                    maxLines = 2,
+                )
+            }
         }
     }
 }
@@ -580,7 +739,7 @@ private fun ItemPickerDialog(
                             verticalArrangement = Arrangement.Center,
                         ) {
                             Text(g.item.displayName, style = MaterialTheme.typography.bodyLarge)
-                            if (summary != "Standard") Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (v.hasLabels()) Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         HorizontalDivider()
                     }
@@ -599,3 +758,7 @@ private fun ItemPickerDialog(
         },
     )
 }
+
+/** True when the variant has a size, material or colour label (so the summary is worth showing). */
+private fun ItemVariantEntity.hasLabels(): Boolean =
+    listOf(sizeLabel, materialLabel, colorFinishLabel).any { it.isNotBlank() }

@@ -2,7 +2,14 @@ package com.shopledger.pos.ui
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -133,8 +140,60 @@ class StockInReviewScreenTest {
         compose.runOnIdle { vm.onEvent(StockInEvent.PickVariant(vm.state.value!!.rows[1].key, "2", "v-2")) }
         compose.onNodeWithText("Add 3 items to stock").assertIsDisplayed()
         val key = vm.state.value!!.rows[0].key
-        compose.onNodeWithTag("delete_$key").performClick()
+        // There is no delete column any more: press and hold the item to get the remove menu.
+        compose.onNodeWithTag("cell_item_$key").performTouchInput { longClick() }
+        compose.onNodeWithTag("remove_$key").performClick()
         compose.onNodeWithText("Add 2 items to stock").assertIsDisplayed()
+    }
+
+    @Test fun longPressingANewRowsNameAlsoOffersRemove() {
+        val vm = show()
+        compose.runOnIdle { vm.onEvent(StockInEvent.PickVariant(vm.state.value!!.rows[1].key, "2", "v-2")) }
+        val newKey = vm.state.value!!.rows[2].key
+        compose.onNodeWithTag("cell_name_$newKey").performTouchInput { longClick() }
+        compose.onNodeWithTag("remove_$newKey").performClick()
+        compose.onNodeWithText("Add 2 items to stock").assertIsDisplayed()
+    }
+
+    @Test fun headerIsOneLineUntilTappedAndColumnTitlesAreHeadings() {
+        show()
+        compose.onNodeWithTag("header_summary").assertIsDisplayed()
+        compose.onNodeWithText("Bill total").assertDoesNotExist()
+        compose.onNodeWithTag("header_summary").performClick()
+        compose.onNodeWithText("Bill total").assertIsDisplayed()
+        compose.onNodeWithTag("header_summary").performClick()
+        compose.onNodeWithText("Bill total").assertDoesNotExist()
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertExists()
+    }
+
+    @Test fun cellsAreAnnouncedWithColumnAndItem() {
+        val vm = show()
+        val key = vm.state.value!!.rows[0].key
+        compose.onNodeWithTag("cell_cost_$key").assertContentDescriptionEquals("Cost for Butt Hinge: ₹48")
+    }
+
+    @Test fun moneyCellsTakeAtMostTwoDecimals() {
+        val vm = show()
+        val newKey = vm.state.value!!.rows[2].key
+        compose.onNodeWithTag("cell_sell_$newKey").performClick()
+        compose.onNodeWithTag("cell_sell_$newKey").performTextInput("12.345")
+        // The third decimal is refused, so nothing was typed at all.
+        assertEquals(null, vm.state.value!!.rows[2].sellPaise)
+        compose.onNodeWithTag("cell_sell_$newKey").performTextInput("12.34")
+        assertEquals(1234L, vm.state.value!!.rows[2].sellPaise)
+    }
+
+    // On a 360 dp phone the item column must still be readable.
+    @Config(qualifiers = "w360dp-h2000dp")
+    @Test fun itemColumnHasRoomAtThreeSixtyDp() {
+        val vm = show()
+        val matchedKey = vm.state.value!!.rows[0].key
+        val newKey = vm.state.value!!.rows[2].key
+        compose.onNodeWithTag("cell_item_$matchedKey").assertWidthIsAtLeast(140.dp)
+        compose.onNodeWithTag("cell_name_$newKey").assertWidthIsAtLeast(140.dp)
+        // Cost and sell stay visible next to it.
+        compose.onNodeWithTag("cell_cost_$matchedKey").assertIsDisplayed()
+        compose.onNodeWithTag("cell_sell_$matchedKey").assertIsDisplayed()
     }
 
     @Test fun saveFiresOnceEvenOnDoubleTap() {

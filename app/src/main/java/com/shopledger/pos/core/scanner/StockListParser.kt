@@ -251,6 +251,14 @@ object StockListParser {
 
     /** Value of a "grand total"/"total" line if present (preferred), else the sum of all amounts if every line has one. */
     fun detectBillTotalPaise(text: String): Long? {
+        detectPrintedTotalPaise(text)?.let { return it }
+        val lines = parse(text)
+        if (lines.isEmpty() || lines.any { it.amountPaise == null }) return null
+        return lines.sumOf { it.amountPaise!! }
+    }
+
+    /** Value of a "grand total"/"total" line printed on the bill, or null when there is none. */
+    fun detectPrintedTotalPaise(text: String): Long? {
         var grand: Long? = null
         var plainTotal: Long? = null
         val totalWord = Regex("""(?<![a-z])total(?![a-z])""")
@@ -263,9 +271,6 @@ object StockListParser {
             val v = numberRe.findAll(t).lastOrNull()?.value?.replace(",", "")?.toDoubleOrNull() ?: continue
             if (t.contains("grand total")) grand = paise(v) else plainTotal = paise(v)
         }
-        (grand ?: plainTotal)?.let { return it }
-        val lines = parse(text)
-        if (lines.isEmpty() || lines.any { it.amountPaise == null }) return null
-        return lines.sumOf { it.amountPaise!! }
+        return grand ?: plainTotal
     }
 }
