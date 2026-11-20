@@ -61,6 +61,20 @@ object StockListParser {
     private val TOKEN = Regex("""(?:₹|rs\.?\s*)?\d[\d,]*(?:\.\d+)?|[^\s×*@=]+|[×*@=]""", RegexOption.IGNORE_CASE)
     private val NUMBER = Regex("""^(?:₹|rs\.?\s*)?(\d[\d,]*(?:\.\d+)?)$""", RegexOption.IGNORE_CASE)
     private val LETTER_AFTER = Regex("""^\s*[A-Za-z]""")
+    private val QTY_UNIT_AFTER = Regex(
+        """\d\s*(?:pcs|pc|pieces|piece|nos|pkts|pkt|packets|packet|packs|pack|box|boxes|bags|bag|rolls|roll|sets|set|pairs|pair|dozen|dzn|bottles|bottle|cans|can|strips|strip|tubes|tube)(?![A-Za-z])""",
+        RegexOption.IGNORE_CASE
+    )
+    private val NUMBER_RUN = Regex("""(?<![\w.])\d+(?:\.\d+)?(?![\w])""")
+    private val QTY_WORD = Regex("""^(?:qty|qnty|nos)\.?\s*[:.-]?\s*(?=\d)""", RegexOption.IGNORE_CASE)
+    private val LEAD_TIMES = Regex("""^(\d+(?:\.\d+)?)\s*[x×*]\s+(?=[A-Za-z])""", RegexOption.IGNORE_CASE)
+    private val CROSS = Regex(
+        """(?<![\w.])(\d+(?:\.\d+)?)\s*[x×*]\s*(\d[\d,]*(?:\.\d+)?)(?![\w"'])(?!\s?(?:inch|in|mm|cm|ft))""",
+        RegexOption.IGNORE_CASE
+    )
+    private val SLASH_DASH = Regex("""(\d)\s*/[-=](?=\s|$)""")
+    private val TAX_WORD = Regex("""(?<![a-z])(?:gst|tax|cgst|sgst|igst|discount)(?![a-z])""")
+    private val CURRENCY = Regex("""^(?:₹|rs)""", RegexOption.IGNORE_CASE)
     private val MASK_REF = Regex("""(\d+)""")
     private val OPS = setOf("x", "×", "*", "@", "=", "-", "–", ":")
     private val LONG_SIZE_UNITS = setOf("inch", "in", "mm", "cm", "\"", "''")
@@ -82,7 +96,8 @@ object StockListParser {
             val protect = when {
                 attached -> true
                 atStart -> unit in LONG_SIZE_UNITS
-                else -> LETTER_AFTER.containsMatchIn(after) && after.any { it.isDigit() }
+                else -> (LETTER_AFTER.containsMatchIn(after) && after.any { it.isDigit() }) ||
+                    QTY_UNIT_AFTER.containsMatchIn(after) || NUMBER_RUN.findAll(after).count() >= 3
             }
             if (protect) {
                 sb.append(s, last, m.range.first)
@@ -125,7 +140,11 @@ object StockListParser {
         if (t.contains('|')) parsePipe(t, raw)?.let { return it }
 
         val store = ArrayList<String>()
-        var s = mask(t, store).trim()
+        var pre = SLASH_DASH.replace(t, "$1")
+        pre = QTY_WORD.replace(pre, "")
+        pre = LEAD_TIMES.replace(pre, "$1 ")
+        pre = CROSS.replace(pre, "$1 x $2")
+        var s = mask(pre, store).trim()
 
         var qty: Double? = null
         var unit: String? = null
@@ -153,7 +172,7 @@ object StockListParser {
         var name = s.substring(0, nameEnd)
         name = name.replace(Regex("""\s[xX]$"""), "").replace(Regex("""[\s×*@=:,–-]+$"""), "").trim()
         name = unmask(name, store).replace(Regex("""\s+"""), " ").trim()
-        if (name.none { it.isLetter() }) return null
+        if (name.none { it.isLetter() } || normalizeUnit(name) != null) return null
 
         var rate: Double? = null
         var amount: Double? = null
@@ -169,7 +188,7 @@ object StockListParser {
                         "@" -> rate = n
                         "=" -> amount = n
                         "x", "×", "*" -> if (seenNum && rate == null && plain.isNotEmpty()) rate = n else plain.add(n)
-                        else -> plain.add(n)
+                        else -> if (seenNum && amount == null && CURRENCY.containsMatchIn(v)) amount = n else plain.add(n)
                     }
                     seenNum = true
                     prevOp = null
@@ -239,6 +258,7 @@ object StockListParser {
         for (raw in text.split('\n', '\r')) {
             val t = cleanLine(raw)?.lowercase() ?: continue
             if (!totalWord.containsMatchIn(t)) continue
+            if (TAX_WORD.containsMatchIn(t)) continue
             if (t.contains("sub total") || t.contains("subtotal") || t.contains("qty") || t.contains("items")) continue
             val v = numberRe.findAll(t).lastOrNull()?.value?.replace(",", "")?.toDoubleOrNull() ?: continue
             if (t.contains("grand total")) grand = paise(v) else plainTotal = paise(v)

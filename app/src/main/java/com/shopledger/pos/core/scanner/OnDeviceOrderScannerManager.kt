@@ -585,9 +585,7 @@ object OnDeviceOrderScannerManager {
         if (bestItem == null && tokens.size >= 2) {
             for (item in inventory) {
                 if (item.variants.isEmpty()) continue
-                val matchedTokens = tokens.count { tok ->
-                    tok.length >= 3 && SmartItemMatcher.calculateSearchRelevanceScore(tok, item, vertical) >= 500.0
-                }
+                val matchedTokens = countTokenMatches(tokens, item, vertical)
                 if (matchedTokens > 0) {
                     val tokenScore = matchedTokens * 600.0
                     if (tokenScore > bestScore) {
@@ -602,6 +600,15 @@ object OnDeviceOrderScannerManager {
         val bestVariant = pickBestVariant(resolvedItem, parsed.itemQuery) ?: return null
 
         return resolvedItem to bestVariant
+    }
+
+    /** Number of [tokens] (length >= 3) that each score >= 500 against [item]; shared with the stock-in matcher. */
+    internal fun countTokenMatches(
+        tokens: List<String>,
+        item: InventoryItemWithVariants,
+        vertical: ShopVertical
+    ): Int = tokens.count { tok ->
+        tok.length >= 3 && SmartItemMatcher.calculateSearchRelevanceScore(tok, item, vertical) >= 500.0
     }
 
     /**

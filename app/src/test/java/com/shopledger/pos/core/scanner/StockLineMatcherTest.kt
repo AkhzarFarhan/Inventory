@@ -42,9 +42,27 @@ class StockLineMatcherTest {
     }
 
     @Test fun weakNameIsCheckWithBestGuess() {
-        val m = match(line("Scrw blk 2 extra")).single()
+        val m = match(line("Scrw blk 2")).single()
         assertEquals(MatchStatus.CHECK, m.status)
         assertEquals("3", m.itemId)
+    }
+
+    @Test fun tokenFallbackGivesCheckOnly() {
+        listOf("Scrw blk", "black drywall").forEach {
+            val m = match(line(it)).single()
+            assertEquals(it, MatchStatus.CHECK, m.status)
+            assertEquals(it, "3", m.itemId)
+        }
+    }
+
+    @Test fun mergeWithDifferentUnitsBecomesCheck() {
+        val a = line("Fevicol SH 1kg", 2000, 21000).copy(unit = "pkt")
+        val b = line("Fevicol SH 1kg", 3000, 21000).copy(unit = "box")
+        assertEquals(MatchStatus.CHECK, match(a, b).single().status)
+    }
+
+    @Test fun medianMarkupNeverNegative() {
+        assertEquals(0.0, StockLineMatcher.medianMarkup(listOf(item("9", "Loss", 200, 100))), 1e-9)
     }
 
     @Test fun unknownNameIsNewWithSuggestedSell() {
