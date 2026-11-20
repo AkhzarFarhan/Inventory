@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui.screens.checkout
 
+import com.shopledger.pos.ui.text.variantLabel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -380,7 +381,7 @@ private fun SearchBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) 
                             Column(Modifier.weight(1f)) {
                                 Text(hit.itemName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    listOf(hit.variantSummary, hit.stockText).filter { it.isNotBlank() }.joinToString(" • "),
+                                    listOf(hit.variantSummary.variantLabel(), hit.stockText).filter { it.isNotBlank() }.joinToString(" • "),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -414,7 +415,7 @@ private fun CartLineCard(line: CartLineItem, isSellerUnlocked: Boolean, onEvent:
                 Text(line.itemName, style = MaterialTheme.typography.titleMedium)
                 if (line.variantSummary.isNotBlank()) {
                     Text(
-                        line.variantSummary,
+                        line.variantSummary.variantLabel(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

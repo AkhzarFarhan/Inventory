@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,7 +30,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.shopledger.pos.R
 import com.shopledger.pos.ui.text.asString
-import com.shopledger.pos.ui.theme.CupertinoColors
 import kotlinx.coroutines.delay
 
 /**
@@ -69,27 +68,27 @@ fun FloatingAppMessageHost(
         activeMessage?.let { msg ->
             val (bgColor, borderColor, inkColor, icon) = when (msg.severity) {
                 MessageSeverity.ERROR -> Quadruple(
-                    CupertinoColors.DestructiveTint,
-                    CupertinoColors.DestructiveRed,
-                    CupertinoColors.DestructiveRed,
+                    MaterialTheme.colorScheme.errorContainer,
+                    MaterialTheme.colorScheme.error,
+                    MaterialTheme.colorScheme.onErrorContainer,
                     Icons.Default.ErrorOutline
                 )
                 MessageSeverity.WARNING -> Quadruple(
-                    CupertinoColors.AmberTint,
-                    CupertinoColors.AmberWarning,
-                    CupertinoColors.AmberWarning,
+                    MaterialTheme.colorScheme.tertiaryContainer,
+                    MaterialTheme.colorScheme.tertiary,
+                    MaterialTheme.colorScheme.onTertiaryContainer,
                     Icons.Default.WarningAmber
                 )
                 MessageSeverity.SUCCESS -> Quadruple(
-                    CupertinoColors.EmeraldTint,
-                    CupertinoColors.EmeraldGreen,
-                    CupertinoColors.EmeraldGreen,
+                    MaterialTheme.colorScheme.primaryContainer,
+                    MaterialTheme.colorScheme.primary,
+                    MaterialTheme.colorScheme.onPrimaryContainer,
                     Icons.Default.CheckCircle
                 )
                 MessageSeverity.INFO -> Quadruple(
-                    CupertinoColors.SystemBlueTint,
-                    CupertinoColors.SystemBlue,
-                    CupertinoColors.SystemBlue,
+                    MaterialTheme.colorScheme.secondaryContainer,
+                    MaterialTheme.colorScheme.secondary,
+                    MaterialTheme.colorScheme.onSecondaryContainer,
                     Icons.Default.Info
                 )
             }
@@ -131,19 +130,19 @@ fun FloatingAppMessageHost(
                         Text(
                             text = msg.detail.asString() + msg.technical?.let { "\n$it" }.orEmpty(),
                             fontSize = 12.sp,
-                            color = CupertinoColors.LabelPrimary,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     IconButton(
                         onClick = { AppErrorManager.dismiss(msg.id) },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = stringResource(R.string.action_dismiss),
-                            tint = Color(0xFF444448),
+                            tint = inkColor,
                             modifier = Modifier.size(16.dp)
                         )
                     }

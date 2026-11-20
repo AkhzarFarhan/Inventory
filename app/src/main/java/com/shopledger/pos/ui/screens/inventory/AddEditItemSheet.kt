@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import com.shopledger.pos.ui.text.variantLabel
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
@@ -844,7 +845,7 @@ fun AddEditItemSheet(
                             ) {
                                 variants.forEach { v ->
                                     val isSelected = !isAddingNewVariant && v.id == (activeVariant?.id ?: selectedVariantId)
-                                    val summary = v.buildVariantSummary()
+                                    val summary = v.buildVariantSummary().variantLabel()
                                     val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
                                     FilterChip(
                                         selected = isSelected,
@@ -868,7 +869,7 @@ fun AddEditItemSheet(
                                 } else {
                                     stringResource(
                                         R.string.item_form_editing_summary,
-                                        activeVariant?.buildVariantSummary() ?: standardLabel,
+                                        activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
                                         IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0),
                                         IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
                                     )
@@ -1342,7 +1343,7 @@ fun AddEditItemSheet(
                 Text(
                     stringResource(
                         R.string.item_form_delete_variant_message,
-                        activeVariant.buildVariantSummary(),
+                        activeVariant.buildVariantSummary().variantLabel(),
                         mode.itemWithVariants.item.displayName
                     ),
                     style = MaterialTheme.typography.bodyLarge,

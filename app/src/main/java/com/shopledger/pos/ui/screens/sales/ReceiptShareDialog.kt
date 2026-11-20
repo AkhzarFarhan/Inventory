@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui.screens.sales
 
+import com.shopledger.pos.ui.text.variantLabel
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -196,7 +197,7 @@ fun ReceiptShareDialog(
                                             style = MaterialTheme.typography.titleMedium,
                                         )
                                         Text(
-                                            text = "${line.variantSummary} • ${
+                                            text = "${line.variantSummary.variantLabel()} • ${
                                                 IndianCurrencyFormatter.formatQuantity(line.quantity)
                                             } ${line.unit} × ${IndianCurrencyFormatter.formatPaise(line.unitSellingPricePaise)}",
                                             style = MaterialTheme.typography.bodyMedium,

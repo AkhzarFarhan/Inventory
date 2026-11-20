@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui.screens.sales
 
+import com.shopledger.pos.ui.text.variantLabel
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -357,7 +358,7 @@ fun SaleHistoryScreen(
                         stringResource(
                             R.string.bills_return_message,
                             target.itemNameSnapshot,
-                            target.variantSummarySnapshot,
+                            target.variantSummarySnapshot.variantLabel(),
                             IndianCurrencyFormatter.formatMilliUnits(remainingMilli),
                             target.unitSnapshot
                         ),
@@ -489,7 +490,7 @@ private fun SaleRecordCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${sale.variantSummarySnapshot} • #${sale.receiptNumber}",
+                        text = "${sale.variantSummarySnapshot.variantLabel()} • #${sale.receiptNumber}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = mutedColor
                     )

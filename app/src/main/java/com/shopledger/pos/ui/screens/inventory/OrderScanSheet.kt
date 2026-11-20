@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import com.shopledger.pos.ui.text.variantLabel
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -386,7 +387,7 @@ fun OrderScanSheet(
                         if (hasMatches) {
                             result.matchedCartLines.forEach { line ->
                                 Text(
-                                    text = "• ${line.itemName} (${line.variantSummary}) × ${
+                                    text = "• ${line.itemName} (${line.variantSummary.variantLabel()}) × ${
                                         IndianCurrencyFormatter.formatQuantity(line.quantity)
                                     } ${line.unit}",
                                     style = MaterialTheme.typography.bodyLarge,

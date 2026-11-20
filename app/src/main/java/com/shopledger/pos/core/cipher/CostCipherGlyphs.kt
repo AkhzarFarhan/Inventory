@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
+import com.shopledger.pos.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,7 +27,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
-import com.shopledger.pos.ui.theme.CupertinoColors
 
 /**
  * Displays the purchase price encoded using the shopkeeper's user-defined custom cipher:
@@ -60,8 +62,8 @@ fun CodedPurchasePriceBadge(
     Row(
         modifier = modifier
             .clip(shape)
-            .background(CupertinoColors.CipherContainer)
-            .border(1.dp, CupertinoColors.CipherIndigo.copy(alpha = 0.22f), shape)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .border(1.dp, MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.22f), shape)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -73,7 +75,7 @@ fun CodedPurchasePriceBadge(
                     text = codedText,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = CupertinoColors.CipherIndigo,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -84,7 +86,7 @@ fun CodedPurchasePriceBadge(
                         text = "••••",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = CupertinoColors.CipherIndigo
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
             }
@@ -95,7 +97,7 @@ fun CodedPurchasePriceBadge(
                 text = if (resolvedMode == CipherMode.HIDDEN_PIN) formattedCost else " ($formattedCost)",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = CupertinoColors.CipherIndigo
+                color = MaterialTheme.colorScheme.onSecondaryContainer
             )
         }
     }
@@ -126,8 +128,8 @@ fun CipherReferenceStrip(
             Row(
                 modifier = modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(CupertinoColors.CipherContainer)
-                    .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
@@ -141,13 +143,13 @@ fun CipherReferenceStrip(
                             text = resolvedMap[digit].orEmpty(),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = CupertinoColors.CipherIndigo
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                         Text(
                             text = digit.toString(),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.LabelSecondary
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -158,16 +160,16 @@ fun CipherReferenceStrip(
                 modifier = modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
-                    .background(CupertinoColors.CipherContainer)
-                    .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "PIN-Protected Mode: Purchase cost is hidden behind •••• until Seller Mode is unlocked.",
+                    text = stringResource(R.string.cipher_pin_protected_note),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = CupertinoColors.CipherIndigo
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
         }

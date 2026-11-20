@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -30,7 +32,6 @@ import com.shopledger.pos.R
 import androidx.compose.ui.res.stringResource
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.PendingRestore
-import com.shopledger.pos.ui.theme.CupertinoColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,30 +58,30 @@ fun DatabaseRecoveryScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(CupertinoColors.CardSurface)
+            .background(MaterialTheme.colorScheme.surface)
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text(stringResource(R.string.recovery_title), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = CupertinoColors.LabelPrimary)
+        Text(stringResource(R.string.recovery_title), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
         Spacer(modifier = Modifier.height(12.dp))
-        if (BuildConfig.DEBUG) Text(reason, fontSize = 15.sp, color = CupertinoColors.LabelSecondary)
+        if (BuildConfig.DEBUG) Text(reason, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             stringResource(R.string.recovery_body),
             fontSize = 14.sp,
-            color = CupertinoColors.LabelSecondary
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = onRetry, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_retry)) }
+        Button(onClick = onRetry, enabled = !restoring, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text(stringResource(R.string.action_retry)) }
         if (snapshotLabel != null && !restorePending) {
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(onClick = { confirming = true }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { confirming = true }, enabled = !restoring, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.recovery_restore_button, snapshotLabel))
             }
         }
         if (hasSafetyCopy) {
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(onClick = onShareSafetyCopy, enabled = !restoring, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onShareSafetyCopy, enabled = !restoring, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.recovery_send_support))
             }
         }
@@ -112,7 +113,7 @@ fun DatabaseRecoveryScreen(
                             Toast.makeText(context, error, Toast.LENGTH_LONG).show()
                         }
                     }
-                }) { Text(stringResource(R.string.recovery_restore_confirm), color = CupertinoColors.DestructiveRed) }
+                }) { Text(stringResource(R.string.recovery_restore_confirm), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.action_cancel)) } }
         )

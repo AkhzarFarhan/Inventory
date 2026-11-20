@@ -30,6 +30,7 @@ import com.shopledger.pos.ui.screens.stockin.StockInEntrySheet
 import com.shopledger.pos.ui.screens.stockin.StockInEvent
 import com.shopledger.pos.ui.screens.stockin.StockInReviewScreen
 import com.shopledger.pos.ui.screens.stockin.StockInViewModel
+import com.shopledger.pos.ui.text.orStandard
 import com.shopledger.pos.ui.theme.ConfirmDialog
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -83,7 +84,6 @@ import com.shopledger.pos.ui.screens.setup.SetupWizardHost
 import com.shopledger.pos.ui.screens.sales.ReceiptShareDialog
 import com.shopledger.pos.ui.screens.sales.SaleHistoryScreen
 import com.shopledger.pos.ui.screens.settings.CloudSyncAndBackupSheet
-import com.shopledger.pos.ui.theme.LpsCupertinoTheme
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 
 class MainActivity : ComponentActivity() {
@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
             ShopLedgerTheme {
                 val health by DatabaseHealth.state.collectAsState()
                 when (val current = health) {
-                    is DatabaseHealth.State.Failed -> LpsCupertinoTheme { DatabaseRecoveryScreen(
+                    is DatabaseHealth.State.Failed -> DatabaseRecoveryScreen(
                         reason = current.reason,
                         hasSafetyCopy = current.safetyCopy != null,
                         onShareSafetyCopy = {
@@ -118,7 +118,7 @@ class MainActivity : ComponentActivity() {
                                 app.backupManager.stageRestoreFromSnapshot(latest)
                             }
                         }
-                    ) }
+                    )
                     DatabaseHealth.State.Ok -> {
                         val setupDone by SyncManager.isSetupCompletedFlow.collectAsState()
                         if (setupDone) LpsHardwareMainApp(viewModel = viewModel) else FirstRunSetup(viewModel)
@@ -286,7 +286,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                                     R.string.reorder_list_line,
                                                     count++,
                                                     group.item.displayName,
-                                                    v.buildVariantSummary(),
+                                                    v.buildVariantSummary().orStandard(context.getString(R.string.item_form_standard)),
                                                     IndianCurrencyFormatter.formatQuantity(v.stockQuantity),
                                                     v.unit,
                                                 ) + "\n"
@@ -297,22 +297,18 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             ReceiptShareManager.shareTextToWhatsApp(context, orderText)
                         },
                     )
-                    AppTab.BILLS -> LpsCupertinoTheme {
-                        SaleHistoryScreen(
-                            sales = salesHistory,
-                            isSellerUnlocked = isSellerUnlocked,
-                            onToggleSellerUnlocked = requestToggleSeller,
-                            onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
-                            onReturnSale = viewModel::returnSaleLine
-                        )
-                    }
-                    AppTab.KHATA -> LpsCupertinoTheme {
-                        PartiesKhataScreen(
-                            parties = parties,
-                            onAddParty = viewModel::addOrUpdateParty,
-                            onRecordPaymentReceived = viewModel::recordPartyPaymentReceived
-                        )
-                    }
+                    AppTab.BILLS -> SaleHistoryScreen(
+                        sales = salesHistory,
+                        isSellerUnlocked = isSellerUnlocked,
+                        onToggleSellerUnlocked = requestToggleSeller,
+                        onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
+                        onReturnSale = viewModel::returnSaleLine
+                    )
+                    AppTab.KHATA -> PartiesKhataScreen(
+                        parties = parties,
+                        onAddParty = viewModel::addOrUpdateParty,
+                        onRecordPaymentReceived = viewModel::recordPartyPaymentReceived
+                    )
                     AppTab.MORE -> MoreScreen(
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSeller = requestToggleSeller,
@@ -437,8 +433,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         allInventory.map { it.item.category }.filter { it.isNotBlank() }.distinct()
     }
 
-    // The sheets below keep their existing look until they are restyled.
-    LpsCupertinoTheme {
+    run {
         // Add / Edit Item & Variant Sheet
         activeEditorMode?.let { mode ->
             AddEditItemSheet(

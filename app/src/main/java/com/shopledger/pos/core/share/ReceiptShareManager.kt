@@ -20,6 +20,8 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.sync.SyncManager
+import com.shopledger.pos.ui.i18n.AppLanguageStore
+import com.shopledger.pos.ui.text.orStandard
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -96,6 +98,8 @@ object ReceiptShareManager {
      */
     fun generateReceiptImageUri(context: Context, receipt: SaleReceiptData): Uri? {
         return try {
+            // Customer-facing text follows the app language, whichever context the caller passed.
+            val res = AppLanguageStore.localizedContext(context).resources
             val sellerName = receipt.sellerName.ifBlank {
                 SyncManager.getSellerName(context)
             }.ifBlank { "ShopLedger POS" }
@@ -177,7 +181,11 @@ object ReceiptShareManager {
             }
             canvas.drawText(sellerName.uppercase(Locale.ENGLISH), width / 2f, 68f, titlePaint)
             canvas.drawText(
-                if (receipt.isEstimate) "ESTIMATE / QUOTATION" else if (hasGstin) "TAX / SALE RECEIPT" else "CASH / SALE RECEIPT",
+                res.getString(
+                    if (receipt.isEstimate) R.string.rcpt_title_estimate
+                    else if (hasGstin) R.string.rcpt_title_tax
+                    else R.string.rcpt_title_cash
+                ),
                 width / 2f,
                 98f,
                 subTitlePaint
@@ -198,22 +206,24 @@ object ReceiptShareManager {
                 .format(Date(receipt.timestampMillis))
 
             var y = 156f
-            val idPrefix = if (receipt.isEstimate) "Estimate No: #" else "Receipt No: #"
-            canvas.drawText("$idPrefix${receipt.receiptNumber}", 52f, y, metaValuePaint)
+            val idLine = res.getString(
+                if (receipt.isEstimate) R.string.rcpt_no_estimate else R.string.rcpt_no_sale,
+                receipt.receiptNumber
+            )
+            canvas.drawText(idLine, 52f, y, metaValuePaint)
             metaLabelPaint.textAlign = Paint.Align.RIGHT
             canvas.drawText(dateStr, (width - 52).toFloat(), y, metaLabelPaint)
             metaLabelPaint.textAlign = Paint.Align.LEFT
 
             if (hasBuyerRow) {
                 y += 34f
-                val buyerDisplay = buildString {
-                    append("Buyer: ")
+                val buyerDisplay = res.getString(R.string.rcpt_buyer, buildString {
                     if (receipt.buyerName.isNotBlank()) append(receipt.buyerName)
                     if (receipt.buyerPhone.isNotBlank()) {
                         if (receipt.buyerName.isNotBlank()) append(" • ")
                         append(receipt.buyerPhone)
                     }
-                }
+                })
                 canvas.drawText(buyerDisplay, 52f, y, metaLabelPaint)
             }
 
@@ -224,19 +234,17 @@ object ReceiptShareManager {
                     textSize = 19f
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 }
-                val sellerLine = buildString {
-                    append(sellerName)
-                    if (sellerPhone.isNotBlank()) {
-                        append(" • WhatsApp: +91 ")
-                        append(sellerPhone.removePrefix("+91").trim())
-                    }
+                val sellerLine = if (sellerPhone.isNotBlank()) {
+                    res.getString(R.string.rcpt_seller_whatsapp, sellerName, sellerPhone.removePrefix("+91").trim())
+                } else {
+                    sellerName
                 }
                 canvas.drawText(sellerLine, 52f, y, sellerPaint)
             }
 
             if (hasGstin) {
                 y += 28f
-                canvas.drawText("GSTIN: $gstin", 52f, y, metaLabelPaint)
+                canvas.drawText(res.getString(R.string.rcpt_gstin, gstin), 52f, y, metaLabelPaint)
             }
 
             y += 24f
@@ -254,10 +262,10 @@ object ReceiptShareManager {
                 textSize = 18f
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             }
-            canvas.drawText("ITEM DESCRIPTION", 52f, y, colHeaderPaint)
+            canvas.drawText(res.getString(R.string.rcpt_col_item), 52f, y, colHeaderPaint)
             colHeaderPaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("QTY × RATE", (width - 195).toFloat(), y, colHeaderPaint)
-            canvas.drawText("AMOUNT", (width - 52).toFloat(), y, colHeaderPaint)
+            canvas.drawText(res.getString(R.string.rcpt_col_qty), (width - 195).toFloat(), y, colHeaderPaint)
+            canvas.drawText(res.getString(R.string.rcpt_col_amount), (width - 52).toFloat(), y, colHeaderPaint)
 
             y += 16f
             canvas.drawLine(48f, y, (width - 48).toFloat(), y, borderPaint)
@@ -305,7 +313,7 @@ object ReceiptShareManager {
                 )
 
                 y += 26f
-                val subText = item.variantSummary.ifBlank { "Standard" }
+                val subText = item.variantSummary.orStandard(res.getString(R.string.item_form_standard))
                 canvas.drawText("    $subText", 52f, y, itemSubPaint)
 
                 y += 14f
@@ -314,11 +322,18 @@ object ReceiptShareManager {
 
             if (receipt.discountPaise > 0L) {
                 y += 28f
-                canvas.drawText("Subtotal (${IndianCurrencyFormatter.formatPaise(receipt.subtotalPaise)})  •  Discount: -${IndianCurrencyFormatter.formatPaise(receipt.discountPaise)}", 52f, y, metaLabelPaint)
+                canvas.drawText(
+                    res.getString(
+                        R.string.rcpt_subtotal_discount,
+                        IndianCurrencyFormatter.formatPaise(receipt.subtotalPaise),
+                        IndianCurrencyFormatter.formatPaise(receipt.discountPaise)
+                    ),
+                    52f, y, metaLabelPaint
+                )
             }
             if (receipt.taxPaise > 0L) {
                 y += 28f
-                canvas.drawText("GST Tax Included / Added: ${IndianCurrencyFormatter.formatPaise(receipt.taxPaise)}", 52f, y, metaLabelPaint)
+                canvas.drawText(res.getString(R.string.rcpt_tax_line, IndianCurrencyFormatter.formatPaise(receipt.taxPaise)), 52f, y, metaLabelPaint)
             }
 
             // Grand Total Box
@@ -341,11 +356,11 @@ object ReceiptShareManager {
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 textAlign = Paint.Align.RIGHT
             }
-            val totalTitle = if (receipt.isEstimate) {
-                "ESTIMATE TOTAL (${receipt.items.size} items)"
-            } else {
-                "GRAND TOTAL (${receipt.items.size} items)"
-            }
+            val totalTitle = res.getQuantityString(
+                if (receipt.isEstimate) R.plurals.rcpt_total_estimate else R.plurals.rcpt_total_sale,
+                receipt.items.size,
+                receipt.items.size
+            )
             canvas.drawText(totalTitle, 68f, y + 43f, totalLabelPaint)
             canvas.drawText(
                 IndianCurrencyFormatter.formatPaise(receipt.grandTotalPaise),
@@ -356,8 +371,14 @@ object ReceiptShareManager {
 
             y += 96f
             if (!receipt.isEstimate) {
+                val modeLabel = when (receipt.paymentMode.uppercase(Locale.ROOT)) {
+                    "CASH" -> res.getString(R.string.checkout_pay_cash)
+                    "UPI" -> res.getString(R.string.checkout_pay_upi)
+                    "UDHAR" -> res.getString(R.string.checkout_pay_udhar)
+                    else -> receipt.paymentMode
+                }
                 canvas.drawText(
-                    "Payment Mode: ${receipt.paymentMode}   •   Paid: ${IndianCurrencyFormatter.formatPaise(receipt.amountPaidPaise)}",
+                    res.getString(R.string.rcpt_payment_paid, modeLabel, IndianCurrencyFormatter.formatPaise(receipt.amountPaidPaise)),
                     52f,
                     y,
                     metaValuePaint
@@ -370,7 +391,7 @@ object ReceiptShareManager {
                         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                     }
                     canvas.drawText(
-                        "BALANCE DUE (UDHAR): ${IndianCurrencyFormatter.formatPaise(receipt.balanceDuePaise)}",
+                        res.getString(R.string.rcpt_balance_due, IndianCurrencyFormatter.formatPaise(receipt.balanceDuePaise)),
                         52f,
                         y,
                         duePaint
@@ -389,7 +410,7 @@ object ReceiptShareManager {
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                     textAlign = Paint.Align.CENTER
                 }
-                canvas.drawText("Scan UPI QR to Pay ($upiId)", width / 2f, y, qrLabelPaint)
+                canvas.drawText(res.getString(R.string.rcpt_scan_upi, upiId), width / 2f, y, qrLabelPaint)
                 y += 34f
                 qrBitmap.recycle()
             }
@@ -399,7 +420,7 @@ object ReceiptShareManager {
                 textSize = 18f
                 textAlign = Paint.Align.CENTER
             }
-            canvas.drawText("Thank you for shopping at $sellerName!", width / 2f, y + 10f, footerPaint)
+            canvas.drawText(res.getString(R.string.rcpt_thanks_footer, sellerName), width / 2f, y + 10f, footerPaint)
 
             val receiptsDir = File(context.cacheDir, "receipts")
             if (!receiptsDir.exists()) receiptsDir.mkdirs()
@@ -452,20 +473,21 @@ object ReceiptShareManager {
         }
         val normalizedSellerPhone = normalizeIndianPhoneNumber(rawSellerPhone)
 
-        val docTitle = if (receipt.isEstimate) "Estimate" else "Sale Receipt"
+        val res = AppLanguageStore.localizedContext(context).resources
+        val docTitle = res.getString(if (receipt.isEstimate) R.string.rcpt_doc_estimate else R.string.rcpt_doc_sale)
         val caption = buildString {
-            append("*$sellerName — $docTitle #${receipt.receiptNumber}*\n")
+            append(res.getString(R.string.rcpt_cap_heading, sellerName, docTitle, receipt.receiptNumber)).append("\n")
             if (receipt.buyerName.isNotBlank()) {
-                append("Customer: ${receipt.buyerName}\n")
+                append(res.getString(R.string.rcpt_cap_customer, receipt.buyerName)).append("\n")
             }
-            append("Total Amount: *${IndianCurrencyFormatter.formatPaise(receipt.grandTotalPaise)}*\n")
+            append(res.getString(R.string.rcpt_cap_total, IndianCurrencyFormatter.formatPaise(receipt.grandTotalPaise))).append("\n")
             if (!receipt.isEstimate && receipt.balanceDuePaise > 0L) {
-                append("Balance Due (Udhar): *${IndianCurrencyFormatter.formatPaise(receipt.balanceDuePaise)}*\n")
+                append(res.getString(R.string.rcpt_cap_due, IndianCurrencyFormatter.formatPaise(receipt.balanceDuePaise))).append("\n")
             }
             if (normalizedSellerPhone.isNotEmpty()) {
-                append("\n📲 *Contact $sellerName (1-Tap):*\nhttps://wa.me/$normalizedSellerPhone\n")
+                append("\n").append(res.getString(R.string.rcpt_cap_contact, sellerName)).append("\nhttps://wa.me/$normalizedSellerPhone\n")
             }
-            append("Thank you for shopping with $sellerName!")
+            append(res.getString(R.string.rcpt_cap_thanks, sellerName))
         }
 
         val whatsAppPkg = findInstalledWhatsAppPackage(context)
@@ -496,7 +518,7 @@ object ReceiptShareManager {
                 putExtra(Intent.EXTRA_TEXT, caption)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             },
-            "Share $sellerName $docTitle"
+            res.getString(R.string.rcpt_share_chooser, sellerName, docTitle)
         ).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -541,7 +563,7 @@ object ReceiptShareManager {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, message)
                 },
-                "Share via"
+                AppLanguageStore.localizedContext(context).getString(R.string.rcpt_share_via)
             ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             context.startActivity(chooser)
         }

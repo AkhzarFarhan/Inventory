@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import com.shopledger.pos.ui.text.variantLabel
 import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -153,7 +154,7 @@ fun QuickSellSheet(
                     ) {
                         allVariants.forEach { v ->
                             val isSelected = v.id == activeVariant.id
-                            val summary = v.buildVariantSummary()
+                            val summary = v.buildVariantSummary().variantLabel()
                             val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
                             FilterChip(
                                 selected = isSelected,
@@ -172,7 +173,7 @@ fun QuickSellSheet(
                 Text(
                     text = stringResource(
                         R.string.sell_available,
-                        activeVariant.buildVariantSummary(),
+                        activeVariant.buildVariantSummary().variantLabel(),
                         IndianCurrencyFormatter.formatQuantity(activeVariant.stockQuantity),
                         activeVariant.unit
                     ),

@@ -33,6 +33,14 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -86,12 +94,16 @@ import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.core.update.AppUpdateManager
 import com.shopledger.pos.core.update.UpdateStatus
+import com.shopledger.pos.ui.theme.ChipTone
+import com.shopledger.pos.ui.theme.ConfirmDialog
 import com.shopledger.pos.ui.theme.EmptyState
-import com.shopledger.pos.ui.theme.CupertinoCard
-import com.shopledger.pos.ui.theme.CupertinoColors
-import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
-import com.shopledger.pos.ui.theme.CupertinoTextField
-import com.shopledger.pos.ui.theme.SemanticPillBadge
+import com.shopledger.pos.ui.theme.PrimaryActionButton
+import com.shopledger.pos.ui.theme.SectionCard
+import com.shopledger.pos.ui.theme.SecondaryActionButton
+import com.shopledger.pos.ui.theme.SegmentedChoice
+import com.shopledger.pos.ui.theme.ShopLedgerTheme
+import com.shopledger.pos.ui.theme.ShopLedgerTokens
+import com.shopledger.pos.ui.theme.StatusChip
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
@@ -224,47 +236,43 @@ fun CloudSyncAndBackupSheet(
         AlertDialog(
             onDismissRequest = {},
             properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-            title = { Text("Checking backup…") },
+            title = { Text(stringResource(R.string.settings_checking_title)) },
             text = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    Text("Please wait. Your current data is not changed yet.")
+                    Text(stringResource(R.string.settings_checking_body), style = MaterialTheme.typography.bodyLarge)
                 }
             },
             confirmButton = {}
         )
     }
     if (showRestoreConfirm) {
-        AlertDialog(
-            onDismissRequest = { showRestoreConfirm = false },
-            title = { Text("Replace all data on this phone?") },
-            text = { Text("Everything on this phone will be replaced by the backup file. Export a backup first if you might need today's data.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showRestoreConfirm = false
-                    restorePicker.launch(arrayOf("*/*"))
-                }) { Text("Choose backup file", color = CupertinoColors.DestructiveRed) }
+        ConfirmDialog(
+            title = stringResource(R.string.settings_restore_all_title),
+            message = stringResource(R.string.settings_restore_all_body),
+            confirmText = stringResource(R.string.settings_choose_backup_file),
+            destructive = true,
+            onConfirm = {
+                showRestoreConfirm = false
+                restorePicker.launch(arrayOf("*/*"))
             },
-            dismissButton = { TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel") } }
+            onDismiss = { showRestoreConfirm = false },
         )
     }
     if (showSnapshotRestoreConfirm) {
-        AlertDialog(
-            onDismissRequest = { showSnapshotRestoreConfirm = false },
-            title = { Text("Restore last night's backup?") },
-            text = {
-                Text(
-                    "Everything on this phone will be replaced by the automatic backup from ${lastSnapshotLabel ?: "last night"}. " +
-                        "Anything entered since then will be lost. Export a backup first if you might need today's data."
-                )
+        ConfirmDialog(
+            title = stringResource(R.string.settings_restore_night_title),
+            message = stringResource(
+                R.string.settings_restore_night_body,
+                lastSnapshotLabel ?: stringResource(R.string.settings_last_night)
+            ),
+            confirmText = stringResource(R.string.settings_restore_action),
+            destructive = true,
+            onConfirm = {
+                showSnapshotRestoreConfirm = false
+                stageThenRestart { onRestoreLatestSnapshot() }
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    showSnapshotRestoreConfirm = false
-                    stageThenRestart { onRestoreLatestSnapshot() }
-                }) { Text("Restore", color = CupertinoColors.DestructiveRed) }
-            },
-            dismissButton = { TextButton(onClick = { showSnapshotRestoreConfirm = false }) { Text("Cancel") } }
+            onDismiss = { showSnapshotRestoreConfirm = false },
         )
     }
 
@@ -310,7 +318,7 @@ fun CloudSyncAndBackupSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = CupertinoColors.SystemGroupedBackground
+        containerColor = MaterialTheme.colorScheme.background
     ) {
         FloatingAppMessageHost()
         Column(
@@ -321,55 +329,49 @@ fun CloudSyncAndBackupSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Account, Shop WhatsApp & Backup",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = CupertinoColors.LabelPrimary
+                text = stringResource(R.string.settings_title),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground
             )
 
             // 1. SINGLE-TAP GOOGLE SIGN-IN CARD
-            CupertinoCard(
-                containerColor = if (signedInUser != null) CupertinoColors.EmeraldTint else CupertinoColors.CardSurface,
-                borderColor = if (signedInUser != null) CupertinoColors.EmeraldGreen.copy(alpha = 0.4f) else CupertinoColors.SystemBlue.copy(alpha = 0.35f)
-            ) {
+            SectionCard {
                 val activeUser = signedInUser
                 if (activeUser == null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
-                                .background(CupertinoColors.SystemBlueTint),
+                                .background(MaterialTheme.colorScheme.secondaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AccountCircle,
                                 contentDescription = null,
-                                tint = CupertinoColors.SystemBlue,
-                                modifier = Modifier.size(26.dp)
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Single-Tap Google Sign-In",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = CupertinoColors.LabelPrimary
+                                text = stringResource(R.string.settings_google_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Sign in with Google to automatically sync all shop items, variants, Khata, and sales across your devices.",
-                                fontSize = 12.sp,
-                                color = CupertinoColors.LabelSecondary
+                                text = stringResource(R.string.settings_google_body),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Button(
+                    PrimaryActionButton(
+                        text = stringResource(R.string.settings_google_button),
+                        icon = Icons.Default.AccountCircle,
                         onClick = {
                             try {
                                 googleAccountPickerLauncher.launch(
@@ -382,27 +384,8 @@ fun CloudSyncAndBackupSheet(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CupertinoColors.SystemBlue,
-                            contentColor = Color.White
-                        ),
-                        contentPadding = PaddingValues(vertical = 13.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AccountCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Sign in with Google",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
+                        }
+                    )
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -412,383 +395,303 @@ fun CloudSyncAndBackupSheet(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = activeUser.displayName,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = CupertinoColors.LabelPrimary
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = activeUser.email,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = CupertinoColors.EmeraldGreen
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "$syncStatusMessage • $pendingSyncCount pending",
-                                fontSize = 11.sp,
-                                color = CupertinoColors.LabelSecondary
+                                text = stringResource(R.string.settings_sync_status, syncStatusMessage, pendingSyncCount),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-
-                        SemanticPillBadge(
-                            text = "Connected",
-                            containerColor = CupertinoColors.CardSurface,
-                            contentColor = CupertinoColors.EmeraldGreen
-                        )
+                        StatusChip(text = stringResource(R.string.settings_connected), tone = ChipTone.SUCCESS)
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
+                    PrimaryActionButton(
+                        text = stringResource(R.string.settings_sync_now),
+                        icon = Icons.Default.CloudSync,
+                        onClick = {
+                            SyncManager.onUserSignedInTriggerFullSync(
+                                context,
+                                activeUser.cloudAccountDocumentId
+                            )
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.msg_syncing),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                    SecondaryActionButton(
+                        text = stringResource(R.string.settings_sign_out),
+                        icon = Icons.AutoMirrored.Filled.Logout,
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                SyncManager.onUserSignedInTriggerFullSync(
-                                    context,
-                                    activeUser.cloudAccountDocumentId
-                                )
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.msg_syncing),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CupertinoColors.EmeraldGreen,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.weight(1.4f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudSync,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Sync All Items Now", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        onClick = {
+                            GoogleAuthManager.signOut(context)
+                            Toast.makeText(context, R.string.msg_signed_out, Toast.LENGTH_SHORT).show()
                         }
-
-                        OutlinedButton(
-                            onClick = {
-                                GoogleAuthManager.signOut(context)
-                                Toast.makeText(context, R.string.msg_signed_out, Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, CupertinoColors.DestructiveRed.copy(alpha = 0.4f)),
-                            modifier = Modifier.weight(0.8f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Logout,
-                                contentDescription = null,
-                                tint = CupertinoColors.DestructiveRed,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Sign Out",
-                                color = CupertinoColors.DestructiveRed,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
+                    )
                 }
             }
 
-            // 2. SELLER / SHOP DETAILS & WHATSAPP CARD (Improvement #1 & #5)
-            CupertinoCard {
+            // 2. SELLER / SHOP DETAILS & WHATSAPP CARD
+            SectionCard(title = stringResource(R.string.settings_shop_title)) {
                 Text(
-                    text = "Seller / Shop Name & WhatsApp",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
+                    text = stringResource(R.string.settings_shop_body),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Printed on every Sale Receipt & Estimate photo and included as a 1-tap WhatsApp link so buyers can reach out to you directly.",
-                    fontSize = 12.sp,
-                    color = CupertinoColors.LabelSecondary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
 
-                CupertinoTextField(
+                SettingsField(
                     value = sellerNameInput,
                     onValueChange = {
                         sellerNameInput = it
                         SyncManager.saveSellerName(context, it)
                     },
-                    label = "Seller / Shop Name",
-                    placeholder = "My Shop / Owner Name",
+                    label = stringResource(R.string.settings_seller_name),
+                    placeholder = stringResource(R.string.settings_seller_name_hint),
                     capitalization = KeyboardCapitalization.Words
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                CupertinoTextField(
+                SettingsField(
                     value = sellerWhatsAppInput,
                     onValueChange = {
                         sellerWhatsAppInput = it
                         SyncManager.saveSellerWhatsAppNumber(context, it)
                     },
-                    label = "Seller WhatsApp Mobile (+91)",
-                    placeholder = "e.g. 9876543210",
+                    label = stringResource(R.string.settings_whatsapp),
+                    placeholder = stringResource(R.string.settings_whatsapp_hint),
                     keyboardType = KeyboardType.Phone
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                SettingsField(
+                    value = upiIdInput,
+                    onValueChange = {
+                        upiIdInput = it
+                        SyncManager.saveUpiId(context, it)
+                    },
+                    label = stringResource(R.string.settings_upi),
+                    placeholder = stringResource(R.string.settings_upi_hint),
+                    capitalization = KeyboardCapitalization.None
+                )
+                SettingsField(
+                    value = deviceCodeInput,
+                    onValueChange = { typed ->
+                        deviceCodeInput = typed.uppercase(Locale.ROOT).filter { ch -> ch in 'A'..'Z' || ch in '0'..'9' }.take(4)
+                    },
+                    label = stringResource(R.string.shop_counter_code),
+                    placeholder = stringResource(R.string.settings_counter_hint),
+                    capitalization = KeyboardCapitalization.Characters,
+                    imeAction = ImeAction.Done,
+                    onImeAction = { commitDeviceCode() },
+                    modifier = Modifier.onFocusChanged { f ->
+                        if (deviceCodeWasFocused && !f.isFocused) commitDeviceCode()
+                        deviceCodeWasFocused = f.isFocused
+                    }
+                )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CupertinoTextField(
-                        value = upiIdInput,
-                        onValueChange = {
-                            upiIdInput = it
-                            SyncManager.saveUpiId(context, it)
-                        },
-                        label = "UPI ID (For Receipt QR)",
-                        placeholder = "merchant@upi",
-                        capitalization = KeyboardCapitalization.None,
-                        modifier = Modifier.weight(1.2f)
-                    )
-                    CupertinoTextField(
-                        value = deviceCodeInput,
-                        onValueChange = { typed ->
-                            deviceCodeInput = typed.uppercase(Locale.ROOT).filter { ch -> ch in 'A'..'Z' || ch in '0'..'9' }.take(4)
-                        },
-                        label = "Counter Code",
-                        placeholder = "D1 / blank",
-                        capitalization = KeyboardCapitalization.Characters,
-                        imeAction = ImeAction.Done,
-                        onImeAction = { commitDeviceCode() },
-                        modifier = Modifier.weight(0.8f).onFocusChanged { f ->
-                            if (deviceCodeWasFocused && !f.isFocused) commitDeviceCode()
-                            deviceCodeWasFocused = f.isFocused
-                        }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                CupertinoTextField(
+                SettingsField(
                     value = gstinInput,
                     onValueChange = {
                         gstinInput = it
                         SyncManager.saveGstin(context, it)
                     },
-                    label = "GSTIN (Optional)",
-                    placeholder = "e.g. 09AABCU9603R1ZM",
+                    label = stringResource(R.string.settings_gstin),
+                    placeholder = stringResource(R.string.settings_gstin_hint),
                     capitalization = KeyboardCapitalization.Characters,
                     imeAction = ImeAction.Done
                 )
             }
 
             // 2B. BUSINESS VERTICAL & COST PRIVACY MODE SETUP
-            CupertinoCard {
+            SectionCard(title = stringResource(R.string.settings_trade_title)) {
                 Text(
-                    text = "Business Type & Trade Pack",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
+                    text = stringResource(R.string.settings_trade_body),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Select your store type to tailor variant attributes, categories, and Hinglish/regional search synonyms.",
-                    fontSize = 12.sp,
-                    color = CupertinoColors.LabelSecondary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     ShopVertical.entries.forEach { v ->
-                        val selected = v == activeVertical
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (selected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                            border = BorderStroke(
-                                1.dp,
-                                if (selected) CupertinoColors.SystemBlue else CupertinoColors.Separator
-                            ),
-                            modifier = Modifier.clickable {
+                        FilterChip(
+                            selected = v == activeVertical,
+                            onClick = {
                                 SyncManager.saveShopVertical(context, v)
                                 Toast.makeText(context, context.getString(R.string.msg_trade_pack_switched, v.displayName), Toast.LENGTH_SHORT).show()
+                            },
+                            label = { Text(v.displayName, style = MaterialTheme.typography.labelLarge) },
+                            modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = stringResource(R.string.settings_cost_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (isSellerUnlocked) {
+                    SegmentedChoice(
+                        options = listOf(
+                            stringResource(R.string.settings_cost_mode_code),
+                            stringResource(R.string.settings_cost_mode_pin)
+                        ),
+                        selectedIndex = if (activeCipherMode == CipherMode.HIDDEN_PIN) 1 else 0,
+                        onSelect = { idx ->
+                            val nextMode = if (idx == 1) CipherMode.HIDDEN_PIN else CipherMode.CUSTOM_CODE
+                            SyncManager.saveCustomDigitMap(context, nextMode, customDigitInputs)
+                        }
+                    )
+
+                    if (activeCipherMode == CipherMode.CUSTOM_CODE) {
+                        SettingsField(
+                            value = word10Input,
+                            onValueChange = { raw ->
+                                val clean = raw.uppercase(Locale.ROOT)
+                                    .filter { !it.isWhitespace() && it != '[' && it != ']' && it != '=' }
+                                    .take(10)
+                                word10Input = clean
+                                if (CostCipherEngine.isValidCipherWord10(clean)) {
+                                    val mapped = CostCipherEngine.word10ToDigitMap(clean)
+                                    customDigitInputs = mapped
+                                    SyncManager.saveCustomDigitMap(context, CipherMode.CUSTOM_CODE, mapped)
+                                }
+                            },
+                            label = stringResource(R.string.settings_word10_label),
+                            placeholder = CostCipherEngine.DEFAULT_WORD_10,
+                            capitalization = KeyboardCapitalization.Characters
+                        )
+                        if (!CostCipherEngine.isValidCipherWord10(word10Input)) {
+                            Text(
+                                text = stringResource(R.string.settings_word10_error),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = ShopLedgerTheme.extra.warning
+                            )
+                        }
+
+                        Text(
+                            text = stringResource(R.string.settings_per_digit),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        val digitRow1 = remember { listOf('1', '2', '3', '4', '5') }
+                        val digitRow2 = remember { listOf('6', '7', '8', '9', '0') }
+                        listOf(digitRow1, digitRow2).forEach { rowDigits ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowDigits.forEach { d ->
+                                    val digitDescription = stringResource(R.string.settings_digit_label, d.toString())
+                                    SettingsField(
+                                        value = customDigitInputs[d].orEmpty(),
+                                        onValueChange = { typed ->
+                                            val cleanToken = typed
+                                                .replace("[", "")
+                                                .replace("]", "")
+                                                .replace("=", "")
+                                                .trim()
+                                                .take(4)
+                                                .uppercase(Locale.ROOT)
+                                            val updated = customDigitInputs.toMutableMap().apply {
+                                                put(d, cleanToken)
+                                            }
+                                            customDigitInputs = updated
+                                            if (cleanToken.isNotEmpty()) {
+                                                SyncManager.saveCustomDigitMap(context, CipherMode.CUSTOM_CODE, updated)
+                                            }
+                                        },
+                                        label = d.toString(),
+                                        placeholder = CostCipherEngine.defaultDigitMap()[d].orEmpty(),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .semantics { contentDescription = digitDescription }
+                                    )
+                                }
                             }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = v.displayName,
-                                fontSize = 11.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) Color.White else CupertinoColors.LabelPrimary,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                text = stringResource(R.string.settings_preview),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            CodedPurchasePriceBadge(
+                                purchasePricePaise = 125000L,
+                                isSellerUnlocked = false,
+                                cipherMode = CipherMode.CUSTOM_CODE
                             )
                         }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (isSellerUnlocked) {
-                Text(
-                    text = "Cost Price Privacy Mode & Owner PIN",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                CupertinoSegmentedControl(
-                    options = listOf("Custom Coded Price", "PIN Hide (••••)"),
-                    selectedIndex = if (activeCipherMode == CipherMode.HIDDEN_PIN) 1 else 0,
-                    onSelect = { idx ->
-                        val nextMode = if (idx == 1) CipherMode.HIDDEN_PIN else CipherMode.CUSTOM_CODE
-                        SyncManager.saveCustomDigitMap(context, nextMode, customDigitInputs)
-                    }
-                )
-
-                if (activeCipherMode == CipherMode.CUSTOM_CODE) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CupertinoTextField(
-                        value = word10Input,
-                        onValueChange = { raw ->
-                            val clean = raw.uppercase(Locale.ROOT)
-                                .filter { !it.isWhitespace() && it != '[' && it != ']' && it != '=' }
-                                .take(10)
-                            word10Input = clean
-                            if (CostCipherEngine.isValidCipherWord10(clean)) {
-                                val mapped = CostCipherEngine.word10ToDigitMap(clean)
-                                customDigitInputs = mapped
-                                SyncManager.saveCustomDigitMap(context, CipherMode.CUSTOM_CODE, mapped)
-                            }
-                        },
-                        label = "Quick 10-Char Key (Digits 1..9, 0)",
-                        placeholder = CostCipherEngine.DEFAULT_WORD_10,
-                        capitalization = KeyboardCapitalization.Characters
-                    )
-                    if (!CostCipherEngine.isValidCipherWord10(word10Input)) {
-                        Text(
-                            text = "Enter 10 unique letters/symbols (or customize each digit below)",
-                            fontSize = 10.sp,
-                            color = CupertinoColors.AmberWarning
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Customize Code Per Digit (1–9, 0)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = CupertinoColors.LabelSecondary
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    val digitRow1 = remember { listOf('1', '2', '3', '4', '5') }
-                    val digitRow2 = remember { listOf('6', '7', '8', '9', '0') }
-                    listOf(digitRow1, digitRow2).forEach { rowDigits ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            rowDigits.forEach { d ->
-                                CupertinoTextField(
-                                    value = customDigitInputs[d].orEmpty(),
-                                    onValueChange = { typed ->
-                                        val cleanToken = typed
-                                            .replace("[", "")
-                                            .replace("]", "")
-                                            .replace("=", "")
-                                            .trim()
-                                            .take(4)
-                                            .uppercase(Locale.ROOT)
-                                        val updated = customDigitInputs.toMutableMap().apply {
-                                            put(d, cleanToken)
-                                        }
-                                        customDigitInputs = updated
-                                        if (cleanToken.isNotEmpty()) {
-                                            SyncManager.saveCustomDigitMap(context, CipherMode.CUSTOM_CODE, updated)
-                                        }
-                                    },
-                                    label = "Digit $d",
-                                    placeholder = CostCipherEngine.defaultDigitMap()[d].orEmpty(),
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Live Preview (₹1,250):",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = CupertinoColors.LabelSecondary
-                        )
-                        CodedPurchasePriceBadge(
-                            purchasePricePaise = 125000L,
-                            isSellerUnlocked = false,
-                            cipherMode = CipherMode.CUSTOM_CODE
-                        )
-                    }
-                }
                 } else {
                     Text(
                         text = stringResource(R.string.cost_code_locked_hint),
-                        fontSize = 12.sp,
-                        color = CupertinoColors.LabelSecondary
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
                 if (ownerPinHash.isBlank() || isSellerUnlocked) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CupertinoTextField(
-                        value = newPinInput,
-                        onValueChange = { newPinInput = it.filter { ch -> ch.isDigit() }.take(6) },
-                        label = if (ownerPinHash.isBlank()) "Set Owner Unlock PIN (Opt)" else "Change Owner PIN (Active)",
-                        placeholder = "4-digit PIN",
-                        keyboardType = KeyboardType.NumberPassword,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(
-                        onClick = {
-                            SyncManager.saveOwnerPin(context, newPinInput)
-                            val msg = context.getString(if (newPinInput.isBlank()) R.string.owner_pin_cleared else R.string.owner_pin_saved)
-                            newPinInput = ""
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(if (newPinInput.isBlank() && ownerPinHash.isNotBlank()) "Clear" else "Set PIN", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        SettingsField(
+                            value = newPinInput,
+                            onValueChange = { newPinInput = it.filter { ch -> ch.isDigit() }.take(6) },
+                            label = stringResource(if (ownerPinHash.isBlank()) R.string.owner_pin_set else R.string.owner_pin_change),
+                            placeholder = stringResource(R.string.owner_pin_hint),
+                            keyboardType = KeyboardType.NumberPassword,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                SyncManager.saveOwnerPin(context, newPinInput)
+                                val msg = context.getString(if (newPinInput.isBlank()) R.string.owner_pin_cleared else R.string.owner_pin_saved)
+                                newPinInput = ""
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.heightIn(min = ShopLedgerTokens.primaryActionHeight)
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (newPinInput.isBlank() && ownerPinHash.isNotBlank()) R.string.owner_pin_button_clear else R.string.owner_pin_button_set
+                                ),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
                     }
-                }
                 } else {
                     Text(
                         text = stringResource(R.string.owner_pin_locked_hint),
-                        fontSize = 12.sp,
-                        color = CupertinoColors.LabelSecondary
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            // 3. IN-APP OTA UPDATES & RELEASES (Improvement #5)
-            CupertinoCard {
+            // 3. IN-APP OTA UPDATES & RELEASES
+            SectionCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -796,42 +699,39 @@ fun CloudSyncAndBackupSheet(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "App Updates & Releases",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.LabelPrimary
+                            text = stringResource(R.string.settings_updates_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Installed: v$currentVersionName (Build $currentVersionCode)",
-                            fontSize = 12.sp,
-                            color = CupertinoColors.LabelSecondary
+                            text = stringResource(R.string.more_version, currentVersionName, currentVersionCode.toString()),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
                     when (val s = updateStatus) {
                         is UpdateStatus.UpdateAvailable -> {
-                            SemanticPillBadge(
-                                text = "v${s.latestVersion} Available",
-                                containerColor = CupertinoColors.SystemBlueTint,
-                                contentColor = CupertinoColors.SystemBlue
+                            StatusChip(
+                                text = stringResource(R.string.update_available, s.latestVersion),
+                                tone = ChipTone.INFO
                             )
                         }
                         is UpdateStatus.UpToDate -> {
-                            SemanticPillBadge(
-                                text = "Up to Date",
-                                containerColor = CupertinoColors.EmeraldTint,
-                                contentColor = CupertinoColors.EmeraldGreen
+                            StatusChip(
+                                text = stringResource(R.string.update_up_to_date),
+                                tone = ChipTone.SUCCESS
                             )
                         }
                         else -> Unit
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
                 when (val status = updateStatus) {
                     is UpdateStatus.Idle, is UpdateStatus.UpToDate -> {
-                        Button(
+                        PrimaryActionButton(
+                            text = stringResource(if (status is UpdateStatus.UpToDate) R.string.settings_check_again else R.string.update_check),
+                            icon = Icons.Default.SystemUpdate,
                             onClick = {
                                 coroutineScope.launch {
                                     val result = AppUpdateManager.checkForUpdates(context)
@@ -839,22 +739,8 @@ fun CloudSyncAndBackupSheet(
                                         Toast.makeText(context, R.string.update_up_to_date, Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CupertinoColors.SystemBlue,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (status is UpdateStatus.UpToDate) "Check Again for Updates" else "Check for Updates",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                        }
+                            }
+                        )
                     }
                     is UpdateStatus.Checking -> {
                         Row(
@@ -865,58 +751,45 @@ fun CloudSyncAndBackupSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = CupertinoColors.SystemBlue
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Checking for new releases on GitHub...",
-                                fontSize = 12.sp,
-                                color = CupertinoColors.LabelSecondary
+                                text = stringResource(R.string.update_checking),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                     is UpdateStatus.UpdateAvailable -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                text = "Release Notes: ${status.releaseNotes}",
-                                fontSize = 12.sp,
-                                color = CupertinoColors.LabelPrimary
+                                text = stringResource(R.string.settings_release_notes, status.releaseNotes),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             if (status.apkSize > 0) {
-                                val mb = String.format(Locale.ENGLISH, "%.1f MB", status.apkSize / (1024.0 * 1024.0))
+                                val mb = String.format(Locale.ENGLISH, "%.1f", status.apkSize / (1024.0 * 1024.0))
                                 Text(
-                                    text = "Download Size: $mb",
-                                    fontSize = 11.sp,
-                                    color = CupertinoColors.LabelSecondary
+                                    text = stringResource(R.string.settings_download_size, mb),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Button(
+                            PrimaryActionButton(
+                                text = stringResource(R.string.update_download),
+                                icon = Icons.Default.Download,
                                 onClick = {
                                     coroutineScope.launch {
                                         AppUpdateManager.downloadUpdate(context, status.downloadUrl)
                                     }
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = CupertinoColors.EmeraldGreen,
-                                    contentColor = Color.White
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Download & Install v${status.latestVersion}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                     is UpdateStatus.Downloading -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             val percent = (status.progress * 100).toInt()
                             val mbDownloaded = String.format(Locale.ENGLISH, "%.1f", status.bytesDownloaded / (1024.0 * 1024.0))
                             val mbTotal = String.format(Locale.ENGLISH, "%.1f", status.totalBytes / (1024.0 * 1024.0))
@@ -925,30 +798,29 @@ fun CloudSyncAndBackupSheet(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Downloading Update... $percent%",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = CupertinoColors.SystemBlue
+                                    text = stringResource(R.string.update_downloading, percent),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = "$mbDownloaded / $mbTotal MB",
-                                    fontSize = 11.sp,
-                                    color = CupertinoColors.LabelSecondary
+                                    text = stringResource(R.string.settings_download_progress, mbDownloaded, mbTotal),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             LinearProgressIndicator(
                                 progress = { status.progress.coerceIn(0f, 1f) },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = CupertinoColors.SystemBlue,
-                                trackColor = CupertinoColors.SystemBlueTint
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
                             )
                         }
                     }
                     is UpdateStatus.ReadyToInstall -> {
-                        Button(
+                        PrimaryActionButton(
+                            text = stringResource(R.string.update_ready),
+                            icon = Icons.Default.Check,
                             onClick = {
                                 if (AppUpdateManager.canInstallPackages(context)) {
                                     AppUpdateManager.installApk(context, status.apkFile)
@@ -960,36 +832,24 @@ fun CloudSyncAndBackupSheet(
                                     ).show()
                                     AppUpdateManager.openInstallPermissionSettings(context)
                                 }
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CupertinoColors.EmeraldGreen,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Ready! Tap to Install Update", fontWeight = FontWeight.Bold)
-                        }
+                            }
+                        )
                     }
                     is UpdateStatus.Error -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = stringResource(R.string.msg_update_error) + if (BuildConfig.DEBUG) " (${status.message})" else "",
-                                fontSize = 11.sp,
-                                color = CupertinoColors.DestructiveRed
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.error
                             )
-                            OutlinedButton(
+                            SecondaryActionButton(
+                                text = stringResource(R.string.action_retry),
+                                modifier = Modifier.fillMaxWidth(),
                                 onClick = {
                                     AppUpdateManager.resetStatus()
                                     coroutineScope.launch { AppUpdateManager.checkForUpdates(context) }
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
+                                }
+                            )
                         }
                     }
                 }
@@ -997,128 +857,135 @@ fun CloudSyncAndBackupSheet(
 
             // 4. Coded Purchase Price Symbol Key (Only visible when Seller Mode is unlocked)
             if (isSellerUnlocked) {
-                CupertinoCard {
-                    Text(
-                        text = "Secret Purchase Price Code Key (${activeCipherMode.displayName})",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CupertinoColors.CipherIndigo
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
+                SectionCard(title = stringResource(R.string.settings_cipher_key_title)) {
                     CipherReferenceStrip(modifier = Modifier.fillMaxWidth())
                 }
             }
 
-            // 4. Backup & Restore
-            CupertinoCard {
-                Text(
-                    text = "Backup & Restore",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
+            // 5. Backup & Restore
+            SectionCard(title = stringResource(R.string.more_backup)) {
                 if (!isSellerUnlocked) {
                     Text(
-                        text = "Unlock Seller Mode to back up or restore",
-                        fontSize = 12.sp,
-                        color = CupertinoColors.LabelSecondary
+                        text = stringResource(R.string.more_backup_locked),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                Text(
-                    text = "This phone keeps an encrypted backup every night (last 7 days). Export a backup file to keep a copy on Google Drive or move to a new phone. The file contains your prices and customers, so share it only with yourself.",
-                    fontSize = 12.sp,
-                    color = CupertinoColors.LabelSecondary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                if (lastSnapshotLabel != null) {
                     Text(
-                        text = stringResource(R.string.backup_last, lastSnapshotLabel),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = CupertinoColors.LabelPrimary
+                        text = stringResource(R.string.settings_backup_body),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                } else {
-                    EmptyState(
-                        title = stringResource(R.string.backup_none_title),
-                        message = stringResource(R.string.backup_none_message),
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
+                    if (lastSnapshotLabel != null) {
+                        Text(
+                            text = stringResource(R.string.backup_last, lastSnapshotLabel),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        EmptyState(
+                            title = stringResource(R.string.backup_none_title),
+                            message = stringResource(R.string.backup_none_message),
+                        )
+                    }
+                    PrimaryActionButton(
+                        text = stringResource(R.string.backup_export_button),
                         onClick = {
                             coroutineScope.launch {
                                 val file = onExportBackupFile()
                                 if (file != null) BackupShare.share(context, file, context.getString(R.string.share_backup_chooser))
                             }
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Export Backup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    OutlinedButton(
-                        onClick = { showRestoreConfirm = true },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Restore Backup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
-                if (lastSnapshotLabel != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = { showSnapshotRestoreConfirm = true },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Restore last night's backup ($lastSnapshotLabel)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                TextButton(onClick = { showImportBox = !showImportBox }) {
-                    Text("Import an old JSON backup (merge)", fontSize = 12.sp)
-                }
-
-                if (showImportBox) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CupertinoTextField(
-                        value = importJsonText,
-                        onValueChange = { importJsonText = it },
-                        label = "Paste Backup JSON Here",
-                        singleLine = false,
-                        capitalization = KeyboardCapitalization.None
+                        }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                val ok = onImportBackupJson(importJsonText)
-                                Toast.makeText(
-                                    context,
-                                    context.getString(if (ok) R.string.msg_backup_merged else R.string.msg_backup_json_invalid),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                if (ok) {
-                                    showImportBox = false
-                                    importJsonText = ""
+                    SecondaryActionButton(
+                        text = stringResource(R.string.settings_restore_backup),
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showRestoreConfirm = true }
+                    )
+                    if (lastSnapshotLabel != null) {
+                        SecondaryActionButton(
+                            text = stringResource(R.string.settings_restore_night_button, lastSnapshotLabel),
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { showSnapshotRestoreConfirm = true }
+                        )
+                    }
+                    TextButton(
+                        onClick = { showImportBox = !showImportBox },
+                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)
+                    ) {
+                        Text(stringResource(R.string.settings_import_toggle), style = MaterialTheme.typography.labelLarge)
+                    }
+
+                    if (showImportBox) {
+                        SettingsField(
+                            value = importJsonText,
+                            onValueChange = { importJsonText = it },
+                            label = stringResource(R.string.settings_import_label),
+                            singleLine = false,
+                            capitalization = KeyboardCapitalization.None
+                        )
+                        PrimaryActionButton(
+                            text = stringResource(R.string.settings_import_button),
+                            onClick = {
+                                coroutineScope.launch {
+                                    val ok = onImportBackupJson(importJsonText)
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(if (ok) R.string.msg_backup_merged else R.string.msg_backup_json_invalid),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    if (ok) {
+                                        showImportBox = false
+                                        importJsonText = ""
+                                    }
                                 }
                             }
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Import & Merge Records", fontWeight = FontWeight.Bold)
+                        )
                     }
-                }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
+
+/** Outlined text field for the settings sheet: 56 dp tall, label always visible, Material 3 colours. */
+@Composable
+private fun SettingsField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    keyboardType: KeyboardType = KeyboardType.Text,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
+    imeAction: ImeAction = ImeAction.Next,
+    onImeAction: () -> Unit = {},
+    singleLine: Boolean = true,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, maxLines = 1) },
+        placeholder = if (placeholder.isNotEmpty()) {
+            { Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+        } else null,
+        singleLine = singleLine,
+        shape = MaterialTheme.shapes.medium,
+        textStyle = MaterialTheme.typography.bodyLarge,
+        keyboardOptions = KeyboardOptions(
+            capitalization = capitalization,
+            keyboardType = keyboardType,
+            imeAction = imeAction
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = { onImeAction() },
+            onNext = { onImeAction() },
+            onSearch = { onImeAction() }
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+    )
 }
