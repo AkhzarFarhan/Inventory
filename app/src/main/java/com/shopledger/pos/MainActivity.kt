@@ -479,7 +479,6 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         itemsToSell = listOf(lineItem),
                         buyerName = buyerName,
                         buyerPhone = buyerPhone,
-                        clearCounterCart = false,
                         paymentMode = paymentMode,
                         discountPaise = discountPaise,
                         amountPaidPaise = amountPaidPaise

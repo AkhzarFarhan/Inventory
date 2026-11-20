@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+const val MAX_OPEN_CARTS = 8
+
 enum class InventoryFilterMode {
     ALL_ALPHABETICAL,
     LOW_STOCK_ONLY
@@ -51,9 +53,9 @@ data class CustomerCartSession(
     val checkoutActionId: String = UUID.randomUUID().toString()
 )
 
-/** The cart name to show: the user's own name, or "Cart N" in the current app language. */
+/** The cart name to show: the user's own name, else the customer's name, else "Cart N" in the current language. */
 fun CustomerCartSession.displayLabel(context: android.content.Context): String =
-    label.ifBlank { context.getString(R.string.cart_default_label, cartNumber) }
+    label.trim().ifBlank { buyerName.trim() }.ifBlank { context.getString(R.string.cart_default_label, cartNumber) }
 
 class MainViewModel(
     private val repository: LpsRepository
@@ -74,8 +76,6 @@ class MainViewModel(
     private val _filterMode = MutableStateFlow(InventoryFilterMode.ALL_ALPHABETICAL)
     val filterMode: StateFlow<InventoryFilterMode> = _filterMode.asStateFlow()
 
-    private var nextCartSequence = 2
-    private var quickSellActionId: String = UUID.randomUUID().toString()
     private val _carts = MutableStateFlow(
         listOf(CustomerCartSession(cartId = "cart-1", cartNumber = 1))
     )
@@ -471,6 +471,13 @@ class MainViewModel(
         }
     }
 
+    private fun nextFreeCartNumber(carts: List<CustomerCartSession>): Int {
+        val used = carts.map { it.cartNumber }.toSet()
+        var n = 1
+        while (n in used) n++
+        return n
+    }
+
     fun switchActiveCart(cartId: String) {
         if (_carts.value.any { it.cartId == cartId }) {
             _activeCartId.value = cartId
@@ -481,27 +488,25 @@ class MainViewModel(
         customLabel: String? = null,
         initialBuyerName: String = "",
         initialBuyerPhone: String = ""
-    ): String {
-        val newId = "cart-${UUID.randomUUID()}"
-        val customName = customLabel?.trim().takeUnless { it.isNullOrBlank() }
-        val number = if (customName == null) nextCartSequence++ else 0
+    ): String? {
+        val current = _carts.value
+        if (current.size >= MAX_OPEN_CARTS) return null
         val created = CustomerCartSession(
-            cartId = newId,
-            label = customName.orEmpty(),
-            cartNumber = number,
+            cartId = "cart-${UUID.randomUUID()}",
+            label = customLabel?.trim().orEmpty(),
+            cartNumber = nextFreeCartNumber(current),
             buyerName = initialBuyerName,
-            buyerPhone = initialBuyerPhone
+            buyerPhone = initialBuyerPhone,
         )
-        _carts.value = _carts.value + created
-        _activeCartId.value = newId
-        return newId
+        _carts.value = current + created
+        _activeCartId.value = created.cartId
+        return created.cartId
     }
 
     fun closeCart(cartId: String) {
         val remaining = _carts.value.filterNot { it.cartId == cartId }
         if (remaining.isEmpty()) {
             val fresh = CustomerCartSession(cartId = "cart-${UUID.randomUUID()}", cartNumber = 1)
-            nextCartSequence = 2
             _carts.value = listOf(fresh)
             _activeCartId.value = fresh.cartId
         } else {
@@ -510,6 +515,10 @@ class MainViewModel(
                 _activeCartId.value = remaining.last().cartId
             }
         }
+    }
+
+    fun renameCart(cartId: String, newLabel: String) {
+        _carts.value = _carts.value.map { if (it.cartId == cartId) it.copy(label = newLabel.trim().take(24)) else it }
     }
 
     fun updateActiveCartBuyer(buyerName: String, buyerPhone: String) {
@@ -526,7 +535,7 @@ class MainViewModel(
         item: InventoryItemEntity,
         variant: ItemVariantEntity,
         quantityToAdd: Double = 1.0,
-        customSellingPricePaise: Long = variant.sellingPricePaise
+        customSellingPricePaise: Long? = null
     ) {
         updateActiveCart { cart ->
             val current = cart.items.toMutableList()
@@ -539,7 +548,7 @@ class MainViewModel(
                 } else {
                     current[existingIdx] = existing.copy(
                         quantity = nextQty,
-                        customSellingPricePaise = customSellingPricePaise
+                        customSellingPricePaise = customSellingPricePaise ?: existing.customSellingPricePaise
                     )
                 }
             } else if (quantityToAdd > 0.0) {
@@ -553,7 +562,7 @@ class MainViewModel(
                         availableStock = variant.stockQuantity,
                         unitPurchasePricePaise = variant.purchasePricePaise,
                         defaultSellingPricePaise = variant.sellingPricePaise,
-                        customSellingPricePaise = customSellingPricePaise,
+                        customSellingPricePaise = customSellingPricePaise ?: variant.sellingPricePaise,
                         skuCode = variant.skuCode,
                         barcode = variant.barcode,
                         gstRateBps = variant.gstRateBps,
@@ -666,14 +675,13 @@ class MainViewModel(
     }
 
     /**
-     * Executes an instant 1-item Quick Sell or Multi-Item Cart Checkout, deducts inventory counts,
+     * Executes Multi-Item Cart Checkout, deducts inventory counts,
      * and opens the Sale Receipt Image & WhatsApp Share modal.
      */
     fun completeSaleAndPrepareReceipt(
         itemsToSell: List<CartLineItem>,
         buyerName: String,
         buyerPhone: String,
-        clearCounterCart: Boolean,
         paymentMode: String = "CASH",
         discountPaise: Long = 0L,
         amountPaidPaise: Long? = null,
@@ -682,11 +690,7 @@ class MainViewModel(
         if (itemsToSell.isEmpty()) return
         // Captured before launching: a double tap reuses the same id and the second call is a no-op replay.
         val checkedOutCartId = _activeCartId.value
-        val actionId = if (clearCounterCart) {
-            _carts.value.firstOrNull { it.cartId == checkedOutCartId }?.checkoutActionId ?: UUID.randomUUID().toString()
-        } else {
-            quickSellActionId
-        }
+        val actionId = _carts.value.firstOrNull { it.cartId == checkedOutCartId }?.checkoutActionId ?: UUID.randomUUID().toString()
         launchSafe(R.string.err_sale_not_saved, R.string.err_sale_not_saved_detail) {
             val outcome = repository.executeCheckoutAndDeductStock(
                 actionId = actionId,
@@ -698,18 +702,14 @@ class MainViewModel(
                 amountPaidPaise = amountPaidPaise
             )
             // On replay (double tap, or a retry after a post-commit failure) still clean up, but only if
-            // the cart / quick-sell id still belongs to this checkout; a normal double tap finds it rotated.
-            if (!clearCounterCart) {
-                if (quickSellActionId == actionId) quickSellActionId = UUID.randomUUID().toString()
-            } else {
-                val stillThere = _carts.value.firstOrNull { it.cartId == checkedOutCartId }
-                if (stillThere != null && stillThere.checkoutActionId == actionId) {
-                    if (_carts.value.size > 1) {
-                        closeCart(checkedOutCartId)
-                    } else {
-                        clearCart()
-                        updateActiveCartBuyer("", "")
-                    }
+            // the cart id still belongs to this checkout; a normal double tap finds it rotated.
+            val stillThere = _carts.value.firstOrNull { it.cartId == checkedOutCartId }
+            if (stillThere != null && stillThere.checkoutActionId == actionId) {
+                if (_carts.value.size > 1) {
+                    closeCart(checkedOutCartId)
+                } else {
+                    clearCart()
+                    updateActiveCartBuyer("", "")
                 }
             }
             if (!outcome.replayed && outcome.oversoldItemNames.isNotEmpty()) {

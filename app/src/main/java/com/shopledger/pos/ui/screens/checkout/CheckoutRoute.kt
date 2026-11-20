@@ -154,7 +154,6 @@ fun CheckoutRoute(
                         itemsToSell = cartItems,
                         buyerName = buyerName,
                         buyerPhone = buyerPhone,
-                        clearCounterCart = true,
                         paymentMode = event.mode.wire,
                         discountPaise = args.discountPaise,
                         amountPaidPaise = args.amountPaidPaise,
