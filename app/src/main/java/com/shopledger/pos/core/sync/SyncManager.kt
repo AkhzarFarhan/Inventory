@@ -13,6 +13,7 @@ import com.shopledger.pos.core.cipher.CipherMode
 import com.shopledger.pos.core.cipher.CostCipherEngine
 import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.nlp.TradeTaxonomyRegistry
+import com.shopledger.pos.data.local.LpsDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +49,13 @@ object SyncManager {
     private const val KEY_GST_ENABLED = "gst_enabled"
     private const val KEY_DEVICE_SHORT_CODE = "device_short_code"
     private const val KEY_SETUP_COMPLETED = "setup_completed"
+    private const val SEED_PREFS_NAME = "lps_seed_prefs"
+    private const val SEED_DONE_KEY = "catalog_seeded_v1"
+    private val EXISTING_INSTALL_KEYS = listOf(
+        KEY_SELLER_NAME, KEY_SHOP_ID, KEY_SELLER_WHATSAPP, KEY_LAST_SYNC, KEY_VERTICAL, KEY_CIPHER_MODE,
+        KEY_CIPHER_WORD_10, KEY_CUSTOM_DIGIT_MAP, KEY_OWNER_PIN_HASH, KEY_UPI_ID, KEY_GSTIN, KEY_GST_ENABLED,
+        KEY_DEVICE_SHORT_CODE,
+    )
     private const val WORK_NAME = "shopledger_firestore_delta_sync"
     private const val CLOUD_SYNC_ENABLED = false
 
@@ -142,8 +150,32 @@ object SyncManager {
         _gstinFlow.value = p.getString(KEY_GSTIN, "").orEmpty()
         _gstEnabledFlow.value = p.getBoolean(KEY_GST_ENABLED, false)
         _deviceShortCodeFlow.value = p.getString(KEY_DEVICE_SHORT_CODE, "").orEmpty()
-        _isSetupCompletedFlow.value = p.getBoolean(KEY_SETUP_COMPLETED, true)
+        _isSetupCompletedFlow.value = resolveSetupCompleted(context.applicationContext, p)
     }
+
+    /**
+     * First-run rule. An explicit stored flag always wins. Without one, the install is treated as an EXISTING
+     * install (wizard never shown, sample data never seeded) when ANY earlier sign of use is present: a stored seller
+     * name or any other shop setting, a legacy settings file, the starter-catalog "seeded" flag every earlier version
+     * wrote on its first launch, or an existing database file. Only a completely untouched install is "fresh".
+     * Existing installs get the flag persisted as true so later changes cannot flip the decision.
+     */
+    private fun resolveSetupCompleted(appContext: Context, p: SharedPreferences): Boolean {
+        if (p.contains(KEY_SETUP_COMPLETED)) return p.getBoolean(KEY_SETUP_COMPLETED, true)
+        val existing = EXISTING_INSTALL_KEYS.any { p.contains(it) } ||
+            appContext.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE).all.isNotEmpty() ||
+            appContext.getSharedPreferences(SEED_PREFS_NAME, Context.MODE_PRIVATE).contains(SEED_DONE_KEY) ||
+            appContext.getDatabasePath(LpsDatabase.DB_NAME).exists()
+        if (existing) p.edit().putBoolean(KEY_SETUP_COMPLETED, true).apply()
+        return existing
+    }
+
+    fun saveSetupCompleted(context: Context, completed: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SETUP_COMPLETED, completed).apply()
+        _isSetupCompletedFlow.value = completed
+    }
+
+    fun isSetupCompleted(): Boolean = _isSetupCompletedFlow.value
 
     fun getSellerName(context: Context): String =
         prefs(context).getString(KEY_SELLER_NAME, "ShopLedger POS")?.trim().orEmpty().ifBlank { "ShopLedger POS" }

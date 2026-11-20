@@ -8,6 +8,7 @@ import com.shopledger.pos.core.buyer.BuyerOrderLineSnapshot
 import com.shopledger.pos.core.buyer.KnownBuyerProfile
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.nlp.DuplicateCheckResult
+import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.core.share.ReceiptLineItem
 import com.shopledger.pos.core.share.SaleReceiptData
@@ -195,8 +196,22 @@ class MainViewModel(
     }
 
     init {
-        launchSafe("Catalog Initialization") {
-            repository.seedStarterCatalogIfEmpty()
+        // Existing installs keep today's behaviour. A fresh install seeds nothing until the setup wizard's choice.
+        if (SyncManager.isSetupCompleted()) {
+            launchSafe("Catalog Initialization") {
+                repository.seedStarterCatalogIfEmpty()
+            }
+        }
+    }
+
+    /**
+     * Wizard finish (first run): applies the sample-items / empty choice first, then [applySettings] saves the shop
+     * details and marks setup completed, so an interruption can never leave a half-seeded or re-seeding install.
+     */
+    fun finishSetup(sampleData: Boolean, applySettings: () -> Unit) {
+        launchSafe("Setup") {
+            if (sampleData) repository.seedStarterCatalogIfEmpty() else repository.markStarterCatalogDone()
+            applySettings()
         }
     }
 

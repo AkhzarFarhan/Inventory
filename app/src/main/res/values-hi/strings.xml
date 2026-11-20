@@ -216,4 +216,31 @@
     <string name="checkout_clear_title">यह कार्ट खाली करें?</string>
     <string name="checkout_clear_message">इस कार्ट के सारे सामान हट जाएँगे।</string>
     <string name="checkout_clear_confirm">खाली करें</string>
+
+    <!-- First-run setup wizard -->
+    <string name="setup_progress">चरण %1$d / %2$d</string>
+    <string name="setup_back">पीछे</string>
+    <string name="setup_next">आगे</string>
+    <string name="setup_finish">पूरा करें</string>
+    <string name="setup_skip">छोड़ें</string>
+    <string name="setup_name_title">स्वागत है! आपकी दुकान का नाम क्या है?</string>
+    <string name="setup_name_hint">यह नाम आपके बिल पर दिखेगा।</string>
+    <string name="setup_type_title">आपकी दुकान किस तरह की है?</string>
+    <string name="setup_type_hint">इससे हम सामान के साइज़ और यूनिट सुझाते हैं।</string>
+    <string name="setup_pin_title">PIN से अपना मुनाफ़ा सुरक्षित रखें</string>
+    <string name="setup_pin_hint">ज़रूरी नहीं। PIN लगाने पर सिर्फ़ आप खरीद भाव और मुनाफ़ा देख पाएँगे। इसे छोड़ सकते हैं और बाद में \"ज़्यादा\" में लगा सकते हैं।</string>
+    <string name="setup_pin_confirm">PIN दोबारा डालें</string>
+    <string name="setup_pin_mismatch">दोनों PIN एक जैसे नहीं हैं</string>
+    <string name="setup_pin_too_short">PIN 4 से 6 अंकों का होना चाहिए</string>
+    <string name="setup_start_title">शुरुआत कैसे करना चाहते हैं?</string>
+    <string name="setup_start_hint">सैंपल सामान से आप तुरंत बिक्री और स्टॉक इन आज़मा सकते हैं। बाद में इन्हें हटा सकते हैं।</string>
+    <string name="setup_start_sample">सैंपल सामान के साथ शुरू करें</string>
+    <string name="setup_start_empty">खाली शुरू करें</string>
+    <string name="setup_run_again">सेटअप दोबारा चलाएँ</string>
+    <string name="setup_run_again_hint">दुकान का नाम, दुकान का प्रकार या PIN चरण-दर-चरण बदलें।</string>
+    <string name="vertical_hardware">हार्डवेयर और सैनिटरी</string>
+    <string name="vertical_kirana">किराना और राशन</string>
+    <string name="vertical_pharma">मेडिकल और दवाई</string>
+    <string name="vertical_electronics">मोबाइल और इलेक्ट्रॉनिक्स</string>
+    <string name="vertical_general">जनरल स्टोर / थोक</string>
 </resources>

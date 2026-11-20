@@ -401,6 +401,12 @@ class LpsRepository(
             .isSuccess
     }
 
+    /** "Start empty": records the starter-catalog decision so sample items are never seeded later. */
+    suspend fun markStarterCatalogDone() = withContext(Dispatchers.IO) {
+        context.getSharedPreferences("lps_seed_prefs", Context.MODE_PRIVATE)
+            .edit().putBoolean("catalog_seeded_v1", true).apply()
+    }
+
     suspend fun seedStarterCatalogIfEmpty() = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences("lps_seed_prefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("catalog_seeded_v1", false)) return@withContext

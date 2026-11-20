@@ -67,6 +67,7 @@ fun MoreScreen(
     loadDeviceCode: suspend () -> String,
     onSaveDeviceCode: suspend (String) -> String,
     onOpenAccountSheet: () -> Unit,
+    onRunSetupAgain: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -76,6 +77,16 @@ fun MoreScreen(
     ) {
         item { Text(stringResource(R.string.more_title), style = MaterialTheme.typography.headlineSmall) }
         item { ShopCard(loadDeviceCode, onSaveDeviceCode) }
+        item {
+            SectionCard(title = stringResource(R.string.setup_run_again)) {
+                Text(
+                    stringResource(R.string.setup_run_again_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SecondaryActionButton(text = stringResource(R.string.setup_run_again), onClick = onRunSetupAgain)
+            }
+        }
         item { LanguageCard(language, onLanguageSelected) }
         item { SecurityCard(isSellerUnlocked, onToggleSeller) }
         item {

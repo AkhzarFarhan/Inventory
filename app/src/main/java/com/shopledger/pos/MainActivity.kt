@@ -63,6 +63,7 @@ import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.ui.InventoryFilterMode
 import com.shopledger.pos.ui.MainViewModel
+import com.shopledger.pos.ui.i18n.AppLanguage
 import com.shopledger.pos.ui.i18n.AppLanguageStore
 import com.shopledger.pos.ui.navigation.AppScaffold
 import com.shopledger.pos.ui.navigation.AppTab
@@ -75,6 +76,8 @@ import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
 import com.shopledger.pos.ui.screens.khata.PartiesKhataScreen
 import com.shopledger.pos.ui.screens.more.MoreScreen
 import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
+import com.shopledger.pos.ui.screens.setup.SetupEvent
+import com.shopledger.pos.ui.screens.setup.SetupWizardHost
 import com.shopledger.pos.ui.screens.sales.ReceiptShareDialog
 import com.shopledger.pos.ui.screens.sales.SaleHistoryScreen
 import com.shopledger.pos.ui.screens.settings.CloudSyncAndBackupSheet
@@ -114,7 +117,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     ) }
-                    DatabaseHealth.State.Ok -> LpsHardwareMainApp(viewModel = viewModel)
+                    DatabaseHealth.State.Ok -> {
+                        val setupDone by SyncManager.isSetupCompletedFlow.collectAsState()
+                        if (setupDone) LpsHardwareMainApp(viewModel = viewModel) else FirstRunSetup(viewModel)
+                    }
                 }
             }
         }
@@ -197,6 +203,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
     var quickSellTarget by remember { mutableStateOf<Triple<InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>>?>(null) }
     var showCheckout by rememberSaveable { mutableStateOf(false) }
+    var showSetupAgain by rememberSaveable { mutableStateOf(false) }
     var showOrderScanSheet by remember { mutableStateOf(false) }
     var showCloudSyncSheet by remember { mutableStateOf(false) }
     var showOwnerPinDialog by remember { mutableStateOf(false) }
@@ -315,6 +322,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         loadDeviceCode = { withContext(Dispatchers.IO) { app.repository.localDeviceCode() } },
                         onSaveDeviceCode = { code -> withContext(Dispatchers.IO) { app.repository.setDeviceCode(code) } },
                         onOpenAccountSheet = { showCloudSyncSheet = true },
+                        onRunSetupAgain = { showSetupAgain = true },
                     )
                 }
             }
@@ -375,6 +383,26 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         stockInViewModel.close()
                     },
                     onDismiss = { confirmDiscardStockIn = false },
+                )
+            }
+        }
+
+        // "Run setup again" from More: no sample-data step; the PIN step is offered only when no PIN exists or seller mode
+        // is unlocked (the same gate the Security card uses), and skipping it never clears an existing PIN.
+        if (showSetupAgain) {
+            Surface(modifier = Modifier.fillMaxSize().zIndex(11f)) {
+                SetupWizardHost(
+                    firstRun = false,
+                    initialName = activeSellerName,
+                    initialVertical = SyncManager.getActiveVertical(),
+                    pinAvailable = !SyncManager.hasOwnerPin() || isSellerUnlocked,
+                    language = remember { AppLanguageStore.get(context) },
+                    onLanguageSelected = { lang -> switchLanguage(context, activity, lang) },
+                    onFinish = { done ->
+                        saveSetupChoices(context, done)
+                        showSetupAgain = false
+                    },
+                    onCancel = { showSetupAgain = false },
                 )
             }
         }
@@ -563,4 +591,42 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             }
         )
     }
+}
+
+/** First launch of a fresh install: the wizard replaces the main UI until it finishes (sample items are decided here). */
+@Composable
+private fun FirstRunSetup(viewModel: MainViewModel) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    Surface(modifier = Modifier.fillMaxSize()) {
+        SetupWizardHost(
+            firstRun = true,
+            initialName = "",
+            initialVertical = SyncManager.getActiveVertical(),
+            pinAvailable = true,
+            language = remember { AppLanguageStore.get(context) },
+            onLanguageSelected = { lang -> switchLanguage(context, activity, lang) },
+            onFinish = { done ->
+                viewModel.finishSetup(done.sampleData) {
+                    saveSetupChoices(context, done)
+                    SyncManager.saveSetupCompleted(context, true)
+                }
+            },
+            onCancel = {},
+        )
+    }
+}
+
+private fun switchLanguage(context: Context, activity: Activity?, lang: AppLanguage) {
+    if (lang != AppLanguageStore.get(context)) {
+        AppLanguageStore.set(context, lang)
+        activity?.recreate()
+    }
+}
+
+/** Saves through the same SyncManager calls the Settings screens use (the PIN is hashed by saveOwnerPin). */
+private fun saveSetupChoices(context: Context, done: SetupEvent.Finish) {
+    SyncManager.saveSellerName(context, done.name)
+    SyncManager.saveShopVertical(context, done.vertical)
+    done.pin?.let { SyncManager.saveOwnerPin(context, it) }
 }

@@ -216,4 +216,31 @@
     <string name="checkout_clear_title">Clear this cart?</string>
     <string name="checkout_clear_message">All items in this cart will be removed.</string>
     <string name="checkout_clear_confirm">Clear</string>
+
+    <!-- First-run setup wizard -->
+    <string name="setup_progress">Step %1$d of %2$d</string>
+    <string name="setup_back">Back</string>
+    <string name="setup_next">Next</string>
+    <string name="setup_finish">Finish</string>
+    <string name="setup_skip">Skip</string>
+    <string name="setup_name_title">Welcome! What is your shop called?</string>
+    <string name="setup_name_hint">This name appears on your bills.</string>
+    <string name="setup_type_title">What kind of shop is it?</string>
+    <string name="setup_type_hint">We use this to suggest item sizes and units.</string>
+    <string name="setup_pin_title">Protect your profit with a PIN</string>
+    <string name="setup_pin_hint">Optional. With a PIN, only you can see cost price and profit. You can skip this and set it later in More.</string>
+    <string name="setup_pin_confirm">Type the PIN again</string>
+    <string name="setup_pin_mismatch">The two PINs do not match</string>
+    <string name="setup_pin_too_short">PIN must be 4 to 6 digits</string>
+    <string name="setup_start_title">How do you want to start?</string>
+    <string name="setup_start_hint">Sample items let you try selling and stock in right away. You can delete them later.</string>
+    <string name="setup_start_sample">Start with sample items</string>
+    <string name="setup_start_empty">Start empty</string>
+    <string name="setup_run_again">Run setup again</string>
+    <string name="setup_run_again_hint">Change shop name, shop type or PIN step by step.</string>
+    <string name="vertical_hardware">Hardware &amp; Sanitary</string>
+    <string name="vertical_kirana">Kirana &amp; Grocery</string>
+    <string name="vertical_pharma">Medical &amp; Pharma</string>
+    <string name="vertical_electronics">Mobile &amp; Electronics</string>
+    <string name="vertical_general">General Retail / Wholesale</string>
 </resources>
