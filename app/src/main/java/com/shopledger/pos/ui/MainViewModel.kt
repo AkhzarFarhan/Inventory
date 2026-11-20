@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.shopledger.pos.core.buyer.BuyerHistoryHelper
 import com.shopledger.pos.core.buyer.BuyerOrderLineSnapshot
 import com.shopledger.pos.core.buyer.KnownBuyerProfile
+import com.shopledger.pos.core.cart.CartDraftStore
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.nlp.DuplicateCheckResult
 import com.shopledger.pos.core.sync.SyncManager
@@ -24,14 +25,19 @@ import com.shopledger.pos.data.model.CartLineItem
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.data.repository.LpsRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 const val MAX_OPEN_CARTS = 8
@@ -57,6 +63,7 @@ data class CustomerCartSession(
 fun CustomerCartSession.displayLabel(context: android.content.Context): String =
     label.trim().ifBlank { buyerName.trim() }.ifBlank { context.getString(R.string.cart_default_label, cartNumber) }
 
+@OptIn(FlowPreview::class)
 class MainViewModel(
     private val repository: LpsRepository
 ) : ViewModel() {
@@ -209,6 +216,18 @@ class MainViewModel(
     }
 
     init {
+        CartDraftStore.load(repository.appContext)?.let { snap ->
+            if (snap.carts.isNotEmpty()) {
+                _carts.value = snap.carts.take(MAX_OPEN_CARTS)
+                _activeCartId.value = snap.activeCartId.takeIf { id -> snap.carts.any { it.cartId == id } } ?: snap.carts.first().cartId
+            }
+        }
+        viewModelScope.launch {
+            combine(_carts, _activeCartId) { c, a -> c to a }
+                .drop(1)
+                .debounce(300)
+                .collect { (c, a) -> withContext(Dispatchers.IO) { CartDraftStore.save(repository.appContext, c, a) } }
+        }
         // Existing installs keep today's behaviour. A fresh install seeds nothing until the setup wizard's choice.
         if (SyncManager.isSetupCompleted()) {
             launchSafe(R.string.err_catalog_init_title) {

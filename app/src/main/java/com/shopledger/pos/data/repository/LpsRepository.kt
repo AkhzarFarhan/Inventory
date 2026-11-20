@@ -47,6 +47,7 @@ class LpsRepository(
     private val database: LpsDatabase,
     private val env: CommandEnvironment = AppCommandEnvironment(context)
 ) {
+    val appContext: Context get() = context
     private val inventoryDao = database.inventoryDao()
     private val saleDao = database.saleDao()
     private val searchHistoryDao = database.searchHistoryDao()

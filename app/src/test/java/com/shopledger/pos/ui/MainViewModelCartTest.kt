@@ -177,4 +177,26 @@ class MainViewModelCartTest {
         assertTrue(remaining.items.isEmpty())
         assertEquals(1, remaining.cartNumber)
     }
+
+    @Test
+    fun cartsSurviveANewViewModel() {
+        val vmA = newViewModel()
+        val cart1Id = vmA.activeCartIdState.value
+        vmA.addOrUpdateCartItem(itemA, variantA, 1.0)
+        val cart2Id = vmA.createNewCart()
+        assertNotNull(cart2Id)
+        vmA.addOrUpdateCartItem(itemB, variantB, 2.0)
+        vmA.renameCart(cart2Id!!, "Site")
+
+        val prefs = context.getSharedPreferences("shopledger_cart_prefs", Context.MODE_PRIVATE)
+        awaitUntil("carts saved to prefs") {
+            prefs.getString("open_carts_v1", "")?.contains("Site") == true
+        }
+        val expectedCarts = vmA.cartsState.value
+
+        val vmB = newViewModel()
+        assertEquals(expectedCarts, vmB.cartsState.value)
+        assertEquals(cart2Id, vmB.activeCartIdState.value)
+        assertEquals(cart1Id, vmB.cartsState.value.first().cartId)
+    }
 }
