@@ -60,12 +60,14 @@ class MainViewModelCartTest {
     @After
     fun tearDown() = db.close()
 
-    private fun newViewModel() = MainViewModel(LpsRepository(context, db))
+    private fun newViewModel() = MainViewModel(LpsRepository(context, db)).also {
+        shadowOf(Looper.getMainLooper()).idle()
+    }
 
     private fun awaitUntil(what: String, cond: () -> Boolean) {
         val end = System.currentTimeMillis() + 15_000
         while (System.currentTimeMillis() < end) {
-            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(50, java.util.concurrent.TimeUnit.MILLISECONDS)
             if (cond()) return
             Thread.sleep(20)
         }

@@ -13,6 +13,8 @@ Ultra-lightweight, offline-first Android application built for **LPS Hardware** 
    - The home screen opens on **Sell** and **Stock In**, with an A-Z item list, search (including Hinglish synonyms), a Low-Stock filter with 1-tap WhatsApp supplier reorder sharing, and persistent **Search History**.
    - **Stock In by scanning**: photograph a printed supplier bill or a handwritten list; the on-device reader turns it into lines you review, fix and save. Saving adds stock and updates the supplier's Khata in one step. Items can also be entered by hand.
    - **One-screen checkout**: pick items, set the price, choose Cash, UPI or Udhar and share the receipt. Multi-cart, estimates, returns and barcode scan are all still there.
+   - Several customers at once: open carts are shown as chips on the home screen and in checkout; switch with one tap; carts are kept if the app closes.
+   - Tap an item to add sizes to the cart; all selling happens in the cart.
 4. **Sales History with `₹` Margin, `%` Gain & WhatsApp Image Receipts**:
    - Collapsible `Year -> Month -> Day` sale history with Indian Rupee (`₹`) formatting, bargaining price override at sale time, 1-tap Sale Return (*Wapsi*), and automatic **Sale Receipt PNG Image generation** sharable directly to the buyer's WhatsApp phone number.
 5. **Offline-First Ledger Database with Backups**:
