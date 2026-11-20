@@ -1,10 +1,16 @@
 package com.shopledger.pos.ui.screens.checkout
 
 import com.shopledger.pos.ui.text.variantLabel
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,10 +30,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,6 +46,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -51,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -74,18 +84,26 @@ import com.shopledger.pos.ui.MAX_OPEN_CARTS
 import com.shopledger.pos.ui.screens.cart.CartChip
 import com.shopledger.pos.ui.screens.cart.CartSwitcher
 import com.shopledger.pos.ui.text.UiText
+import com.shopledger.pos.ui.theme.ChipTone
+import com.shopledger.pos.ui.theme.ConfirmDialog
 import com.shopledger.pos.ui.theme.EmptyState
+import com.shopledger.pos.ui.theme.HapticHelper
 import com.shopledger.pos.ui.theme.MoneyField
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.QtyStepper
 import com.shopledger.pos.ui.theme.SectionCard
-import com.shopledger.pos.ui.theme.ConfirmDialog
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
+import com.shopledger.pos.ui.theme.StatusChip
 
 /** How the customer pays. [wire] is the value the checkout command stores. */
 enum class PayMode(val wire: String) { CASH("CASH"), UPI("UPI"), CREDIT("CREDIT") }
 
-data class CheckoutCartTab(val cartId: String, val label: String, val lineCount: Int)
+data class CheckoutCartTab(
+    val cartId: String,
+    val label: String,
+    val lineCount: Int,
+    val subtotalPaise: Long = 0L,
+)
 
 /** One tappable search result: a single variant that can be added to the bill. */
 data class CheckoutSearchHit(
@@ -116,6 +134,8 @@ data class CheckoutState(
     /** Cost and profit stay hidden unless seller mode is unlocked. */
     val isSellerUnlocked: Boolean = false,
     val maxCarts: Int = MAX_OPEN_CARTS,
+    val matchedPartyBalancePaise: Long? = null,
+    val lastSoldPriceByVariant: Map<String, Long> = emptyMap(),
 ) {
     val subtotalPaise: Long get() = lines.sumOf { it.lineRevenuePaise }
     val appliedDiscountPaise: Long get() = discountPaise.coerceIn(0L, subtotalPaise)
@@ -205,7 +225,12 @@ fun CheckoutScreen(
                 }
             } else {
                 items(state.lines, key = { it.variantId }) { line ->
-                    CartLineCard(line, state.isSellerUnlocked, onEvent)
+                    CartLineCard(
+                        line = line,
+                        isSellerUnlocked = state.isSellerUnlocked,
+                        lastSoldPricePaise = state.lastSoldPriceByVariant[line.variantId],
+                        onEvent = onEvent,
+                    )
                 }
             }
 
@@ -221,12 +246,36 @@ fun CheckoutScreen(
         }
 
         HorizontalDivider()
-        Box(
+        Column(
             Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingM),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
         ) {
+            if (state.lines.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.checkout_bar_summary,
+                            state.lines.size,
+                            state.lines.size,
+                            checkoutPayModeLabel(state.paymentMode),
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = IndianCurrencyFormatter.formatPaise(state.totalPaise),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             PrimaryActionButton(
                 text = stringResource(
                     R.string.checkout_complete,
@@ -391,6 +440,19 @@ private fun CheckoutTopBar(
 private fun SearchBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val voiceLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val spoken = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+        if (spoken.isNotEmpty()) {
+            onEvent(CheckoutEvent.SearchChanged(spoken))
+            onEvent(CheckoutEvent.CommitSearch(spoken))
+        }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
         OutlinedTextField(
             value = state.searchQuery,
@@ -406,6 +468,29 @@ private fun SearchBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) 
                             modifier = Modifier.size(ShopLedgerTokens.minTouch),
                         ) { Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.cd_clear_search)) }
                     }
+                    IconButton(
+                        onClick = {
+                            runCatching {
+                                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                    putExtra(
+                                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                                    )
+                                    putExtra(
+                                        RecognizerIntent.EXTRA_PROMPT,
+                                        context.getString(R.string.checkout_search_hint),
+                                    )
+                                }
+                                voiceLauncher.launch(intent)
+                            }.onFailure {
+                                AppErrorManager.reportInfo(
+                                    UiText.Res(R.string.voice_unavailable_title),
+                                    UiText.Res(R.string.voice_unavailable_msg),
+                                )
+                            }
+                        },
+                        modifier = Modifier.size(ShopLedgerTokens.minTouch),
+                    ) { Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.cd_voice_search)) }
                     IconButton(
                         onClick = {
                             BarcodeScannerHelper.scanBarcode(
@@ -479,7 +564,13 @@ private fun SearchBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) 
 }
 
 @Composable
-private fun CartLineCard(line: CartLineItem, isSellerUnlocked: Boolean, onEvent: (CheckoutEvent) -> Unit) {
+private fun CartLineCard(
+    line: CartLineItem,
+    isSellerUnlocked: Boolean,
+    lastSoldPricePaise: Long?,
+    onEvent: (CheckoutEvent) -> Unit,
+) {
+    val context = LocalContext.current
     var editQty by remember { mutableStateOf(false) }
     var editPrice by remember { mutableStateOf(false) }
     SectionCard {
@@ -539,6 +630,29 @@ private fun CartLineCard(line: CartLineItem, isSellerUnlocked: Boolean, onEvent:
                     IndianCurrencyFormatter.formatPaise(line.lineRevenuePaise),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        if (lastSoldPricePaise != null && lastSoldPricePaise > 0L) {
+            val formattedLast = IndianCurrencyFormatter.formatPaise(lastSoldPricePaise)
+            if (lastSoldPricePaise != line.customSellingPricePaise) {
+                TextButton(
+                    onClick = {
+                        HapticHelper.tick(context)
+                        onEvent(CheckoutEvent.SetPrice(line.variantId, lastSoldPricePaise))
+                    },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(
+                        text = stringResource(R.string.checkout_last_sold_at, formattedLast),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.checkout_last_sold_same, formattedLast),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -676,6 +790,38 @@ private fun CustomerBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
         )
+        if (state.matchedPartyBalancePaise != null && state.matchedPartyBalancePaise > 0L) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(ShopLedgerTokens.spacingM),
+                    verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.checkout_old_due,
+                            IndianCurrencyFormatter.formatPaise(state.matchedPartyBalancePaise),
+                        ),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    if (state.paymentMode == PayMode.CREDIT) {
+                        val billDue = (state.totalPaise - (state.amountPaidPaise ?: 0L).coerceIn(0L, state.totalPaise))
+                            .coerceAtLeast(0L)
+                        Text(
+                            text = stringResource(
+                                R.string.checkout_new_total_due,
+                                IndianCurrencyFormatter.formatPaise(state.matchedPartyBalancePaise + billDue),
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+        }
         suggestions.forEach { buyer ->
             Row(
                 modifier = Modifier
@@ -771,10 +917,50 @@ private fun PayModeButton(text: String, selected: Boolean, modifier: Modifier, o
 }
 
 @Composable
+private fun checkoutPayModeLabel(mode: PayMode): String = when (mode) {
+    PayMode.CASH -> stringResource(R.string.checkout_pay_cash)
+    PayMode.UPI -> stringResource(R.string.checkout_pay_upi)
+    PayMode.CREDIT -> stringResource(R.string.checkout_pay_udhar)
+}
+
+@Composable
 private fun TotalsBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) {
+    val context = LocalContext.current
     var discountOpen by rememberSaveable { mutableStateOf(state.discountPaise > 0L) }
+    var showTargetTotalDialog by rememberSaveable { mutableStateOf(false) }
+    val roundOptions = remember(state.subtotalPaise, state.discountPaise) {
+        roundOffSuggestions(state.subtotalPaise, state.discountPaise)
+    }
     SectionCard {
         AmountRow(stringResource(R.string.checkout_subtotal), IndianCurrencyFormatter.formatPaise(state.subtotalPaise))
+        if (roundOptions.isNotEmpty() && state.gstPaise == 0L) {
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
+            ) {
+                roundOptions.forEach { opt ->
+                    AssistChip(
+                        onClick = {
+                            HapticHelper.tick(context)
+                            onEvent(CheckoutEvent.DiscountChanged(opt.discountPaise))
+                        },
+                        label = {
+                            Text(
+                                text = stringResource(
+                                    R.string.checkout_round_chip,
+                                    IndianCurrencyFormatter.formatPaise(opt.targetTotalPaise),
+                                    IndianCurrencyFormatter.formatPaise(opt.discountPaise),
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        },
+                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                    )
+                }
+            }
+        }
         if (discountOpen) {
             MoneyField(
                 valuePaise = state.discountPaise.takeIf { it > 0L },
@@ -791,8 +977,12 @@ private fun TotalsBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) 
             AmountRow(stringResource(R.string.checkout_gst), IndianCurrencyFormatter.formatPaise(state.gstPaise))
         }
         HorizontalDivider()
+        val canEditTotal = state.subtotalPaise > 0L && state.gstPaise == 0L
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = ShopLedgerTokens.minTouch)
+                .then(if (canEditTotal) Modifier.clickable { showTargetTotalDialog = true } else Modifier),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -806,8 +996,68 @@ private fun TotalsBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) 
         }
         if (state.isSellerUnlocked) {
             AmountRow(stringResource(R.string.checkout_profit), IndianCurrencyFormatter.formatPaise(state.profitPaise))
+            if (state.lines.isNotEmpty() && state.profitPaise < 0L) {
+                StatusChip(
+                    text = stringResource(
+                        R.string.checkout_below_cost,
+                        IndianCurrencyFormatter.formatPaise(-state.profitPaise),
+                    ),
+                    tone = ChipTone.DANGER,
+                )
+            } else if (state.lines.isNotEmpty() && state.totalPaise > 0L && (state.profitPaise * 100L) / state.totalPaise < 5L) {
+                StatusChip(
+                    text = stringResource(R.string.checkout_low_margin),
+                    tone = ChipTone.WARNING,
+                )
+            }
         }
     }
+    if (showTargetTotalDialog) {
+        TargetTotalDialog(
+            initialTotalPaise = state.totalPaise,
+            subtotalPaise = state.subtotalPaise,
+            onConfirm = { targetPaise ->
+                showTargetTotalDialog = false
+                val discount = (state.subtotalPaise - targetPaise).coerceIn(0L, state.subtotalPaise)
+                onEvent(CheckoutEvent.DiscountChanged(discount))
+            },
+            onDismiss = { showTargetTotalDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun TargetTotalDialog(
+    initialTotalPaise: Long,
+    subtotalPaise: Long,
+    onConfirm: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var paise by remember { mutableStateOf<Long?>(initialTotalPaise) }
+    val valid = paise != null && paise in 0L..subtotalPaise
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.checkout_round_dialog_title)) },
+        text = {
+            MoneyField(
+                valuePaise = paise,
+                onValueChange = { paise = it },
+                label = stringResource(R.string.checkout_round_dialog_label),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { paise?.let(onConfirm) },
+                enabled = valid,
+                modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+            ) { Text(stringResource(R.string.action_done), style = MaterialTheme.typography.labelLarge) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)) {
+                Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
+            }
+        },
+    )
 }
 
 @Composable

@@ -338,4 +338,80 @@ class CheckoutScreenTest {
         // Only theCartSwitcher chip "Ramesh · 2 items" has "Ramesh", no menu item starts with "Switch to Ramesh" or "Ramesh ("
         compose.onAllNodesWithText("Switch to Ramesh", substring = true).assertCountEquals(0)
     }
+
+    @Test
+    fun roundOffChipAppliesDiscountForOddTotal() {
+        val events = mutableListOf<CheckoutEvent>()
+        val oddLine = hinge(1.0).copy(customSellingPricePaise = 41_300L, defaultSellingPricePaise = 41_300L)
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(lines = listOf(oddLine)),
+                    onEvent = { events += it },
+                )
+            }
+        }
+        compose.onNodeWithText(str(R.string.checkout_round_chip, rupees(41_000L), rupees(300L))).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.checkout_round_chip, rupees(40_000L), rupees(1_300L)))
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(listOf(CheckoutEvent.DiscountChanged(1_300L)), events)
+    }
+
+    @Test
+    fun belowCostWarningShowsOnlyWhenSellerUnlocked() {
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(
+                        lines = listOf(hinge(1.0)),
+                        discountPaise = 1_500L,
+                        isSellerUnlocked = true,
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        compose.onNodeWithText("Below cost by", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun belowCostWarningHiddenWhenSellerLocked() {
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(
+                        lines = listOf(hinge(1.0)),
+                        discountPaise = 1_500L,
+                        isSellerUnlocked = false,
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        compose.onAllNodesWithText("Below cost by", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun matchedCustomerShowsOldUdharAndLastSoldPrice() {
+        val events = mutableListOf<CheckoutEvent>()
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(
+                        lines = listOf(hinge(1.0)),
+                        buyerName = "Ramesh",
+                        matchedPartyBalancePaise = 120_000L,
+                        lastSoldPriceByVariant = mapOf("v1" to 4_800L),
+                    ),
+                    onEvent = { events += it },
+                )
+            }
+        }
+        compose.onNodeWithText(str(R.string.checkout_old_due, rupees(120_000L))).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.checkout_last_sold_at, rupees(4_800L)))
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(listOf(CheckoutEvent.SetPrice("v1", 4_800L)), events)
+    }
 }

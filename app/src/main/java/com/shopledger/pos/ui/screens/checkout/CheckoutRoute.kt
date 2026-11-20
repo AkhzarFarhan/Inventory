@@ -17,6 +17,7 @@ import com.shopledger.pos.ui.MAX_OPEN_CARTS
 import com.shopledger.pos.ui.MainViewModel
 import com.shopledger.pos.ui.displayLabel
 import com.shopledger.pos.ui.text.UiText
+import com.shopledger.pos.ui.theme.HapticHelper
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -34,6 +35,7 @@ fun CheckoutRoute(
     val allInventory by viewModel.allInventoryState.collectAsState()
     val isSellerUnlocked by viewModel.isSellerUnlocked.collectAsState()
     val knownBuyers by viewModel.knownBuyersState.collectAsState()
+    val parties by viewModel.partiesState.collectAsState()
     val carts by viewModel.cartsState.collectAsState()
     val session by viewModel.activeCartSessionState.collectAsState()
     val cartItems by viewModel.cartItems.collectAsState()
@@ -85,9 +87,46 @@ fun CheckoutRoute(
         }
     }
 
+    val phoneDigits = buyerPhone.filter { it.isDigit() }.takeLast(10)
+    val trimmedName = buyerName.trim()
+    val matchedParty = remember(phoneDigits, trimmedName, parties) {
+        when {
+            phoneDigits.length >= 6 -> parties.firstOrNull {
+                it.phone.filter(Char::isDigit).takeLast(10) == phoneDigits
+            }
+            trimmedName.isNotEmpty() -> parties.firstOrNull {
+                it.name.trim().equals(trimmedName, ignoreCase = true)
+            }
+            else -> null
+        }
+    }
+    val matchedProfile = remember(phoneDigits, trimmedName, knownBuyers) {
+        when {
+            phoneDigits.length >= 6 -> knownBuyers.firstOrNull {
+                it.buyerPhone.filter(Char::isDigit).takeLast(10) == phoneDigits
+            }
+            trimmedName.isNotEmpty() -> knownBuyers.firstOrNull {
+                it.buyerName.trim().equals(trimmedName, ignoreCase = true)
+            }
+            else -> null
+        }
+    }
+    val lastSoldPriceByVariant = remember(matchedProfile) {
+        matchedProfile?.allDistinctPurchasedItems
+            ?.associate { it.variantId to it.unitSellingPricePaise }
+            .orEmpty()
+    }
+
     val state = CheckoutState(
         cartLabel = session.displayLabel(appContext),
-        carts = carts.map { CheckoutCartTab(it.cartId, it.displayLabel(appContext), it.items.size) },
+        carts = carts.map {
+            CheckoutCartTab(
+                cartId = it.cartId,
+                label = it.displayLabel(appContext),
+                lineCount = it.items.size,
+                subtotalPaise = it.items.sumOf { line -> line.lineRevenuePaise },
+            )
+        },
         activeCartId = cartId,
         lines = cartItems,
         searchQuery = query,
@@ -102,6 +141,8 @@ fun CheckoutRoute(
         amountPaidPaise = paidNowPaise,
         isSellerUnlocked = isSellerUnlocked,
         maxCarts = MAX_OPEN_CARTS,
+        matchedPartyBalancePaise = matchedParty?.currentBalancePaise?.takeIf { it > 0L },
+        lastSoldPriceByVariant = lastSoldPriceByVariant,
     )
 
     CheckoutScreen(
@@ -162,7 +203,10 @@ fun CheckoutRoute(
                         discountPaise = args.discountPaise,
                         amountPaidPaise = args.amountPaidPaise,
                         // Only leave once the sale is saved; a failure keeps the bill open with its error message.
-                        onComplete = { onClose() },
+                        onComplete = {
+                            HapticHelper.successPulse(appContext)
+                            onClose()
+                        },
                     )
                 }
                 CheckoutEvent.ShareEstimate ->
