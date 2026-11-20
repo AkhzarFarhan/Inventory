@@ -27,6 +27,7 @@ import com.shopledger.pos.data.command.VariantEdit
 import com.shopledger.pos.data.command.VariantSpec
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
+import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.data.local.entity.PartyTransactionEntity
@@ -73,6 +74,9 @@ class LpsRepository(
 
     val partiesFlow: Flow<List<PartyEntity>> =
         shopDao.observeAllParties()
+
+    val invoiceHeadersFlow: Flow<List<InvoiceHeaderEntity>> =
+        shopDao.observeAllInvoiceHeaders()
 
     val allLedgerEntriesFlow: Flow<List<PartyTransactionEntity>> =
         shopDao.observeAllLedgerEntries()

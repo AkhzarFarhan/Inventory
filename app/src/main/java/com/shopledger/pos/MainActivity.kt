@@ -186,6 +186,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val activeSellerName by SyncManager.sellerNameFlow.collectAsState()
     val savedItemDraft by ItemDraftManager.draftFlow.collectAsState()
     val parties by viewModel.partiesState.collectAsState()
+    val invoiceHeaders by viewModel.invoiceHeadersState.collectAsState()
+    val partyLedgerEntries by viewModel.partyLedgerEntriesState.collectAsState()
     val context = LocalContext.current
     val activeCartLabel = activeCartSession.displayLabel(context)
     val activeCartQtyByVariant = remember(activeCartSession.items) {
@@ -340,7 +342,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSellerUnlocked = requestToggleSeller,
                         onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
-                        onReturnSale = viewModel::returnSaleLine
+                        onReturnSale = viewModel::returnSaleLine,
+                        invoiceHeaders = invoiceHeaders,
+                        ledgerEntries = partyLedgerEntries,
                     )
                     AppTab.KHATA -> PartiesKhataScreen(
                         parties = parties,

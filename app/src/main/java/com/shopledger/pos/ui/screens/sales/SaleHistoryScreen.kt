@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -53,6 +55,10 @@ import androidx.compose.ui.unit.dp
 import com.shopledger.pos.R
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.core.share.ReceiptShareManager
+import com.shopledger.pos.core.sync.SyncManager
+import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
+import com.shopledger.pos.data.local.entity.PartyTransactionEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
@@ -74,8 +80,11 @@ fun SaleHistoryScreen(
     onToggleSellerUnlocked: () -> Unit,
     onOpenReceiptShare: (SaleRecordEntity) -> Unit,
     onReturnSale: (sale: SaleRecordEntity, qtyMilli: Long, actionId: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    invoiceHeaders: List<InvoiceHeaderEntity> = emptyList(),
+    ledgerEntries: List<PartyTransactionEntity> = emptyList(),
 ) {
+    val context = LocalContext.current
     var selectedPeriodIndex by remember { mutableIntStateOf(2) } // 0 = Today, 1 = This Month, 2 = All Time
     var saleToReturnConfirm by remember { mutableStateOf<SaleRecordEntity?>(null) }
 
@@ -83,6 +92,18 @@ fun SaleHistoryScreen(
     val currentYear = nowCal.get(Calendar.YEAR)
     val currentMonth = nowCal.get(Calendar.MONTH) + 1
     val currentDay = nowCal.get(Calendar.DAY_OF_MONTH)
+
+    val galla = remember(invoiceHeaders, sales, ledgerEntries, selectedPeriodIndex, currentYear, currentMonth, currentDay) {
+        computeGallaBreakdown(
+            invoices = invoiceHeaders,
+            salesFallback = sales,
+            ledgerEntries = ledgerEntries,
+            year = currentYear,
+            month = currentMonth,
+            day = currentDay,
+            periodIndex = selectedPeriodIndex,
+        )
+    }
 
     val filteredSales = remember(sales, selectedPeriodIndex) {
         when (selectedPeriodIndex) {
@@ -124,8 +145,8 @@ fun SaleHistoryScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingM),
-            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
+                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
         ) {
             // Seller privacy banner (cost and profit hidden unless unlocked)
             Surface(
@@ -205,6 +226,146 @@ fun SaleHistoryScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
+
+            if ((invoiceHeaders.isNotEmpty() || ledgerEntries.isNotEmpty()) &&
+                (galla.totalSalesCount > 0 || galla.totalJamaPaise > 0L)
+            ) {
+                val periodLabel = when (selectedPeriodIndex) {
+                    0 -> stringResource(R.string.bills_period_today)
+                    1 -> stringResource(R.string.bills_period_month)
+                    else -> stringResource(R.string.bills_period_all)
+                }
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingXs),
+                        verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.galla_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = {
+                                    val sellerName = SyncManager.getSellerName(context)
+                                        .ifBlank { context.getString(R.string.app_name) }
+                                    val report = buildString {
+                                        appendLine(context.getString(R.string.galla_report_heading, sellerName, periodLabel))
+                                        appendLine(
+                                            context.getString(
+                                                R.string.galla_report_sales,
+                                                IndianCurrencyFormatter.formatPaise(totalRevenuePaise),
+                                                galla.totalSalesCount,
+                                            ),
+                                        )
+                                        appendLine(
+                                            context.getString(
+                                                R.string.galla_report_cash,
+                                                IndianCurrencyFormatter.formatPaise(galla.cashInDrawerPaise),
+                                            ),
+                                        )
+                                        appendLine(
+                                            context.getString(
+                                                R.string.galla_report_upi,
+                                                IndianCurrencyFormatter.formatPaise(galla.totalUpiPaise),
+                                            ),
+                                        )
+                                        appendLine(
+                                            context.getString(
+                                                R.string.galla_report_udhar,
+                                                IndianCurrencyFormatter.formatPaise(galla.udharGivenPaise),
+                                            ),
+                                        )
+                                        if (galla.totalJamaPaise > 0L) {
+                                            appendLine(
+                                                context.getString(
+                                                    R.string.galla_report_jama,
+                                                    IndianCurrencyFormatter.formatPaise(galla.totalJamaPaise),
+                                                ),
+                                            )
+                                        }
+                                        if (isSellerUnlocked) {
+                                            appendLine(
+                                                context.getString(
+                                                    R.string.galla_report_profit,
+                                                    IndianCurrencyFormatter.formatPaise(totalProfitPaise),
+                                                ),
+                                            )
+                                        }
+                                    }.trimEnd()
+                                    ReceiptShareManager.shareTextToWhatsApp(
+                                        context = context,
+                                        message = report,
+                                        rawPhone = SyncManager.getSellerWhatsAppNumber(context),
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = ShopLedgerTokens.spacingS, vertical = 0.dp),
+                                modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(ShopLedgerTokens.spacingXs))
+                                Text(stringResource(R.string.galla_share_closing), style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                        ) {
+                            GallaPill(
+                                label = stringResource(R.string.galla_cash),
+                                amountPaise = galla.cashInDrawerPaise,
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.weight(1f),
+                            )
+                            GallaPill(
+                                label = stringResource(R.string.galla_upi),
+                                amountPaise = galla.totalUpiPaise,
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.weight(1f),
+                            )
+                            GallaPill(
+                                label = stringResource(R.string.galla_udhar),
+                                amountPaise = galla.udharGivenPaise,
+                                containerColor = if (galla.udharGivenPaise > 0L) {
+                                    MaterialTheme.colorScheme.errorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                contentColor = if (galla.udharGivenPaise > 0L) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (galla.totalJamaPaise > 0L) {
+                            Text(
+                                text = stringResource(
+                                    R.string.galla_includes_jama,
+                                    IndianCurrencyFormatter.formatPaise(galla.totalJamaPaise),
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         if (filteredSales.isEmpty()) {
@@ -217,8 +378,8 @@ fun SaleHistoryScreen(
         } else {
             // Multi-level collapsible list (Year -> Month -> sale cards)
             LazyColumn(
-                contentPadding = PaddingValues(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingM),
-                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                contentPadding = PaddingValues(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingXs),
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
                 modifier = Modifier.fillMaxSize()
             ) {
                 groupedByYearMonth.forEach { (year, monthsMap) ->
@@ -420,14 +581,14 @@ private fun KpiMetricCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingS, vertical = ShopLedgerTokens.spacingS),
+            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingS, vertical = ShopLedgerTokens.spacingXs),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
@@ -441,8 +602,42 @@ private fun KpiMetricCard(
                 text = subBadge,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun GallaPill(
+    label: String,
+    amountPaise: Long,
+    containerColor: Color,
+    contentColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+        contentColor = contentColor,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingS, vertical = ShopLedgerTokens.spacingXs),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = IndianCurrencyFormatter.formatPaise(amountPaise),
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

@@ -17,8 +17,10 @@ import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.core.share.ReceiptLineItem
 import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
+import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
+import com.shopledger.pos.data.local.entity.PartyTransactionEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.CartLineItem
@@ -193,6 +195,20 @@ class MainViewModel(
 
     val partiesState: StateFlow<List<PartyEntity>> =
         repository.partiesFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val invoiceHeadersState: StateFlow<List<InvoiceHeaderEntity>> =
+        repository.invoiceHeadersFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val partyLedgerEntriesState: StateFlow<List<PartyTransactionEntity>> =
+        repository.allLedgerEntriesFlow.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
