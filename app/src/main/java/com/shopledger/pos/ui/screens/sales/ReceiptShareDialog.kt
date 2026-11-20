@@ -1,17 +1,22 @@
 package com.shopledger.pos.ui.screens.sales
 
+import android.app.Activity
 import com.shopledger.pos.ui.text.variantLabel
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.HorizontalDivider
@@ -19,7 +24,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,13 +35,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.shopledger.pos.R
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.FloatingAppMessageHost
@@ -85,6 +96,21 @@ fun ReceiptShareDialog(
     }
     var isPrinting by remember { mutableStateOf(false) }
 
+    val qrAmountPaise = if (receipt.balanceDuePaise > 0L) receipt.balanceDuePaise else receipt.grandTotalPaise
+    val canShowQr = !receipt.isEstimate && activeUpiId.isNotBlank() && qrAmountPaise > 0L
+    var showInlineQr by remember(receipt) {
+        mutableStateOf(receipt.paymentMode.equals("UPI", ignoreCase = true))
+    }
+    var showFullScreenQr by remember(receipt) { mutableStateOf(false) }
+    val shouldGenerateQr = canShowQr && (showInlineQr || showFullScreenQr)
+    val qrBitmap = remember(shouldGenerateQr, activeUpiId, sellerNameInput, qrAmountPaise) {
+        if (shouldGenerateQr) {
+            ReceiptShareManager.generateUpiQrBitmap(activeUpiId, sellerNameInput, qrAmountPaise, 420)
+        } else {
+            null
+        }
+    }
+
     val dateFormatted = remember(receipt.timestampMillis) {
         SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date(receipt.timestampMillis))
     }
@@ -107,6 +133,73 @@ fun ReceiptShareDialog(
                 verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
             ) {
                 FloatingAppMessageHost()
+                if (canShowQr) {
+                    val qrTitle = stringResource(
+                        R.string.receipt_counter_qr_title,
+                        IndianCurrencyFormatter.formatPaise(qrAmountPaise),
+                    )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(ShopLedgerTokens.spacingM),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = qrTitle,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = { showInlineQr = !showInlineQr },
+                                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            if (showInlineQr) R.string.receipt_hide_upi_qr
+                                            else R.string.receipt_show_upi_qr,
+                                        )
+                                    )
+                                }
+                            }
+                            if (showInlineQr && qrBitmap != null) {
+                                Surface(
+                                    color = Color.White,
+                                    shape = MaterialTheme.shapes.medium,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                ) {
+                                    Image(
+                                        bitmap = qrBitmap.asImageBitmap(),
+                                        contentDescription = qrTitle,
+                                        modifier = Modifier.size(180.dp).padding(8.dp),
+                                    )
+                                }
+                                Text(
+                                    text = activeUpiId,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                SecondaryActionButton(
+                                    text = stringResource(R.string.receipt_fullscreen_qr),
+                                    icon = Icons.Default.Fullscreen,
+                                    onClick = { showFullScreenQr = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
                 // Visual preview of the receipt / estimate card
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -438,6 +531,82 @@ fun ReceiptShareDialog(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+        }
+    }
+
+    if (showFullScreenQr && qrBitmap != null) {
+        Dialog(
+            onDismissRequest = { showFullScreenQr = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            DisposableEffect(Unit) {
+                val window = (context as? Activity)?.window
+                val prevBrightness = runCatching { window?.attributes?.screenBrightness }.getOrNull()
+                runCatching {
+                    if (window != null) {
+                        val lp = window.attributes
+                        lp.screenBrightness = 1.0f
+                        window.attributes = lp
+                    }
+                }
+                onDispose {
+                    runCatching {
+                        if (window != null && prevBrightness != null) {
+                            val lp = window.attributes
+                            lp.screenBrightness = prevBrightness
+                            window.attributes = lp
+                        }
+                    }
+                }
+            }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(ShopLedgerTokens.spacingL),
+                shape = MaterialTheme.shapes.large,
+                color = Color.White,
+                contentColor = Color.Black,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(ShopLedgerTokens.spacingXl),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM),
+                ) {
+                    Text(
+                        text = sellerNameInput.ifBlank { stringResource(R.string.app_name) },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        text = IndianCurrencyFormatter.formatPaise(qrAmountPaise),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = stringResource(
+                            R.string.receipt_counter_qr_title,
+                            IndianCurrencyFormatter.formatPaise(qrAmountPaise),
+                        ),
+                        modifier = Modifier.size(260.dp),
+                    )
+                    Text(
+                        text = activeUpiId,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.receipt_fullscreen_qr_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.DarkGray,
+                    )
+                    PrimaryActionButton(
+                        text = stringResource(R.string.action_done),
+                        onClick = { showFullScreenQr = false },
+                    )
+                }
             }
         }
     }
