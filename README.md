@@ -1,26 +1,26 @@
-# LPS Hardware — Inventory & POS Android App
+# ShopLedger POS — Inventory, Khata & Counter POS Android App
 
-Ultra-lightweight, offline-first Android application built for **LPS Hardware** (`com.lpshardware.inventory`), optimized for smooth 60 FPS performance on low-RAM Android devices with a **Material 3 theme** (brand green, automatic light and dark mode) and an **English / Hindi** interface.
+Ultra-lightweight, offline-first multi-shop Android application (`com.shopledger.pos`), optimized for smooth 60 FPS performance on low-RAM Android devices with a **Material 3 theme** (brand green, automatic light and dark mode) and a bilingual **English / Hindi** interface.
 
 ## Key Features
-1. **Secret Coded Purchase Price (`CostCipherEngine` & `CostCipherGlyphs`)**:
-   - Encodes purchase prices into the 10 geometric stroke symbols (`0–9`) from `IMG_20261031_222339.jpg` so buyers standing at the counter cannot read cost prices.
-   - **Buyer-Safe Default**: Numeric purchase prices and profit margins (`₹` & `%`) are hidden by default and only revealed when the seller explicitly unlocks **Seller Mode** in the top bar.
-2. **Smart Hardware Item Understanding & Multi-Variants (`SmartItemMatcher`)**:
-   - Understands bilingual English + Hinglish hardware terms (`kabza` = `hinge`, `chatkani` = `tower bolt`, `pech` = `screw`, `toti` = `tap`), metric/imperial equivalences (`4"` = `100mm`), and phonetic typos.
-   - Prevents duplicate item creation and offers 1-tap variant linking (`Size`, `Material`, `Color/Finish`).
-3. **Sell and Stock In from the home screen**:
-   - The home screen opens on **Sell** and **Stock In**, with an A-Z item list, search (including Hinglish synonyms), a Low-Stock filter with 1-tap WhatsApp supplier reorder sharing, and persistent **Search History**.
-   - **Stock In by scanning**: photograph a printed supplier bill or a handwritten list; the on-device reader turns it into lines you review, fix and save. Saving adds stock and updates the supplier's Khata in one step. Items can also be entered by hand.
-   - **One-screen checkout**: pick items, set the price, choose Cash, UPI or Udhar and share the receipt. Multi-cart, estimates, returns and barcode scan are all still there.
-   - Several customers at once: open carts are shown as chips on the home screen and in checkout; switch with one tap; carts are kept if the app closes.
-   - Tap an item to add sizes to the cart; all selling happens in the cart.
-4. **Sales History with `₹` Margin, `%` Gain & WhatsApp Image Receipts**:
-   - Collapsible `Year -> Month -> Day` sale history with Indian Rupee (`₹`) formatting, bargaining price override at sale time, 1-tap Sale Return (*Wapsi*), and automatic **Sale Receipt PNG Image generation** sharable directly to the buyer's WhatsApp phone number.
-5. **Offline-First Ledger Database with Backups**:
-   - Room SQLite (WAL) where stock and Khata balances are calculated from append-only ledgers, every sale/return/payment is one atomic, double-tap-safe transaction, and returns are GST-style credit notes.
-   - Nightly encrypted on-device backups (last 7) plus shareable backup files for Google Drive or a new phone. Restore stages the file and restarts the app, with automatic rollback if the restored data fails its health check; a "Restore last night's backup" action is in the Cloud Sync & Backup sheet. Multi-device cloud sync arrives in the next release.
+1. **Seller-Safe Secret Coded Purchase Price (`CostCipherEngine` & `CostCipherGlyphs`)**:
+   - Encodes purchase prices into customizable 10-symbol cipher codes (or hidden mode) so buyers at the counter cannot read cost prices.
+   - **Buyer-Safe Default**: Numeric purchase prices, net margins (`₹` & `%`), and Shop Margin Breakdown are hidden by default and only revealed when the seller explicitly unlocks **Seller Mode** in the top bar.
+   - **Live Counter Preview & Progressive Item Entry (`AddEditItemSheet`)**: Shows a real-time buyer-safe / Seller-Mode counter preview card while adding or editing items, keeping common fields upfront and tucking optional dimensions, unit, and barcode behind an expand toggle.
+2. **Fast Counter Catalog, Inline Stepper & Multi-Cart (`ItemsHomeScreen` & `CartSwitcher`)**:
+   - Compact counter header with **Voice Search** (`Mic`), Hinglish/English fuzzy search (`SmartItemMatcher`), flowing `Top sold`, `Low Stock`, and category filter chips, plus an A–Z quick-jump index for 25+ item catalogs.
+   - **Inline `- qty +` Stepper** directly on single-variant cards, smart fraction/pack **Quantity Presets** in `AddToCartSheet`, and **"N in cart"** badges for multi-variant items.
+   - **Multi-Cart Counter Workflow**: Switch between concurrent customer carts on home or checkout with item count & live subtotal chips, or long-press any cart chip to rename, duplicate, clear, or close.
+3. **One-Screen Checkout, Bargaining & Live Counter UPI QR (`CheckoutScreen` & `ReceiptShareDialog`)**:
+   - Voice search & barcode scanning right in checkout, customer picker with existing **Udhar** & live **"After this bill"** balance preview, and 1-tap **"Last sold at ₹X"** price match pills per buyer.
+   - **1-Tap Round-Off & Target Total**: Bargaining chips (`-₹5`, `-₹10`, round to nearest ₹10/₹50), tappable Grand Total dialog, and Seller-Mode margin safety pills (`Gain` / `At cost` / `Loss`) with sticky 1-line bottom summary.
+   - **Live Counter UPI QR**: Renders a live scannable UPI QR card on receipt confirmation (auto-expanded for UPI bills, toggleable for Cash/Udhar) with a brightness-boosted **Full-Screen QR** display for customers.
+4. **Daily Galla Summary, Udhar Khata Overdue Alerts & WhatsApp Statements (`SaleHistoryScreen` & `PartiesKhataScreen`)**:
+   - Collapsible `Year -> Month -> Day` sales & credit-note (*Wapsi*) history with a live **Daily Galla Breakdown Card** (Cash, UPI, Udhar Given, Khata Jama, Net Cash in Drawer) and Seller-Lock-safe WhatsApp closing report sharing.
+   - **Actionable Udhar Khata**: Priority overdue/due indicators, sort by highest balance or most overdue, clickable party statement preview, and 1-tap crisp **WhatsApp Party Statement PNG** export.
+5. **Stock In Scanner & Offline-First Ledger Database with Backups**:
+   - Room SQLite (WAL) multi-tenant ledger where stock and Khata balances come from append-only logs and every sale, return, purchase, or payment runs atomically.
+   - Photograph printed supplier bills or handwritten lists for on-device extraction into Stock In / Khata lines; nightly encrypted on-device backups (last 7) plus shareable backup files and health-checked restore.
 
-6. **English / Hindi, simple screens, and a first-run wizard**:
-   - Every screen is available in English and Hindi (switch in **More**); text is in plain language with large touch targets, TalkBack labels and a Material 3 look that follows the phone's light or dark setting.
-   - A **setup wizard** on first launch asks for the shop name, shop type and an optional owner PIN, and can add sample items. Existing installs keep their data and skip it.
+6. **English / Hindi, TalkBack Accessibility & First-Run Setup Wizard**:
+   - Every screen is localized in **English** and **Hindi** (parity-tested, switchable in **More**) with large touch targets and TalkBack labels, plus a **setup wizard** on first launch for shop profile, custom coded price mode, optional owner PIN, and sample catalog.
