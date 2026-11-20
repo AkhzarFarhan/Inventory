@@ -5,15 +5,18 @@ import com.shopledger.pos.ui.text.isUncategorizedMarker
 import com.shopledger.pos.ui.text.variantLabel
 import android.widget.Toast
 import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -55,6 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.shopledger.pos.R
@@ -347,6 +353,16 @@ fun AddEditItemSheet(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDeleteVariantConfirm by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<UiText?>(null) }
+    var showExtraDetails by remember(mode) {
+        mutableStateOf(
+            mode is ItemEditorMode.ManageItem ||
+                draftVariants.size > 1 ||
+                sizeLabel.isNotBlank() ||
+                materialLabel.isNotBlank() ||
+                colorFinishLabel.isNotBlank() ||
+                barcodeInput.isNotBlank(),
+        )
+    }
     fun failValidation(@StringRes title: Int, message: UiText) {
         validationError = message
         AppErrorManager.reportWarning(UiText.Res(title), message)
@@ -563,6 +579,9 @@ fun AddEditItemSheet(
                     }
                 }
 
+                val parsedPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
+                val parsedSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
+
                 // CARD 1: item name and user-writable category
                 SectionCard {
                     OutlinedTextField(
@@ -594,6 +613,7 @@ fun AddEditItemSheet(
                                     colorFinishLabel = sig.canonicalColorFinish
                                 }
                                 itemName = sig.suggestedCleanBaseName
+                                showExtraDetails = true
                             },
                             modifier = Modifier.fillMaxWidth().heightIn(min = ShopLedgerTokens.minTouch),
                             shape = MaterialTheme.shapes.small,
@@ -734,173 +754,240 @@ fun AddEditItemSheet(
                 // VARIANTS SELECTOR (different variants have different prices)
                 // Available both when adding brand-new items (multiple drafts) and managing existing items
                 val standardLabel = stringResource(R.string.item_form_standard)
-                when (mode) {
-                    is ItemEditorMode.AddNewItem -> {
-                        SectionCard {
+                if (itemName.isNotBlank() || parsedSellingPaise > 0L) {
+                    val effectiveUnit = unit.ifBlank { activeVertical.defaultUnit }
+                    val attrSummary = listOf(sizeLabel, materialLabel, colorFinishLabel)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · ")
+                    val stockPreview = listOfNotNull(
+                        attrSummary.takeIf { it.isNotBlank() },
+                        stringResource(
+                            R.string.stock_in_stock,
+                            stockQtyInput.ifBlank { "0" },
+                            effectiveUnit,
+                        ),
+                    ).joinToString(" · ")
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
+                            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.item_form_preview_label),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    text = stringResource(R.string.item_form_variants_count, draftVariants.size),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                if (draftVariants.size > 1) {
-                                    TextButton(
-                                        onClick = {
-                                            if (draftVariants.size > 1) {
-                                                draftVariants.removeAt(activeDraftIndex)
-                                                activeDraftIndex = activeDraftIndex.coerceIn(0, draftVariants.lastIndex)
-                                                loadDraft(draftVariants[activeDraftIndex])
-                                            }
-                                        },
-                                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.item_form_remove_variant),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                draftVariants.forEachIndexed { idx, draft ->
-                                    val summary = draft.buildSummary().ifEmpty { standardLabel }
-                                    val pricePart = if (draft.sellingPriceInput.isNotBlank()) " • ₹${draft.sellingPriceInput}" else ""
-                                    FilterChip(
-                                        selected = idx == activeDraftIndex,
-                                        onClick = {
-                                            if (idx != activeDraftIndex) {
-                                                saveCurrentIntoDraft(draftVariants[activeDraftIndex])
-                                                activeDraftIndex = idx
-                                                loadDraft(draftVariants[idx])
-                                            }
-                                        },
-                                        label = { Text("$summary$pricePart", style = MaterialTheme.typography.bodyMedium) },
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = itemName.ifBlank { stringResource(R.string.item_form_preview_untitled) },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = stockPreview,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-
-                                // [+ Add variant] chip for another variant with its own price
-                                FilterChip(
-                                    selected = false,
-                                    onClick = {
-                                        saveCurrentIntoDraft(draftVariants[activeDraftIndex])
-                                        val nextDraft = VariantDraft(unit = unit.ifBlank { "pcs" })
-                                        draftVariants.add(nextDraft)
-                                        activeDraftIndex = draftVariants.lastIndex
-                                        loadDraft(nextDraft)
-                                    },
-                                    label = { Text(stringResource(R.string.item_form_add_variant), style = MaterialTheme.typography.bodyMedium) },
-                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                                )
+                                Spacer(Modifier.width(ShopLedgerTokens.spacingS))
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = IndianCurrencyFormatter.formatPaise(parsedSellingPaise),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                    CodedPurchasePriceBadge(
+                                        purchasePricePaise = parsedPurchasePaise,
+                                        isSellerUnlocked = isSellerUnlocked,
+                                    )
+                                }
                             }
-
-                            Text(
-                                text = stringResource(
-                                    R.string.item_form_configuring,
-                                    activeDraftIndex + 1,
-                                    draftVariants[activeDraftIndex].buildSummary().ifEmpty { standardLabel }
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                         }
                     }
+                }
+                if (showExtraDetails) {
+                    when (mode) {
+                        is ItemEditorMode.AddNewItem -> {
+                            SectionCard {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.item_form_variants_count, draftVariants.size),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
 
-                    is ItemEditorMode.ManageItem -> {
-                        SectionCard {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.item_form_variants_count, variants.size),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                if (!isAddingNewVariant && variants.size > 1 && activeVariant != null) {
-                                    TextButton(
-                                        onClick = { showDeleteVariantConfirm = true },
-                                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.item_form_delete_variant),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
+                                    if (draftVariants.size > 1) {
+                                        TextButton(
+                                            onClick = {
+                                                if (draftVariants.size > 1) {
+                                                    draftVariants.removeAt(activeDraftIndex)
+                                                    activeDraftIndex = activeDraftIndex.coerceIn(0, draftVariants.lastIndex)
+                                                    loadDraft(draftVariants[activeDraftIndex])
+                                                }
+                                            },
+                                            modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.item_form_remove_variant),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
                                     }
                                 }
-                            }
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                variants.forEach { v ->
-                                    val isSelected = !isAddingNewVariant && v.id == (activeVariant?.id ?: selectedVariantId)
-                                    val summary = v.buildVariantSummary().variantLabel()
-                                    val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    draftVariants.forEachIndexed { idx, draft ->
+                                        val summary = draft.buildSummary().ifEmpty { standardLabel }
+                                        val pricePart = if (draft.sellingPriceInput.isNotBlank()) " • ₹${draft.sellingPriceInput}" else ""
+                                        FilterChip(
+                                            selected = idx == activeDraftIndex,
+                                            onClick = {
+                                                if (idx != activeDraftIndex) {
+                                                    saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+                                                    activeDraftIndex = idx
+                                                    loadDraft(draftVariants[idx])
+                                                }
+                                            },
+                                            label = { Text("$summary$pricePart", style = MaterialTheme.typography.bodyMedium) },
+                                        )
+                                    }
+
+                                    // [+ Add variant] chip for another variant with its own price
                                     FilterChip(
-                                        selected = isSelected,
-                                        onClick = { selectVariant(v) },
-                                        label = { Text("$summary • $priceLabel", style = MaterialTheme.typography.bodyMedium) },
+                                        selected = false,
+                                        onClick = {
+                                            saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+                                            val nextDraft = VariantDraft(unit = unit.ifBlank { "pcs" })
+                                            draftVariants.add(nextDraft)
+                                            activeDraftIndex = draftVariants.lastIndex
+                                            loadDraft(nextDraft)
+                                            showExtraDetails = true
+                                        },
+                                        label = { Text(stringResource(R.string.item_form_add_variant), style = MaterialTheme.typography.bodyMedium) },
+                                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                     )
                                 }
 
-                                // [+ Add variant] chip
-                                FilterChip(
-                                    selected = isAddingNewVariant,
-                                    onClick = { startAddNewVariant() },
-                                    label = { Text(stringResource(R.string.item_form_add_variant), style = MaterialTheme.typography.bodyMedium) },
-                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                Text(
+                                    text = stringResource(
+                                        R.string.item_form_configuring,
+                                        activeDraftIndex + 1,
+                                        draftVariants[activeDraftIndex].buildSummary().ifEmpty { standardLabel }
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
+                        }
 
-                            Text(
-                                text = if (isAddingNewVariant) {
-                                    stringResource(R.string.item_form_adding_under, itemName)
-                                } else {
-                                    if (isSellerUnlocked) {
-                                        stringResource(
-                                            R.string.item_form_editing_summary,
-                                            activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
-                                            IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0),
-                                            IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
-                                        )
-                                    } else {
-                                        stringResource(
-                                            R.string.item_form_editing_summary_locked,
-                                            activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
-                                            IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
+                        is ItemEditorMode.ManageItem -> {
+                            SectionCard {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.item_form_variants_count, variants.size),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    if (!isAddingNewVariant && variants.size > 1 && activeVariant != null) {
+                                        TextButton(
+                                            onClick = { showDeleteVariantConfirm = true },
+                                            modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.item_form_delete_variant),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    variants.forEach { v ->
+                                        val isSelected = !isAddingNewVariant && v.id == (activeVariant?.id ?: selectedVariantId)
+                                        val summary = v.buildVariantSummary().variantLabel()
+                                        val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { selectVariant(v) },
+                                            label = { Text("$summary • $priceLabel", style = MaterialTheme.typography.bodyMedium) },
                                         )
                                     }
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isAddingNewVariant) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+
+                                    // [+ Add variant] chip
+                                    FilterChip(
+                                        selected = isAddingNewVariant,
+                                        onClick = { startAddNewVariant() },
+                                        label = { Text(stringResource(R.string.item_form_add_variant), style = MaterialTheme.typography.bodyMedium) },
+                                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                    )
+                                }
+
+                                Text(
+                                    text = if (isAddingNewVariant) {
+                                        stringResource(R.string.item_form_adding_under, itemName)
+                                    } else {
+                                        if (isSellerUnlocked) {
+                                            stringResource(
+                                                R.string.item_form_editing_summary,
+                                                activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
+                                                IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0),
+                                                IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
+                                            )
+                                        } else {
+                                            stringResource(
+                                                R.string.item_form_editing_summary_locked,
+                                                activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
+                                                IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
+                                            )
+                                        }
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (isAddingNewVariant) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
 
                 // CARD 2: specifications and pricing form
-                val parsedPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
-                val parsedSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
                 val attr1 = verticalAttr(activeVertical, 1)
                 val attr2 = verticalAttr(activeVertical, 2)
                 val attr3 = verticalAttr(activeVertical, 3)
@@ -908,134 +995,7 @@ fun AddEditItemSheet(
                 SectionCard(
                     title = stringResource(if (isAddingNewVariant) R.string.item_form_details_new else R.string.item_form_details)
                 ) {
-                    OutlinedTextField(
-                        value = sizeLabel,
-                        onValueChange = {
-                            sizeLabel = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].sizeLabel = it
-                            }
-                        },
-                        label = { Text(stringResource(attr1.label)) },
-                        placeholder = { Text(stringResource(attr1.hint)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = materialLabel,
-                        onValueChange = {
-                            materialLabel = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].materialLabel = it
-                            }
-                        },
-                        label = { Text(stringResource(attr2.label)) },
-                        placeholder = { Text(stringResource(attr2.hint)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = colorFinishLabel,
-                        onValueChange = {
-                            colorFinishLabel = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].colorFinishLabel = it
-                            }
-                        },
-                        label = { Text(stringResource(attr3.label)) },
-                        placeholder = { Text(stringResource(attr3.hint)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = unit,
-                        onValueChange = {
-                            unit = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].unit = it
-                            }
-                        },
-                        label = { Text(stringResource(R.string.item_form_unit)) },
-                        placeholder = { Text(stringResource(R.string.item_form_unit_hint, activeVertical.defaultUnit)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Unit quick-chips
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
-                    ) {
-                        units.forEach { u ->
-                            FilterChip(
-                                selected = unit.equals(u, ignoreCase = true),
-                                onClick = {
-                                    unit = u
-                                    if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                        draftVariants[activeDraftIndex].unit = u
-                                    }
-                                },
-                                label = { Text(u, style = MaterialTheme.typography.bodyMedium) },
-                            )
-                        }
-                    }
-
-                    // Barcode / SKU with 1-tap camera scan button
-                    val scanBarcodeDesc = stringResource(R.string.cd_scan_barcode)
-                    OutlinedTextField(
-                        value = barcodeInput,
-                        onValueChange = {
-                            barcodeInput = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].barcode = it
-                            }
-                        },
-                        label = { Text(stringResource(R.string.item_form_barcode)) },
-                        placeholder = { Text(stringResource(R.string.item_form_barcode_hint)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
-                        trailingIcon = {
-                            IconButton(
-                                onClick = {
-                                    BarcodeScannerHelper.scanBarcode(
-                                        context = context,
-                                        onScanned = { scanned ->
-                                            barcodeInput = scanned
-                                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                                draftVariants[activeDraftIndex].barcode = scanned
-                                            }
-                                        },
-                                        onError = { _ ->
-                                            Toast.makeText(context, R.string.err_scanner_detail, Toast.LENGTH_SHORT).show()
-                                        }
-                                    )
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.QrCodeScanner,
-                                    contentDescription = scanBarcodeDesc,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    )
-
-                    // Purchase price + selling price
+                    // Purchase price + selling price (always visible first)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
@@ -1161,6 +1121,147 @@ fun AddEditItemSheet(
                             ),
                             shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (mode is ItemEditorMode.AddNewItem) {
+                        SecondaryActionButton(
+                            text = stringResource(
+                                if (showExtraDetails) R.string.item_form_hide_more_details
+                                else R.string.item_form_more_details,
+                            ),
+                            icon = if (showExtraDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            onClick = { showExtraDetails = !showExtraDetails },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    if (showExtraDetails) {
+                        OutlinedTextField(
+                            value = sizeLabel,
+                            onValueChange = {
+                                sizeLabel = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].sizeLabel = it
+                                }
+                            },
+                            label = { Text(stringResource(attr1.label)) },
+                            placeholder = { Text(stringResource(attr1.hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = materialLabel,
+                            onValueChange = {
+                                materialLabel = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].materialLabel = it
+                                }
+                            },
+                            label = { Text(stringResource(attr2.label)) },
+                            placeholder = { Text(stringResource(attr2.hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = colorFinishLabel,
+                            onValueChange = {
+                                colorFinishLabel = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].colorFinishLabel = it
+                                }
+                            },
+                            label = { Text(stringResource(attr3.label)) },
+                            placeholder = { Text(stringResource(attr3.hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = unit,
+                            onValueChange = {
+                                unit = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].unit = it
+                                }
+                            },
+                            label = { Text(stringResource(R.string.item_form_unit)) },
+                            placeholder = { Text(stringResource(R.string.item_form_unit_hint, activeVertical.defaultUnit)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Unit quick-chips
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                        ) {
+                            units.forEach { u ->
+                                FilterChip(
+                                    selected = unit.equals(u, ignoreCase = true),
+                                    onClick = {
+                                        unit = u
+                                        if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                            draftVariants[activeDraftIndex].unit = u
+                                        }
+                                    },
+                                    label = { Text(u, style = MaterialTheme.typography.bodyMedium) },
+                                )
+                            }
+                        }
+
+                        // Barcode / SKU with 1-tap camera scan button
+                        val scanBarcodeDesc = stringResource(R.string.cd_scan_barcode)
+                        OutlinedTextField(
+                            value = barcodeInput,
+                            onValueChange = {
+                                barcodeInput = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].barcode = it
+                                }
+                            },
+                            label = { Text(stringResource(R.string.item_form_barcode)) },
+                            placeholder = { Text(stringResource(R.string.item_form_barcode_hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        BarcodeScannerHelper.scanBarcode(
+                                            context = context,
+                                            onScanned = { scanned ->
+                                                barcodeInput = scanned
+                                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                                    draftVariants[activeDraftIndex].barcode = scanned
+                                                }
+                                            },
+                                            onError = { _ ->
+                                                Toast.makeText(context, R.string.err_scanner_detail, Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCodeScanner,
+                                        contentDescription = scanBarcodeDesc,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         )
                     }
                 }
