@@ -2,6 +2,7 @@ package com.shopledger.pos.ui.screens.khata
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,13 +15,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -28,6 +33,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -51,16 +60,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.core.share.PartyStatementEntry
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.sync.SyncManager
+import com.shopledger.pos.data.command.LedgerEntryType
 import com.shopledger.pos.data.local.entity.PartyEntity
+import com.shopledger.pos.data.local.entity.PartyTransactionEntity
 import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.SecondaryActionButton
 import com.shopledger.pos.ui.theme.SegmentedChoice
+import com.shopledger.pos.ui.theme.ShopLedgerTheme
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
 import com.shopledger.pos.ui.theme.StatusChip
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.abs
 
 /**
  * Customer & Supplier Credit Ledger (*Udhar Khata*) Screen.
@@ -72,13 +89,20 @@ fun PartiesKhataScreen(
     parties: List<PartyEntity>,
     onAddParty: (name: String, phone: String, partyType: String, openingBalancePaise: Long) -> Unit,
     onRecordPaymentReceived: (partyId: String, amountPaise: Long, paymentMode: String, note: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    ledgerEntries: List<PartyTransactionEntity> = emptyList(),
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var filterTab by remember { mutableIntStateOf(0) } // 0 = All, 1 = Due (Baaki), 2 = Settled
+    var sortOldestFirst by remember { mutableStateOf(false) }
     var showAddPartyDialog by remember { mutableStateOf(false) }
     var paymentTargetParty by remember { mutableStateOf<PartyEntity?>(null) }
+    var statementParty by remember { mutableStateOf<PartyEntity?>(null) }
+    val listState = rememberLazyListState()
+    LaunchedEffect(sortOldestFirst, filterTab) {
+        listState.scrollToItem(0)
+    }
 
     val totalDuePaise = remember(parties) {
         parties.sumOf { it.currentBalancePaise.coerceAtLeast(0L) }
@@ -86,10 +110,19 @@ fun PartiesKhataScreen(
     val duePartyCount = remember(parties) {
         parties.count { it.currentBalancePaise > 0L }
     }
+    val entriesByParty = remember(ledgerEntries) {
+        ledgerEntries.groupBy { it.partyId }
+    }
+    val overdueByParty = remember(parties, entriesByParty) {
+        val nowMillis = System.currentTimeMillis()
+        parties.associate { party ->
+            party.id to computeDaysOverdue(party, entriesByParty[party.id].orEmpty(), nowMillis)
+        }
+    }
 
-    val filteredParties = remember(parties, searchQuery, filterTab) {
+    val filteredParties = remember(parties, searchQuery, filterTab, sortOldestFirst, overdueByParty) {
         val q = searchQuery.trim().lowercase()
-        parties.filter { p ->
+        val matched = parties.filter { p ->
             val matchesFilter = when (filterTab) {
                 1 -> p.currentBalancePaise > 0L
                 2 -> p.currentBalancePaise <= 0L
@@ -100,6 +133,14 @@ fun PartiesKhataScreen(
                 p.phone.lowercase().contains(q)
             matchesFilter && matchesQuery
         }
+        if (sortOldestFirst) {
+            matched.sortedWith(
+                compareByDescending<PartyEntity> { overdueByParty[it.id] ?: -1 }
+                    .thenByDescending { it.currentBalancePaise },
+            )
+        } else {
+            matched.sortedByDescending { it.currentBalancePaise }
+        }
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -107,8 +148,8 @@ fun PartiesKhataScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingM),
-            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
+                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
         ) {
             val hasDueTotal = totalDuePaise > 0L
             Surface(
@@ -118,7 +159,7 @@ fun PartiesKhataScreen(
                 contentColor = if (hasDueTotal) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
                 Row(
-                    modifier = Modifier.padding(ShopLedgerTokens.spacingM),
+                    modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -196,6 +237,23 @@ fun PartiesKhataScreen(
                 selectedIndex = filterTab,
                 onSelect = { filterTab = it }
             )
+            if (duePartyCount > 1) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    FilterChip(
+                        selected = sortOldestFirst,
+                        onClick = { sortOldestFirst = !sortOldestFirst },
+                        label = {
+                            Text(
+                                text = stringResource(
+                                    if (sortOldestFirst) R.string.khata_sort_oldest else R.string.khata_sort_largest,
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        },
+                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                    )
+                }
+            }
         }
 
         if (filteredParties.isEmpty()) {
@@ -216,14 +274,18 @@ fun PartiesKhataScreen(
             }
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(ShopLedgerTokens.spacingL),
-                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM),
+                state = listState,
+                contentPadding = PaddingValues(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(items = filteredParties, key = { it.id }) { party ->
                     val hasDue = party.currentBalancePaise > 0L
+                    val daysOverdue = overdueByParty[party.id]
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { statementParty = party },
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         border = BorderStroke(
@@ -232,8 +294,8 @@ fun PartiesKhataScreen(
                         ),
                     ) {
                         Column(
-                            modifier = Modifier.padding(ShopLedgerTokens.spacingL),
-                            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
+                            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+                            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -266,16 +328,48 @@ fun PartiesKhataScreen(
                                     }
                                 }
 
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = IndianCurrencyFormatter.formatPaise(if (hasDue) party.currentBalancePaise else 0L),
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = if (hasDue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                    )
-                                    StatusChip(
-                                        text = stringResource(if (hasDue) R.string.khata_badge_due else R.string.khata_badge_settled),
-                                        tone = if (hasDue) ChipTone.DANGER else ChipTone.SUCCESS,
-                                    )
+                                Row(
+                                    verticalAlignment = Alignment.Top,
+                                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.End,
+                                        verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
+                                    ) {
+                                        Text(
+                                            text = IndianCurrencyFormatter.formatPaise(if (hasDue) party.currentBalancePaise else 0L),
+                                            style = MaterialTheme.typography.titleLarge,
+                                            color = if (hasDue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        )
+                                        val (chipText, chipTone) = when {
+                                            hasDue && daysOverdue != null -> {
+                                                val text = if (daysOverdue == 0) {
+                                                    stringResource(R.string.khata_due_today)
+                                                } else {
+                                                    pluralStringResource(R.plurals.khata_days_overdue, daysOverdue, daysOverdue)
+                                                }
+                                                val tone = when {
+                                                    daysOverdue >= 15 -> ChipTone.DANGER
+                                                    daysOverdue >= 1 -> ChipTone.WARNING
+                                                    else -> ChipTone.INFO
+                                                }
+                                                text to tone
+                                            }
+                                            hasDue -> stringResource(R.string.khata_badge_due) to ChipTone.DANGER
+                                            else -> stringResource(R.string.khata_badge_settled) to ChipTone.SUCCESS
+                                        }
+                                        StatusChip(text = chipText, tone = chipTone)
+                                    }
+                                    IconButton(
+                                        onClick = { statementParty = party },
+                                        modifier = Modifier.size(ShopLedgerTokens.minTouch),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Receipt,
+                                            contentDescription = stringResource(R.string.khata_statement),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
 
@@ -309,6 +403,19 @@ fun PartiesKhataScreen(
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    TextButton(
+                                        onClick = { statementParty = party },
+                                        contentPadding = PaddingValues(horizontal = ShopLedgerTokens.spacingS, vertical = 0.dp),
+                                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                    ) {
+                                        Text(stringResource(R.string.khata_statement), style = MaterialTheme.typography.labelLarge)
+                                    }
+                                }
                             }
                         }
                     }
@@ -327,7 +434,10 @@ fun PartiesKhataScreen(
             onDismissRequest = { showAddPartyDialog = false },
             title = { Text(stringResource(R.string.khata_add_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                ) {
                     OutlinedTextField(
                         value = partyName,
                         onValueChange = { partyName = it },
@@ -397,7 +507,10 @@ fun PartiesKhataScreen(
             onDismissRequest = { paymentTargetParty = null },
             title = { Text(stringResource(R.string.khata_pay_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                ) {
                     Text(
                         text = stringResource(
                             R.string.khata_pay_party_due,
@@ -463,4 +576,135 @@ fun PartiesKhataScreen(
             }
         )
     }
+
+    statementParty?.let { target ->
+        val partyHistory = remember(target.id, entriesByParty) {
+            entriesByParty[target.id]
+                .orEmpty()
+                .sortedByDescending { it.createdAt }
+                .take(10)
+        }
+        val dateFmt = remember { SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH) }
+        AlertDialog(
+            onDismissRequest = { statementParty = null },
+            title = { Text(stringResource(R.string.khata_statement_title, target.name)) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                ) {
+                    val hasDue = target.currentBalancePaise > 0L
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (hasDue) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = if (hasDue) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(if (hasDue) R.string.khata_badge_due else R.string.khata_badge_settled),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Text(
+                                text = IndianCurrencyFormatter.formatPaise(if (hasDue) target.currentBalancePaise else 0L),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+
+                    if (partyHistory.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.khata_statement_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs)) {
+                            partyHistory.forEachIndexed { idx, entry ->
+                                val baseLabel = khataEntryTypeRes(entry.entryType)?.let { stringResource(it) } ?: entry.entryType
+                                val desc = if (entry.note.isNotBlank()) "$baseLabel · ${entry.note}" else baseLabel
+                                val isDebit = entry.amountDeltaPaise >= 0L
+                                val formattedAmt = IndianCurrencyFormatter.formatPaise(abs(entry.amountDeltaPaise))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = desc,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = dateFmt.format(Date(entry.createdAt)),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        text = if (isDebit) "+$formattedAmt" else "-$formattedAmt",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (isDebit) MaterialTheme.colorScheme.error else ShopLedgerTheme.extra.success,
+                                    )
+                                }
+                                if (idx < partyHistory.lastIndex) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                }
+                            }
+                        }
+                    }
+
+                    PrimaryActionButton(
+                        text = stringResource(R.string.khata_statement_share_img),
+                        icon = Icons.Default.Share,
+                        onClick = {
+                            val statementEntries = partyHistory.map { entry ->
+                                val baseLabel = khataEntryTypeRes(entry.entryType)?.let { context.getString(it) }
+                                    ?: entry.entryType
+                                val desc = if (entry.note.isNotBlank()) "$baseLabel · ${entry.note}" else baseLabel
+                                PartyStatementEntry(
+                                    timestampMillis = entry.createdAt,
+                                    description = desc,
+                                    amountDeltaPaise = entry.amountDeltaPaise,
+                                    paymentMode = entry.paymentMode,
+                                )
+                            }
+                            ReceiptShareManager.sharePartyStatementToWhatsApp(
+                                context = context,
+                                partyName = target.name,
+                                partyPhone = target.phone,
+                                currentBalancePaise = target.currentBalancePaise,
+                                entries = statementEntries,
+                            )
+                        },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { statementParty = null },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_done), style = MaterialTheme.typography.labelLarge)
+                }
+            },
+        )
+    }
+}
+
+private fun khataEntryTypeRes(entryType: String): Int? = when (entryType) {
+    LedgerEntryType.CREDIT_BILL -> R.string.khata_entry_credit
+    LedgerEntryType.PAYMENT_IN -> R.string.khata_entry_jama
+    LedgerEntryType.PAYMENT_OUT -> R.string.khata_entry_paid_out
+    LedgerEntryType.OPENING -> R.string.khata_entry_opening
+    LedgerEntryType.CREDIT_NOTE -> R.string.khata_entry_return
+    else -> null
 }

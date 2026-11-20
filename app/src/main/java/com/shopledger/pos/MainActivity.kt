@@ -349,7 +349,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                     AppTab.KHATA -> PartiesKhataScreen(
                         parties = parties,
                         onAddParty = viewModel::addOrUpdateParty,
-                        onRecordPaymentReceived = viewModel::recordPartyPaymentReceived
+                        onRecordPaymentReceived = viewModel::recordPartyPaymentReceived,
+                        ledgerEntries = partyLedgerEntries,
                     )
                     AppTab.MORE -> MoreScreen(
                         isSellerUnlocked = isSellerUnlocked,

@@ -30,6 +30,14 @@ import java.util.EnumMap
 import java.util.Locale
 
 @Immutable
+data class PartyStatementEntry(
+    val timestampMillis: Long,
+    val description: String,
+    val amountDeltaPaise: Long,
+    val paymentMode: String,
+)
+
+@Immutable
 data class ReceiptLineItem(
     val itemName: String,
     val variantSummary: String,
@@ -490,8 +498,321 @@ object ReceiptShareManager {
             append(res.getString(R.string.rcpt_cap_thanks, sellerName))
         }
 
-        val whatsAppPkg = findInstalledWhatsAppPackage(context)
+        sharePngToWhatsApp(
+            context = context,
+            imageUri = imageUri,
+            caption = caption,
+            normalizedRecipientPhone = normalizedBuyerPhone,
+            chooserTitle = res.getString(R.string.rcpt_share_chooser, sellerName, docTitle),
+        )
+    }
 
+    /**
+     * Renders a crisp 760px RGB_565 PNG Khata Statement card for a party with balance status,
+     * up to 10 recent transactions, and optional scannable UPI QR when a balance is due.
+     */
+    fun generatePartyStatementImageUri(
+        context: Context,
+        partyName: String,
+        partyPhone: String,
+        currentBalancePaise: Long,
+        entries: List<PartyStatementEntry>,
+        sellerName: String = "",
+        sellerWhatsApp: String = "",
+        upiId: String = "",
+    ): Uri? {
+        return try {
+            val res = AppLanguageStore.localizedContext(context).resources
+            val effectiveSeller = sellerName.ifBlank { SyncManager.getSellerName(context) }
+                .ifBlank { res.getString(R.string.app_name) }
+            val effectiveUpi = upiId.ifBlank { SyncManager.getUpiId(context) }
+            val effectiveSellerPhone = sellerWhatsApp.ifBlank { SyncManager.getSellerWhatsAppNumber(context) }
+            val shownEntries = entries.take(10)
+            val qrBitmap = if (effectiveUpi.isNotBlank() && currentBalancePaise > 0L) {
+                generateUpiQrBitmap(effectiveUpi, effectiveSeller, currentBalancePaise, 176)
+            } else {
+                null
+            }
+
+            val width = 760
+            val entryCount = maxOf(1, shownEntries.size)
+            val totalHeight = 250 +
+                (if (partyPhone.isNotBlank()) 30 else 0) +
+                (if (effectiveSellerPhone.isNotBlank()) 30 else 0) +
+                110 +
+                54 +
+                (entryCount * 46) +
+                (if (qrBitmap != null) 235 else 0) +
+                80
+
+            val bitmap = Bitmap.createBitmap(width, totalHeight, Bitmap.Config.RGB_565)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.parseColor("#F2F2F7"))
+
+            val cardRect = RectF(24f, 24f, (width - 24).toFloat(), (totalHeight - 24).toFloat())
+            val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL }
+            val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#E5E5EA")
+                style = Paint.Style.STROKE
+                strokeWidth = 2f
+            }
+            canvas.drawRoundRect(cardRect, 24f, 24f, cardPaint)
+            canvas.drawRoundRect(cardRect, 24f, 24f, borderPaint)
+
+            val bannerRect = RectF(24f, 24f, (width - 24).toFloat(), 118f)
+            val bannerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#007AFF")
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(bannerRect, 24f, 24f, bannerPaint)
+            canvas.drawRect(24f, 90f, (width - 24).toFloat(), 118f, bannerPaint)
+
+            val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = if (effectiveSeller.length > 18) 28f else 34f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+            }
+            val subTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#E5F1FF")
+                textSize = 18f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+            }
+            canvas.drawText(effectiveSeller.uppercase(Locale.ENGLISH), width / 2f, 68f, titlePaint)
+            canvas.drawText(res.getString(R.string.stmt_title), width / 2f, 98f, subTitlePaint)
+
+            val metaLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#6C6C70")
+                textSize = 20f
+            }
+            val metaValuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#1C1C1E")
+                textSize = 22f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            val dateStr = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).format(Date())
+            var y = 158f
+            canvas.drawText(partyName, 52f, y, metaValuePaint)
+            metaLabelPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(dateStr, (width - 52).toFloat(), y, metaLabelPaint)
+            metaLabelPaint.textAlign = Paint.Align.LEFT
+
+            if (partyPhone.isNotBlank()) {
+                y += 30f
+                canvas.drawText(partyPhone, 52f, y, metaLabelPaint)
+            }
+            if (effectiveSellerPhone.isNotBlank()) {
+                y += 30f
+                val waPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.parseColor("#128C7E")
+                    textSize = 18f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                }
+                canvas.drawText(
+                    res.getString(R.string.rcpt_seller_whatsapp, effectiveSeller, effectiveSellerPhone.removePrefix("+91").trim()),
+                    52f,
+                    y,
+                    waPaint,
+                )
+            }
+
+            y += 24f
+            val hasDue = currentBalancePaise > 0L
+            val boxRect = RectF(48f, y, (width - 48).toFloat(), y + 84f)
+            val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor(if (hasDue) "#FFEBEE" else "#E8F5E9")
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(boxRect, 14f, 14f, boxPaint)
+            val boxTextColor = Color.parseColor(if (hasDue) "#B71C1C" else "#1B5E20")
+            val boxLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = boxTextColor
+                textSize = 20f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            val boxValPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = boxTextColor
+                textSize = 28f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.RIGHT
+            }
+            canvas.drawText(
+                res.getString(if (hasDue) R.string.stmt_balance_due else R.string.stmt_balance_settled),
+                68f,
+                y + 50f,
+                boxLabelPaint,
+            )
+            canvas.drawText(
+                IndianCurrencyFormatter.formatPaise(if (hasDue) currentBalancePaise else 0L),
+                (width - 68).toFloat(),
+                y + 52f,
+                boxValPaint,
+            )
+
+            y += 116f
+            val sectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#3A3A3C")
+                textSize = 17f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            canvas.drawText(res.getString(R.string.stmt_recent_entries), 52f, y, sectionPaint)
+            y += 28f
+            val colPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#8E8E93")
+                textSize = 15f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            canvas.drawText(res.getString(R.string.stmt_col_date), 52f, y, colPaint)
+            canvas.drawText(res.getString(R.string.stmt_col_detail), 155f, y, colPaint)
+            colPaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(res.getString(R.string.stmt_col_amount), (width - 52).toFloat(), y, colPaint)
+            y += 12f
+            val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#E5E5EA"); strokeWidth = 2f }
+            canvas.drawLine(52f, y, (width - 52).toFloat(), y, dividerPaint)
+
+            val dateFmt = SimpleDateFormat("dd MMM", Locale.ENGLISH)
+            val rowTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1C1C1E"); textSize = 19f }
+            val debitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#B71C1C")
+                textSize = 19f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.RIGHT
+            }
+            val creditPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#1B5E20")
+                textSize = 19f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.RIGHT
+            }
+
+            if (shownEntries.isEmpty()) {
+                y += 34f
+                canvas.drawText(res.getString(R.string.khata_statement_empty), 52f, y, metaLabelPaint)
+            } else {
+                shownEntries.forEach { entry ->
+                    y += 38f
+                    canvas.drawText(dateFmt.format(Date(entry.timestampMillis)), 52f, y, metaLabelPaint)
+                    val desc = if (entry.description.length > 26) entry.description.take(25) + "…" else entry.description
+                    canvas.drawText(desc, 155f, y, rowTextPaint)
+                    val amtFormatted = IndianCurrencyFormatter.formatPaise(Math.abs(entry.amountDeltaPaise))
+                    val isDebit = entry.amountDeltaPaise >= 0L
+                    canvas.drawText(
+                        if (isDebit) "+$amtFormatted" else "-$amtFormatted",
+                        (width - 52).toFloat(),
+                        y,
+                        if (isDebit) debitPaint else creditPaint,
+                    )
+                }
+            }
+
+            y += 30f
+            if (qrBitmap != null) {
+                val qrLeft = (width - qrBitmap.width) / 2f
+                canvas.drawBitmap(qrBitmap, qrLeft, y, null)
+                y += qrBitmap.height + 24f
+                val qrLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.parseColor("#1C1C1E")
+                    textSize = 17f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    textAlign = Paint.Align.CENTER
+                }
+                canvas.drawText(res.getString(R.string.rcpt_scan_upi, effectiveUpi), width / 2f, y, qrLabelPaint)
+                y += 32f
+                qrBitmap.recycle()
+            }
+
+            val footerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#8E8E93")
+                textSize = 18f
+                textAlign = Paint.Align.CENTER
+            }
+            canvas.drawText(res.getString(R.string.rcpt_thanks_footer, effectiveSeller), width / 2f, y + 10f, footerPaint)
+
+            val receiptsDir = File(context.cacheDir, "receipts")
+            if (!receiptsDir.exists()) receiptsDir.mkdirs()
+            receiptsDir.listFiles()?.let { files ->
+                if (files.size > 12) {
+                    files.sortedBy { it.lastModified() }.take(files.size - 12).forEach { it.delete() }
+                }
+            }
+            val safeParty = partyName.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').ifBlank { "Party" }
+            val outFile = File(receiptsDir, "Shop_Statement_${safeParty}_${System.currentTimeMillis()}.png")
+            FileOutputStream(outFile).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 95, fos)
+                fos.flush()
+            }
+            bitmap.recycle()
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", outFile)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Generates a Khata Statement PNG image and shares it over WhatsApp to the party's phone number.
+     */
+    fun sharePartyStatementToWhatsApp(
+        context: Context,
+        partyName: String,
+        partyPhone: String,
+        currentBalancePaise: Long,
+        entries: List<PartyStatementEntry>,
+        sellerName: String = "",
+        sellerWhatsApp: String = "",
+        upiId: String = "",
+    ) {
+        val imageUri = generatePartyStatementImageUri(
+            context = context,
+            partyName = partyName,
+            partyPhone = partyPhone,
+            currentBalancePaise = currentBalancePaise,
+            entries = entries,
+            sellerName = sellerName,
+            sellerWhatsApp = sellerWhatsApp,
+            upiId = upiId,
+        )
+        if (imageUri == null) {
+            Toast.makeText(context, R.string.err_receipt_image, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val res = AppLanguageStore.localizedContext(context).resources
+        val effectiveSeller = sellerName.ifBlank { SyncManager.getSellerName(context) }
+            .ifBlank { res.getString(R.string.app_name) }
+        val normalizedSellerPhone = normalizeIndianPhoneNumber(
+            sellerWhatsApp.ifBlank { SyncManager.getSellerWhatsAppNumber(context) },
+        )
+        val caption = buildString {
+            append(res.getString(R.string.stmt_cap_heading, effectiveSeller, partyName)).append("\n")
+            if (currentBalancePaise > 0L) {
+                append(res.getString(R.string.stmt_cap_due, IndianCurrencyFormatter.formatPaise(currentBalancePaise))).append("\n")
+            } else {
+                append(res.getString(R.string.stmt_cap_settled)).append("\n")
+            }
+            if (normalizedSellerPhone.isNotEmpty()) {
+                append("\n").append(res.getString(R.string.rcpt_cap_contact, effectiveSeller))
+                    .append("\nhttps://wa.me/$normalizedSellerPhone\n")
+            }
+            append(res.getString(R.string.rcpt_cap_thanks, effectiveSeller))
+        }
+        sharePngToWhatsApp(
+            context = context,
+            imageUri = imageUri,
+            caption = caption,
+            normalizedRecipientPhone = normalizeIndianPhoneNumber(partyPhone),
+            chooserTitle = res.getString(R.string.khata_statement_title, partyName),
+        )
+    }
+
+    private fun sharePngToWhatsApp(
+        context: Context,
+        imageUri: Uri,
+        caption: String,
+        normalizedRecipientPhone: String,
+        chooserTitle: String,
+    ) {
+        val whatsAppPkg = findInstalledWhatsAppPackage(context)
         if (whatsAppPkg != null) {
             try {
                 val sendIntent = Intent(Intent.ACTION_SEND).apply {
@@ -499,8 +820,8 @@ object ReceiptShareManager {
                     `package` = whatsAppPkg
                     putExtra(Intent.EXTRA_STREAM, imageUri)
                     putExtra(Intent.EXTRA_TEXT, caption)
-                    if (normalizedBuyerPhone.isNotEmpty()) {
-                        putExtra("jid", "$normalizedBuyerPhone@s.whatsapp.net")
+                    if (normalizedRecipientPhone.isNotEmpty()) {
+                        putExtra("jid", "$normalizedRecipientPhone@s.whatsapp.net")
                     }
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -510,7 +831,6 @@ object ReceiptShareManager {
             } catch (_: Exception) {
             }
         }
-
         val chooserIntent = Intent.createChooser(
             Intent(Intent.ACTION_SEND).apply {
                 type = "image/png"
@@ -518,7 +838,7 @@ object ReceiptShareManager {
                 putExtra(Intent.EXTRA_TEXT, caption)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             },
-            res.getString(R.string.rcpt_share_chooser, sellerName, docTitle)
+            chooserTitle,
         ).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
