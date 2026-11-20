@@ -82,7 +82,7 @@ object OnDeviceOrderScannerManager {
             .build()
     }
 
-    private val KNOWN_UNITS = setOf(
+    internal val KNOWN_UNITS = setOf(
         "pc", "pcs", "piece", "pieces",
         "pkt", "pkts", "packet", "packets", "pack",
         "kg", "kgs", "kilo", "g", "gm", "gms", "gram", "grams",
@@ -599,8 +599,21 @@ object OnDeviceOrderScannerManager {
         }
 
         val resolvedItem = bestItem ?: return null
-        val lowerQuery = parsed.itemQuery.lowercase(Locale.ENGLISH)
-        val bestVariant = resolvedItem.variants.maxByOrNull { v ->
+        val bestVariant = pickBestVariant(resolvedItem, parsed.itemQuery) ?: return null
+
+        return resolvedItem to bestVariant
+    }
+
+    /**
+     * Picks the variant of [resolvedItem] that best fits the free-text [itemQuery] (barcode / SKU /
+     * size / material / finish words). Shared by the order scanner and the stock-in matcher.
+     */
+    internal fun pickBestVariant(
+        resolvedItem: InventoryItemWithVariants,
+        itemQuery: String
+    ): ItemVariantEntity? {
+        val lowerQuery = itemQuery.lowercase(Locale.ENGLISH)
+        return resolvedItem.variants.maxByOrNull { v ->
             var vScore = 0
             if (v.barcode.isNotBlank() && lowerQuery.contains(v.barcode.lowercase(Locale.ENGLISH))) vScore += 100
             if (v.skuCode.isNotBlank() && lowerQuery.contains(v.skuCode.lowercase(Locale.ENGLISH))) vScore += 90
@@ -620,8 +633,6 @@ object OnDeviceOrderScannerManager {
                 }
             }
             vScore
-        } ?: resolvedItem.variants.firstOrNull() ?: return null
-
-        return resolvedItem to bestVariant
+        } ?: resolvedItem.variants.firstOrNull()
     }
 }
