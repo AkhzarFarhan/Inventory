@@ -204,14 +204,28 @@ class MainViewModel(
         }
     }
 
+    private val _setupSaving = MutableStateFlow(false)
+    /** True while [finishSetup] runs, so the wizard can disable its buttons (no double submit). */
+    val setupSaving: StateFlow<Boolean> = _setupSaving.asStateFlow()
+
     /**
-     * Wizard finish (first run): applies the sample-items / empty choice first, then [applySettings] saves the shop
-     * details and marks setup completed, so an interruption can never leave a half-seeded or re-seeding install.
+     * Wizard finish (first run). Crash-safe order: the sample-items / empty choice is applied first (both are
+     * idempotent), then [applySettings] saves the shop details and flips "setup completed" LAST. If the process dies
+     * anywhere in between, the stored flag is still false, so the next launch shows the wizard again and nothing is
+     * seeded twice. Failures are reported through the app message banner and re-enable the buttons.
      */
     fun finishSetup(sampleData: Boolean, applySettings: () -> Unit) {
-        launchSafe("Setup") {
-            if (sampleData) repository.seedStarterCatalogIfEmpty() else repository.markStarterCatalogDone()
-            applySettings()
+        if (_setupSaving.value) return
+        _setupSaving.value = true
+        viewModelScope.launch(AppErrorManager.exceptionHandler("Setup")) {
+            try {
+                if (sampleData) repository.seedStarterCatalogIfEmpty() else repository.markStarterCatalogDone()
+                applySettings()
+            } catch (t: Throwable) {
+                AppErrorManager.reportError("Setup", t)
+            } finally {
+                _setupSaving.value = false
+            }
         }
     }
 

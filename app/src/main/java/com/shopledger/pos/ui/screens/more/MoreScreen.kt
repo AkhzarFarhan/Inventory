@@ -68,6 +68,7 @@ fun MoreScreen(
     onSaveDeviceCode: suspend (String) -> String,
     onOpenAccountSheet: () -> Unit,
     onRunSetupAgain: () -> Unit,
+    setupIncludesPin: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -80,7 +81,7 @@ fun MoreScreen(
         item {
             SectionCard(title = stringResource(R.string.setup_run_again)) {
                 Text(
-                    stringResource(R.string.setup_run_again_hint),
+                    stringResource(if (setupIncludesPin) R.string.setup_run_again_hint else R.string.setup_run_again_hint_no_pin),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

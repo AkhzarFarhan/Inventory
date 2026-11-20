@@ -34,7 +34,20 @@ class SetupCompletedRuleTest {
     fun freshInstallIsNotCompleted() {
         SyncManager.init(context)
         assertFalse(SyncManager.isSetupCompleted())
-        assertFalse(sync().contains("setup_completed"))
+        // The fresh decision is stored, because the database file is created later in the same launch.
+        assertTrue(sync().contains("setup_completed"))
+        assertFalse(sync().getBoolean("setup_completed", true))
+    }
+
+    @Test
+    fun freshInstallStaysFreshAfterTheDatabaseFileAppears() {
+        SyncManager.init(context)
+        assertFalse(SyncManager.isSetupCompleted())
+        val db = context.getDatabasePath(LpsDatabase.DB_NAME)
+        db.parentFile?.mkdirs()
+        db.writeText("x")
+        SyncManager.init(context)
+        assertFalse(SyncManager.isSetupCompleted())
     }
 
     @Test

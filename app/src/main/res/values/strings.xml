@@ -238,6 +238,9 @@
     <string name="setup_start_empty">Start empty</string>
     <string name="setup_run_again">Run setup again</string>
     <string name="setup_run_again_hint">Change shop name, shop type or PIN step by step.</string>
+    <string name="setup_run_again_hint_no_pin">Change shop name or shop type step by step.</string>
+    <string name="setup_restore_hint">Restoring a backup? Choose Start empty, then More → Backup.</string>
+    <string name="setup_saving">Saving…</string>
     <string name="vertical_hardware">Hardware &amp; Sanitary</string>
     <string name="vertical_kirana">Kirana &amp; Grocery</string>
     <string name="vertical_pharma">Medical &amp; Pharma</string>

@@ -158,7 +158,7 @@ object SyncManager {
      * install (wizard never shown, sample data never seeded) when ANY earlier sign of use is present: a stored seller
      * name or any other shop setting, a legacy settings file, the starter-catalog "seeded" flag every earlier version
      * wrote on its first launch, or an existing database file. Only a completely untouched install is "fresh".
-     * Existing installs get the flag persisted as true so later changes cannot flip the decision.
+     * The decision (true for existing, false for fresh) is persisted at once so later changes cannot flip it.
      */
     private fun resolveSetupCompleted(appContext: Context, p: SharedPreferences): Boolean {
         if (p.contains(KEY_SETUP_COMPLETED)) return p.getBoolean(KEY_SETUP_COMPLETED, true)
@@ -166,7 +166,9 @@ object SyncManager {
             appContext.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE).all.isNotEmpty() ||
             appContext.getSharedPreferences(SEED_PREFS_NAME, Context.MODE_PRIVATE).contains(SEED_DONE_KEY) ||
             appContext.getDatabasePath(LpsDatabase.DB_NAME).exists()
-        if (existing) p.edit().putBoolean(KEY_SETUP_COMPLETED, true).apply()
+        // Persist BOTH outcomes: once the database file exists (created later in this very launch) the "fresh" signal is
+        // gone, so a fresh install must be stored as "not completed" now or the next cold start would skip the wizard.
+        p.edit().putBoolean(KEY_SETUP_COMPLETED, existing).apply()
         return existing
     }
 
@@ -240,6 +242,10 @@ object SyncManager {
     fun verifyOwnerPin(candidatePin: String): Boolean {
         return CostCipherEngine.verifyPin(candidatePin, _ownerPinHashFlow.value)
     }
+
+    /** True only when the owner actually saved a shop name (the default placeholder is not a name). */
+    fun hasStoredSellerName(context: Context): Boolean =
+        prefs(context).getString(KEY_SELLER_NAME, "").orEmpty().isNotBlank()
 
     fun hasOwnerPin(): Boolean = _ownerPinHashFlow.value.isNotBlank()
 

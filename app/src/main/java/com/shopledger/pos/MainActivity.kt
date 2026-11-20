@@ -323,6 +323,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onSaveDeviceCode = { code -> withContext(Dispatchers.IO) { app.repository.setDeviceCode(code) } },
                         onOpenAccountSheet = { showCloudSyncSheet = true },
                         onRunSetupAgain = { showSetupAgain = true },
+                        setupIncludesPin = !SyncManager.hasOwnerPin() || isSellerUnlocked,
                     )
                 }
             }
@@ -393,7 +394,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             Surface(modifier = Modifier.fillMaxSize().zIndex(11f)) {
                 SetupWizardHost(
                     firstRun = false,
-                    initialName = activeSellerName,
+                    initialName = activeSellerName.takeIf { SyncManager.hasStoredSellerName(context) }.orEmpty(),
                     initialVertical = SyncManager.getActiveVertical(),
                     pinAvailable = !SyncManager.hasOwnerPin() || isSellerUnlocked,
                     language = remember { AppLanguageStore.get(context) },
@@ -598,21 +599,32 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
 private fun FirstRunSetup(viewModel: MainViewModel) {
     val context = LocalContext.current
     val activity = context as? Activity
-    Surface(modifier = Modifier.fillMaxSize()) {
-        SetupWizardHost(
-            firstRun = true,
-            initialName = "",
-            initialVertical = SyncManager.getActiveVertical(),
-            pinAvailable = true,
-            language = remember { AppLanguageStore.get(context) },
-            onLanguageSelected = { lang -> switchLanguage(context, activity, lang) },
-            onFinish = { done ->
-                viewModel.finishSetup(done.sampleData) {
-                    saveSetupChoices(context, done)
-                    SyncManager.saveSetupCompleted(context, true)
-                }
-            },
-            onCancel = {},
+    val saving by viewModel.setupSaving.collectAsState()
+    Box(modifier = Modifier.fillMaxSize()) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            SetupWizardHost(
+                firstRun = true,
+                initialName = "",
+                initialVertical = SyncManager.getActiveVertical(),
+                pinAvailable = true,
+                language = remember { AppLanguageStore.get(context) },
+                onLanguageSelected = { lang -> switchLanguage(context, activity, lang) },
+                saving = saving,
+                onFinish = { done ->
+                    viewModel.finishSetup(done.sampleData) {
+                        saveSetupChoices(context, done)
+                        SyncManager.saveSetupCompleted(context, true)
+                    }
+                },
+                onCancel = {},
+            )
+        }
+        // Setup failures (disk full, database error) must be visible; the wizard replaces the main UI that normally hosts this.
+        FloatingAppMessageHost(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 8.dp)
+                .zIndex(20f)
         )
     }
 }

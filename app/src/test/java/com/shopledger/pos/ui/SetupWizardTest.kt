@@ -228,6 +228,44 @@ class SetupWizardTest {
     }
 
     @Test
+    fun savingDisablesTheFinishButtons() {
+        compose.setContent {
+            ShopLedgerTheme {
+                SetupWizard(
+                    state = SetupState(step = SetupStep.START, shopName = "Shop"),
+                    onEvent = {},
+                    saving = true,
+                )
+            }
+        }
+        compose.onNodeWithText(str(R.string.setup_saving)).assertIsNotEnabled()
+        compose.onNodeWithText(str(R.string.setup_start_empty)).assertIsNotEnabled()
+        compose.onNodeWithText(str(R.string.setup_restore_hint)).assertIsDisplayed()
+    }
+
+    @Test
+    fun pinIsNeverWrittenToTheSavedInstanceState() {
+        val tester = StateRestorationTester(compose)
+        tester.setContent {
+            ShopLedgerTheme {
+                SetupWizardHost(
+                    firstRun = true, initialName = "", initialVertical = ShopVertical.HARDWARE, pinAvailable = true,
+                    language = AppLanguage.ENGLISH, onLanguageSelected = {}, onFinish = {}, onCancel = {},
+                )
+            }
+        }
+        typeName()
+        next(); next()
+        compose.onNodeWithText(str(R.string.pin_label)).performTextInput("1234")
+        compose.onNodeWithText(str(R.string.setup_pin_confirm)).performTextInput("1234")
+        compose.onNodeWithText(str(R.string.setup_next)).assertIsEnabled()
+        tester.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText(str(R.string.setup_pin_confirm)).assertIsDisplayed()
+        // The step survives, but the typed PIN was not saved, so Next needs it typed again.
+        compose.onNodeWithText(str(R.string.setup_next)).assertIsNotEnabled()
+    }
+
+    @Test
     fun primaryActionIsTallEnoughAt360dp() {
         host()
         typeName()

@@ -33,7 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -123,18 +123,17 @@ fun reduceSetup(state: SetupState, event: SetupEvent): SetupState = when (event)
 
 private val SetupStateSaver = listSaver<SetupState, Any>(
     save = {
-        listOf(it.step.name, it.shopName, it.vertical.name, it.pin, it.confirmPin, it.firstRun, it.pinAvailable, it.language.tag)
+        // The PIN fields are deliberately NOT saved: the saved-instance Bundle must never hold the raw PIN.
+        listOf(it.step.name, it.shopName, it.vertical.name, it.firstRun, it.pinAvailable, it.language.tag)
     },
     restore = {
         SetupState(
             step = SetupStep.valueOf(it[0] as String),
             shopName = it[1] as String,
             vertical = ShopVertical.fromNameOrDefault(it[2] as String),
-            pin = it[3] as String,
-            confirmPin = it[4] as String,
-            firstRun = it[5] as Boolean,
-            pinAvailable = it[6] as Boolean,
-            language = AppLanguage.fromTag(it[7] as String),
+            firstRun = it[3] as Boolean,
+            pinAvailable = it[4] as Boolean,
+            language = AppLanguage.fromTag(it[5] as String),
         )
     },
 )
@@ -156,6 +155,7 @@ fun SetupWizardHost(
     onFinish: (SetupEvent.Finish) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    saving: Boolean = false,
 ) {
     var state by rememberSaveable(stateSaver = SetupStateSaver) {
         mutableStateOf(
@@ -170,6 +170,7 @@ fun SetupWizardHost(
     }
     SetupWizard(
         state = state.copy(language = language),
+        saving = saving,
         modifier = modifier,
         onEvent = { event ->
             when (event) {
@@ -187,6 +188,7 @@ fun SetupWizard(
     state: SetupState,
     onEvent: (SetupEvent) -> Unit,
     modifier: Modifier = Modifier,
+    saving: Boolean = false,
 ) {
     val canGoBack = state.stepIndex > 0 || !state.firstRun
     // System back: step back; on the first step a re-run closes, a first run keeps the system default (leave the app).
@@ -194,7 +196,7 @@ fun SetupWizard(
         onEvent(if (state.stepIndex > 0) SetupEvent.Back else SetupEvent.Cancel)
     }
     val finish = { sample: Boolean, withPin: Boolean ->
-        onEvent(
+        if (!saving) onEvent(
             SetupEvent.Finish(
                 name = state.shopName.trim(),
                 vertical = state.vertical,
@@ -210,6 +212,7 @@ fun SetupWizard(
             if (canGoBack) {
                 TextButton(
                     onClick = { onEvent(if (state.stepIndex > 0) SetupEvent.Back else SetupEvent.Cancel) },
+                    enabled = !saving,
                     modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                 ) { Text(stringResource(R.string.setup_back), style = MaterialTheme.typography.labelLarge) }
             }
@@ -225,7 +228,7 @@ fun SetupWizard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = ShopLedgerTokens.spacingS)
-                .semantics { contentDescription = progressText },
+                .clearAndSetSemantics { },
         )
         Column(
             modifier = Modifier
@@ -243,28 +246,34 @@ fun SetupWizard(
         Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS), modifier = Modifier.padding(top = ShopLedgerTokens.spacingM)) {
             when (state.step) {
                 SetupStep.START -> {
-                    PrimaryActionButton(text = stringResource(R.string.setup_start_sample), onClick = { finish(true, true) })
+                    PrimaryActionButton(
+                        text = stringResource(if (saving) R.string.setup_saving else R.string.setup_start_sample),
+                        enabled = !saving,
+                        onClick = { finish(true, true) },
+                    )
                     SecondaryActionButton(
                         text = stringResource(R.string.setup_start_empty),
+                        enabled = !saving,
                         onClick = { finish(false, true) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 SetupStep.PIN -> {
                     PrimaryActionButton(
-                        text = stringResource(if (state.isLastStep) R.string.setup_finish else R.string.setup_next),
-                        enabled = state.pinReady,
+                        text = stringResource(if (saving) R.string.setup_saving else if (state.isLastStep) R.string.setup_finish else R.string.setup_next),
+                        enabled = state.pinReady && !saving,
                         onClick = { if (state.isLastStep) finish(false, true) else onEvent(SetupEvent.Next) },
                     )
                     SecondaryActionButton(
                         text = stringResource(R.string.setup_skip),
+                        enabled = !saving,
                         onClick = { if (state.isLastStep) finish(false, false) else onEvent(SetupEvent.SkipPin) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 else -> PrimaryActionButton(
-                    text = stringResource(if (state.isLastStep) R.string.setup_finish else R.string.setup_next),
-                    enabled = state.canAdvance,
+                    text = stringResource(if (saving) R.string.setup_saving else if (state.isLastStep) R.string.setup_finish else R.string.setup_next),
+                    enabled = state.canAdvance && !saving,
                     onClick = { if (state.isLastStep) finish(false, true) else onEvent(SetupEvent.Next) },
                 )
             }
@@ -391,4 +400,9 @@ private fun PinStep(state: SetupState, onEvent: (SetupEvent) -> Unit) {
 @Composable
 private fun StartStep() {
     StepTitle(stringResource(R.string.setup_start_title), stringResource(R.string.setup_start_hint))
+    Text(
+        stringResource(R.string.setup_restore_hint),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }

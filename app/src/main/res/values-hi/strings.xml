@@ -238,6 +238,9 @@
     <string name="setup_start_empty">खाली शुरू करें</string>
     <string name="setup_run_again">सेटअप दोबारा चलाएँ</string>
     <string name="setup_run_again_hint">दुकान का नाम, दुकान का प्रकार या PIN चरण-दर-चरण बदलें।</string>
+    <string name="setup_run_again_hint_no_pin">दुकान का नाम या दुकान का प्रकार चरण-दर-चरण बदलें।</string>
+    <string name="setup_restore_hint">बैकअप वापस लाना है? खाली शुरू करें चुनें, फिर ज़्यादा → बैकअप।</string>
+    <string name="setup_saving">सहेज रहे हैं…</string>
     <string name="vertical_hardware">हार्डवेयर और सैनिटरी</string>
     <string name="vertical_kirana">किराना और राशन</string>
     <string name="vertical_pharma">मेडिकल और दवाई</string>
