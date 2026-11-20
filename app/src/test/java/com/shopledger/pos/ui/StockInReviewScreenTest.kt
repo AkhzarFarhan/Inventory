@@ -1,0 +1,170 @@
+package com.shopledger.pos.ui
+
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.shopledger.pos.core.scanner.MatchStatus
+import com.shopledger.pos.core.scanner.ParsedStockLine
+import com.shopledger.pos.core.scanner.StockLineMatch
+import com.shopledger.pos.data.command.StockInRequest
+import com.shopledger.pos.data.command.StockInResult
+import com.shopledger.pos.data.local.entity.InventoryItemEntity
+import com.shopledger.pos.data.local.entity.ItemVariantEntity
+import com.shopledger.pos.data.model.InventoryItemWithVariants
+import com.shopledger.pos.ui.screens.stockin.StockInEvent
+import com.shopledger.pos.ui.screens.stockin.StockInReviewScreen
+import com.shopledger.pos.ui.screens.stockin.StockInSaver
+import com.shopledger.pos.ui.screens.stockin.StockInViewModel
+import com.shopledger.pos.ui.theme.ShopLedgerTheme
+import kotlinx.coroutines.CompletableDeferred
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+
+// A tall screen so the lazy table composes every row next to the header.
+@Config(qualifiers = "w400dp-h2000dp")
+@RunWith(AndroidJUnit4::class)
+class StockInReviewScreenTest {
+    @get:Rule
+    val compose = createComposeRule()
+
+    private val inventory = listOf(
+        InventoryItemWithVariants(
+            InventoryItemEntity(id = "1", displayName = "Butt Hinge", sortKey = "BUTT HINGE"),
+            listOf(ItemVariantEntity(id = "v-1", itemId = "1", purchasePricePaise = 4800, sellingPricePaise = 6000))
+        ),
+        InventoryItemWithVariants(
+            InventoryItemEntity(id = "2", displayName = "Fevicol", sortKey = "FEVICOL"),
+            listOf(ItemVariantEntity(id = "v-2", itemId = "2", purchasePricePaise = 20000, sellingPricePaise = 25000))
+        ),
+    )
+
+    private fun line(name: String, rate: Long?) = ParsedStockLine(name, 2000, null, rate, null, true, name)
+
+    private val matches = listOf(
+        StockLineMatch(line("Butt Hinge", 4800), MatchStatus.MATCHED, "1", "v-1", 4800, 6000, null),
+        StockLineMatch(line("Fevcol", 21000), MatchStatus.CHECK, "2", "v-2", 20000, 25000, null),
+        StockLineMatch(line("Door Stopper", 1000), MatchStatus.NEW, null, null, null, null, null),
+    )
+
+    private class SlowSaver : StockInSaver {
+        val gate = CompletableDeferred<StockInResult>()
+        var calls = 0
+        override suspend fun receive(request: StockInRequest): StockInResult {
+            calls++
+            return gate.await()
+        }
+    }
+
+    private fun show(saver: StockInSaver = StockInSaver { StockInResult("p", 0, 0, 0, 0, false) }, onEvent: (StockInEvent) -> Unit = {}): StockInViewModel {
+        val vm = StockInViewModel(saver, newId = { "act" })
+        vm.openMatches(matches, inventory, null, null)
+        compose.setContent {
+            ShopLedgerTheme {
+                val s by vm.state.collectAsState()
+                s?.let { st ->
+                    StockInReviewScreen(st, onEvent = { e ->
+                        onEvent(e)
+                        vm.onEvent(e)
+                    })
+                }
+            }
+        }
+        return vm
+    }
+
+    @Test fun rowsShowStatusIconsAndTabCounts() {
+        show()
+        compose.onNodeWithText("All (3)").assertIsDisplayed()
+        compose.onNodeWithText("New (1)").assertIsDisplayed()
+        compose.onNodeWithText("Check (1)").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Matched", useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodesWithContentDescription("Needs checking", useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodesWithContentDescription("New item", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test fun newTabShowsOnlyNewRows() {
+        show()
+        compose.onNodeWithText("New (1)").performClick()
+        compose.onNodeWithText("Door Stopper").assertIsDisplayed()
+        compose.onAllNodesWithText("Butt Hinge").assertCountEquals(0)
+    }
+
+    @Test fun costThatDiffersShowsWasPrice() {
+        show()
+        compose.onNodeWithText("was ₹200").assertIsDisplayed()
+    }
+
+    @Test fun invalidRowsDisableSaveAndExplainWhy() {
+        show()
+        // CHECK row is unresolved first.
+        compose.onNodeWithText("Add 3 items to stock").assertIsNotEnabled()
+        compose.onNodeWithText("Choose which item \"Fevcol\" is.").assertIsDisplayed()
+    }
+
+    @Test fun enteringSellPriceEnablesSave() {
+        val vm = show()
+        // resolve the CHECK row by confirming it
+        val checkKey = vm.state.value!!.rows[1].key
+        val newKey = vm.state.value!!.rows[2].key
+        compose.runOnIdle { vm.onEvent(StockInEvent.PickVariant(checkKey, "2", "v-2")) }
+        compose.onNodeWithText("Add 3 items to stock").assertIsNotEnabled()
+        compose.onNodeWithText("Add a selling price for \"Door Stopper\".").assertIsDisplayed()
+        compose.onNodeWithTag("cell_sell_$newKey").performClick()
+        compose.onNodeWithTag("cell_sell_$newKey").performTextInput("15")
+        compose.onNodeWithText("Add 3 items to stock").assertIsEnabled()
+    }
+
+    @Test fun deletingARowUpdatesTheButtonCount() {
+        val vm = show()
+        compose.runOnIdle { vm.onEvent(StockInEvent.PickVariant(vm.state.value!!.rows[1].key, "2", "v-2")) }
+        compose.onNodeWithText("Add 3 items to stock").assertIsDisplayed()
+        val key = vm.state.value!!.rows[0].key
+        compose.onNodeWithTag("delete_$key").performClick()
+        compose.onNodeWithText("Add 2 items to stock").assertIsDisplayed()
+    }
+
+    @Test fun saveFiresOnceEvenOnDoubleTap() {
+        val saver = SlowSaver()
+        val events = ArrayList<StockInEvent>()
+        val vm = show(saver) { events.add(it) }
+        compose.runOnIdle {
+            vm.onEvent(StockInEvent.PickVariant(vm.state.value!!.rows[1].key, "2", "v-2"))
+            vm.onEvent(StockInEvent.EditSell(vm.state.value!!.rows[2].key, 1500))
+        }
+        compose.onNodeWithText("Add 3 items to stock").assertIsEnabled()
+        compose.onNodeWithText("Add 3 items to stock").performClick()
+        compose.onNodeWithText("Saving…").performClick()
+        compose.waitForIdle()
+        assertEquals(1, events.count { it is StockInEvent.Save })
+        assertEquals(1, saver.calls)
+    }
+
+    @Test fun emptyParseOffersTryAgainAndManual() {
+        val vm = StockInViewModel(StockInSaver { StockInResult("p", 0, 0, 0, 0, false) })
+        vm.openMatches(emptyList(), inventory, null, null)
+        val events = ArrayList<StockInEvent>()
+        compose.setContent {
+            ShopLedgerTheme {
+                val s by vm.state.collectAsState()
+                StockInReviewScreen(s!!, onEvent = { events.add(it) })
+            }
+        }
+        compose.onNodeWithText("Try again").performClick()
+        compose.onNodeWithText("Add item manually").performClick()
+        assertEquals(listOf(StockInEvent.Rescan, StockInEvent.AddManually), events)
+    }
+}

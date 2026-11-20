@@ -109,11 +109,16 @@ fun ItemsHomeScreen(
     onResumeDraft: () -> Unit = {},
     onDiscardDraft: () -> Unit = {},
     onShareLowStock: (() -> Unit)? = null,
+    /** Called with the OCR text (and photo) of a scanned supplier bill or stock list. */
+    onStockScanned: (text: String, imageUri: android.net.Uri?) -> Unit = { _, _ -> },
+    /** Bump this number to re-open the Stock In sheet (e.g. "Try again" from the review screen). */
+    stockInRequest: Int = 0,
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var searchFocused by remember { mutableStateOf(false) }
     var showStockIn by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(stockInRequest) { if (stockInRequest > 0) showStockIn = true }
     val cipherMode by CostCipherEngine.activeModeFlow.collectAsState()
     val digitMap by CostCipherEngine.activeCustomDigitMapFlow.collectAsState()
     val scannerFailedTitle = stringResource(R.string.error_barcode_scanner_failed)
@@ -308,6 +313,10 @@ fun ItemsHomeScreen(
                 onAddItemManually()
             },
             onDismiss = { showStockIn = false },
+            onScanned = { text, uri ->
+                showStockIn = false
+                onStockScanned(text, uri)
+            },
         )
     }
 }

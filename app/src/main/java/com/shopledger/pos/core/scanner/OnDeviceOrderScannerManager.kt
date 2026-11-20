@@ -400,6 +400,37 @@ object OnDeviceOrderScannerManager {
         )
     }
 
+    /**
+     * Stock-in variant of the optional on-device LLM clean-up: one line per item as
+     * `ITEM | QTY | UNIT | RATE | AMOUNT` (`-` when unknown). Returns null when no model is installed or it
+     * fails, so callers fall back to the raw OCR text.
+     */
+    suspend fun extractStockLines(context: Context, rawText: String): String? = withContext(Dispatchers.Default) {
+        val modelFile = getDownloadedModelFile(context) ?: return@withContext null
+        try {
+            val options = LlmInference.LlmInferenceOptions.builder()
+                .setModelPath(modelFile.absolutePath)
+                .setMaxTokens(768)
+                .build()
+            val inference = LlmInference.createFromOptions(context, options)
+            try {
+                val prompt = buildString {
+                    appendLine("Extract each product received from this supplier bill or handwritten stock list.")
+                    appendLine("Output one item per line strictly in format: ITEM | QTY | UNIT | RATE | AMOUNT")
+                    appendLine("Use - for any value that is not written. Keep size and brand words in ITEM.")
+                    appendLine("Ignore totals, taxes, dates, bill numbers, phone numbers, headers and shop names.")
+                    appendLine("---")
+                    appendLine(rawText.take(3000))
+                }
+                inference.generateResponse(prompt)?.trim()?.takeIf { it.contains('|') }
+            } finally {
+                inference.close()
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun runOnDeviceLlmExtraction(
         context: Context,
         modelFile: File,

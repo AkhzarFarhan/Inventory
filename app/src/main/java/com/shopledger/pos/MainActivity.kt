@@ -20,7 +20,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material3.Surface
+import com.shopledger.pos.ui.screens.stockin.StockInEvent
+import com.shopledger.pos.ui.screens.stockin.StockInReviewScreen
+import com.shopledger.pos.ui.screens.stockin.StockInViewModel
+import com.shopledger.pos.ui.theme.ConfirmDialog
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -163,6 +174,22 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val savedItemDraft by ItemDraftManager.draftFlow.collectAsState()
     val parties by viewModel.partiesState.collectAsState()
     val context = LocalContext.current
+    val uiScope = rememberCoroutineScope()
+    val stockInViewModel: StockInViewModel = viewModel(factory = StockInViewModel.Factory(app.repository))
+    val stockInReview by stockInViewModel.state.collectAsState()
+    var stockInRequest by remember { mutableIntStateOf(0) }
+    var confirmDiscardStockIn by remember { mutableStateOf(false) }
+    LaunchedEffect(parties) { stockInViewModel.setSuppliers(parties) }
+    LaunchedEffect(stockInReview?.saved) {
+        val saved = stockInReview?.saved ?: return@LaunchedEffect
+        val count = saved.createdItems + saved.restockedItems
+        val added = context.resources.getQuantityString(R.plurals.stock_in_saved, count, count)
+        val detail = if (saved.supplierDuePaise > 0L) {
+            added + " " + context.getString(R.string.stock_in_saved_due, IndianCurrencyFormatter.formatPaise(saved.supplierDuePaise))
+        } else added
+        AppErrorManager.reportSuccess(context.getString(R.string.stock_in_saved_title), detail)
+        stockInViewModel.close()
+    }
 
     var currentTab by rememberSaveable { mutableStateOf(AppTab.ITEMS) }
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
@@ -223,6 +250,10 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         draftName = savedItemDraft?.takeIf { it.hasContent }?.itemName,
                         onResumeDraft = { activeEditorMode = ItemEditorMode.AddNewItem },
                         onDiscardDraft = { ItemDraftManager.clearDraft(context) },
+                        onStockScanned = { text, uri ->
+                            uiScope.launch(Dispatchers.Default) { stockInViewModel.open(text, allInventory, uri) }
+                        },
+                        stockInRequest = stockInRequest,
                         onShareLowStock = {
                             val orderText = buildString {
                                 append(
@@ -285,6 +316,47 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onOpenAccountSheet = { showCloudSyncSheet = true },
                     )
                 }
+            }
+        }
+
+        stockInReview?.let { review ->
+            val requestClose = {
+                if (!review.saving) {
+                    if (review.rows.isEmpty()) stockInViewModel.close() else confirmDiscardStockIn = true
+                }
+            }
+            BackHandler(onBack = requestClose)
+            Surface(modifier = Modifier.fillMaxSize().zIndex(10f)) {
+                StockInReviewScreen(
+                    state = review,
+                    onEvent = { event ->
+                        when (event) {
+                            StockInEvent.Close -> requestClose()
+                            StockInEvent.Rescan -> {
+                                stockInViewModel.close()
+                                stockInRequest++
+                            }
+                            StockInEvent.AddManually -> {
+                                stockInViewModel.close()
+                                activeEditorMode = ItemEditorMode.AddNewItem
+                            }
+                            else -> stockInViewModel.onEvent(event)
+                        }
+                    },
+                )
+            }
+            if (confirmDiscardStockIn) {
+                ConfirmDialog(
+                    title = stringResource(R.string.review_discard_title),
+                    message = stringResource(R.string.review_discard_message),
+                    confirmText = stringResource(R.string.review_discard_confirm),
+                    destructive = true,
+                    onConfirm = {
+                        confirmDiscardStockIn = false
+                        stockInViewModel.close()
+                    },
+                    onDismiss = { confirmDiscardStockIn = false },
+                )
             }
         }
 
