@@ -10,10 +10,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.shopledger.pos.R
+import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.SmartItemMatcher
+import com.shopledger.pos.ui.MAX_OPEN_CARTS
 import com.shopledger.pos.ui.MainViewModel
 import com.shopledger.pos.ui.displayLabel
+import com.shopledger.pos.ui.text.UiText
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -98,6 +101,7 @@ fun CheckoutRoute(
         paymentMode = mode,
         amountPaidPaise = paidNowPaise,
         isSellerUnlocked = isSellerUnlocked,
+        maxCarts = MAX_OPEN_CARTS,
     )
 
     CheckoutScreen(
@@ -164,8 +168,16 @@ fun CheckoutRoute(
                 CheckoutEvent.ShareEstimate ->
                     viewModel.prepareEstimateImageForSharing(cartItems, buyerName, buyerPhone)
                 CheckoutEvent.ClearCart -> viewModel.clearCart()
-                CheckoutEvent.NewCart -> viewModel.createNewCart()
+                CheckoutEvent.NewCart -> {
+                    if (viewModel.createNewCart() == null) {
+                        AppErrorManager.reportInfo(
+                            UiText.Res(R.string.cart_limit_title),
+                            UiText.Res(R.string.cart_limit_message, listOf(MAX_OPEN_CARTS)),
+                        )
+                    }
+                }
                 CheckoutEvent.CloseCart -> viewModel.closeCart(cartId)
+                is CheckoutEvent.RenameCart -> viewModel.renameCart(cartId, event.name)
                 is CheckoutEvent.SwitchCart -> viewModel.switchActiveCart(event.cartId)
                 CheckoutEvent.OpenOrderScanner -> onOpenOrderScanner()
             }

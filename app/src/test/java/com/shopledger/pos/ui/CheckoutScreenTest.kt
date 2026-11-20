@@ -25,6 +25,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.data.model.CartLineItem
+import com.shopledger.pos.ui.screens.checkout.CheckoutCartTab
 import com.shopledger.pos.ui.screens.checkout.CheckoutEvent
 import com.shopledger.pos.ui.screens.checkout.CheckoutScreen
 import com.shopledger.pos.ui.screens.checkout.CheckoutState
@@ -32,6 +33,7 @@ import com.shopledger.pos.ui.screens.checkout.PayMode
 import com.shopledger.pos.ui.screens.checkout.mapCheckoutSale
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -236,5 +238,96 @@ class CheckoutScreenTest {
         show(CheckoutState(lines = listOf(hinge()), gstPaise = 900L))
         compose.onNodeWithText(str(R.string.checkout_gst)).assertIsDisplayed()
         compose.onNodeWithText(str(R.string.checkout_complete, rupees(5_900L))).assertIsDisplayed()
+    }
+
+    private val twoCarts = listOf(
+        CheckoutCartTab("c1", "Cart 1", 1),
+        CheckoutCartTab("c2", "Ramesh", 2),
+    )
+
+    @Test
+    fun cartSwitcherVisibleUnderTopBar() {
+        show(CheckoutState(cartLabel = "Cart 1", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())))
+        compose.onNodeWithText("Cart 1 · 1 item").assertIsDisplayed()
+        compose.onNodeWithText("Ramesh · 2 items").assertIsDisplayed()
+    }
+
+    @Test
+    fun tappingCartChipSendsSwitchCart() {
+        val events = mutableListOf<CheckoutEvent>()
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(cartLabel = "Cart 1", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())),
+                    onEvent = { events += it },
+                )
+            }
+        }
+        compose.onNodeWithText("Ramesh · 2 items").performClick()
+        assertEquals(listOf(CheckoutEvent.SwitchCart("c2")), events)
+    }
+
+    @Test
+    fun newCartChipSendsNewCart() {
+        val events = mutableListOf<CheckoutEvent>()
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(cartLabel = "Cart 1", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())),
+                    onEvent = { events += it },
+                )
+            }
+        }
+        compose.onNodeWithText(str(R.string.cart_new)).performClick()
+        assertEquals(listOf(CheckoutEvent.NewCart), events)
+    }
+
+    @Test
+    fun closeCartWithItemsAsksFirst() {
+        val events = mutableListOf<CheckoutEvent>()
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(cartLabel = "Cart 1", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())),
+                    onEvent = { events += it },
+                )
+            }
+        }
+        compose.onNodeWithContentDescription(str(R.string.checkout_cd_more)).performClick()
+        compose.onNodeWithText(str(R.string.checkout_menu_close_cart)).performClick()
+        compose.onNodeWithText(str(R.string.cart_close_title)).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.action_cancel)).performClick()
+        assertTrue(events.isEmpty())
+
+        compose.onNodeWithContentDescription(str(R.string.checkout_cd_more)).performClick()
+        compose.onNodeWithText(str(R.string.checkout_menu_close_cart)).performClick()
+        compose.onNodeWithText(str(R.string.cart_close_confirm)).performClick()
+        assertEquals(listOf(CheckoutEvent.CloseCart), events)
+    }
+
+    @Test
+    fun renameCartSendsNewName() {
+        val events = mutableListOf<CheckoutEvent>()
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(cartLabel = "", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())),
+                    onEvent = { events += it },
+                )
+            }
+        }
+        compose.onNodeWithContentDescription(str(R.string.checkout_cd_more)).performClick()
+        compose.onNodeWithText(str(R.string.cart_rename)).performClick()
+        compose.onNodeWithText(str(R.string.cart_rename_hint)).performTextInput("Site order")
+        compose.onNodeWithText(str(R.string.cart_rename_save)).performClick()
+        assertEquals(listOf(CheckoutEvent.RenameCart("Site order")), events)
+    }
+
+    @Test
+    fun menuNoLongerListsOtherCarts() {
+        show(CheckoutState(cartLabel = "Cart 1", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())))
+        compose.onNodeWithContentDescription(str(R.string.checkout_cd_more)).performClick()
+        // Only theCartSwitcher chip "Ramesh · 2 items" has "Ramesh", no menu item starts with "Switch to Ramesh" or "Ramesh ("
+        compose.onAllNodesWithText("Switch to Ramesh", substring = true).assertCountEquals(0)
     }
 }

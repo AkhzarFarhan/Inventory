@@ -662,6 +662,28 @@
         <item quantity="one">%1$s · %2$d सामान</item>
         <item quantity="other">%1$s · %2$d सामान</item>
     </plurals>
+    <string name="cart_limit_title">बहुत ज़्यादा कार्ट</string>
+    <string name="cart_limit_message">एक साथ %1$d कार्ट तक खुली रख सकते हैं। पहले कोई एक पूरी करें या बंद करें।</string>
+    <string name="cart_added_title">जोड़ दिया</string>
+    <string name="cart_added_message">%1$s, %2$s में जोड़ा गया</string>
+    <string name="cart_rename">कार्ट का नाम बदलें</string>
+    <string name="cart_rename_hint">ग्राहक या कार्ट का नाम</string>
+    <string name="cart_rename_save">नाम सेव करें</string>
+    <string name="cart_close_title">यह कार्ट बंद करें?</string>
+    <string name="cart_close_message">इस कार्ट का सामान हट जाएगा। कोई बिक्री नहीं होगी।</string>
+    <string name="cart_close_confirm">कार्ट बंद करें</string>
+    <string name="checkout_title_with_cart">बिल · %1$s</string>
+    <string name="action_sell_cart">बेचें · %1$s</string>
+    <string name="add_sheet_adding_to">%1$s में जोड़ रहे हैं</string>
+    <string name="add_sheet_add">जोड़ें</string>
+    <string name="add_sheet_done">हो गया</string>
+    <string name="add_sheet_go_to_cart_empty">कार्ट खोलें</string>
+    <plurals name="add_sheet_go_to_cart">
+        <item quantity="one">कार्ट खोलें · %1$d सामान · %2$s</item>
+        <item quantity="other">कार्ट खोलें · %1$d सामान · %2$s</item>
+    </plurals>
+    <string name="add_sheet_row_cd">%1$s, %2$s, %3$s</string>
+    <string name="add_sheet_qty_title">मात्रा</string>
     <string name="cipher_pin_protected_note">PIN मोड: सेलर मोड खुलने तक खरीद भाव •••• के पीछे छिपा रहता है।</string>
     <string name="settings_checking_title">बैकअप जाँच रहे हैं…</string>
     <string name="settings_checking_body">कृपया रुकें। आपका अभी का डेटा बदला नहीं गया है।</string>

@@ -70,6 +70,9 @@ import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.scanner.BarcodeScannerHelper
 import com.shopledger.pos.data.model.CartLineItem
+import com.shopledger.pos.ui.MAX_OPEN_CARTS
+import com.shopledger.pos.ui.screens.cart.CartChip
+import com.shopledger.pos.ui.screens.cart.CartSwitcher
 import com.shopledger.pos.ui.text.UiText
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.MoneyField
@@ -112,6 +115,7 @@ data class CheckoutState(
     val amountPaidPaise: Long? = null,
     /** Cost and profit stay hidden unless seller mode is unlocked. */
     val isSellerUnlocked: Boolean = false,
+    val maxCarts: Int = MAX_OPEN_CARTS,
 ) {
     val subtotalPaise: Long get() = lines.sumOf { it.lineRevenuePaise }
     val appliedDiscountPaise: Long get() = discountPaise.coerceIn(0L, subtotalPaise)
@@ -138,6 +142,7 @@ sealed interface CheckoutEvent {
     data object ClearCart : CheckoutEvent
     data object NewCart : CheckoutEvent
     data object CloseCart : CheckoutEvent
+    data class RenameCart(val name: String) : CheckoutEvent
     data class SwitchCart(val cartId: String) : CheckoutEvent
     data object OpenOrderScanner : CheckoutEvent
 }
@@ -151,12 +156,38 @@ fun CheckoutScreen(
 ) {
     var attemptedComplete by rememberSaveable(state.paymentMode) { mutableStateOf(false) }
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
+    var showCloseConfirm by rememberSaveable { mutableStateOf(false) }
+    var showRename by rememberSaveable { mutableStateOf(false) }
+    var renameText by rememberSaveable(state.activeCartId, state.cartLabel) { mutableStateOf(state.cartLabel) }
     val customerMissing = state.paymentMode == PayMode.CREDIT &&
         state.buyerName.isBlank() && state.buyerPhone.isBlank()
     val canComplete = state.lines.isNotEmpty()
 
     Column(modifier.fillMaxSize().imePadding()) {
-        CheckoutTopBar(state, onEvent, onClear = { showClearConfirm = true })
+        CheckoutTopBar(
+            state = state,
+            onEvent = onEvent,
+            onClear = { showClearConfirm = true },
+            onRename = {
+                renameText = state.cartLabel
+                showRename = true
+            },
+            onCloseCart = {
+                if (state.lines.isNotEmpty()) {
+                    showCloseConfirm = true
+                } else {
+                    onEvent(CheckoutEvent.CloseCart)
+                }
+            },
+        )
+        CartSwitcher(
+            carts = state.carts.map { CartChip(it.cartId, it.label, it.lineCount) },
+            activeCartId = state.activeCartId,
+            onSwitch = { onEvent(CheckoutEvent.SwitchCart(it)) },
+            onNewCart = { onEvent(CheckoutEvent.NewCart) },
+            maxCarts = state.maxCarts,
+        )
+        HorizontalDivider()
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -226,26 +257,78 @@ fun CheckoutScreen(
             onDismiss = { showClearConfirm = false },
         )
     }
+
+    if (showCloseConfirm) {
+        ConfirmDialog(
+            title = stringResource(R.string.cart_close_title),
+            message = stringResource(R.string.cart_close_message),
+            confirmText = stringResource(R.string.cart_close_confirm),
+            destructive = true,
+            onConfirm = {
+                showCloseConfirm = false
+                onEvent(CheckoutEvent.CloseCart)
+            },
+            onDismiss = { showCloseConfirm = false },
+        )
+    }
+
+    if (showRename) {
+        AlertDialog(
+            onDismissRequest = { showRename = false },
+            title = { Text(stringResource(R.string.cart_rename)) },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it.take(24) },
+                    label = { Text(stringResource(R.string.cart_rename_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRename = false
+                        onEvent(CheckoutEvent.RenameCart(renameText.trim()))
+                    },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.cart_rename_save))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showRename = false },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CheckoutTopBar(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit, onClear: () -> Unit) {
+private fun CheckoutTopBar(
+    state: CheckoutState,
+    onEvent: (CheckoutEvent) -> Unit,
+    onClear: () -> Unit,
+    onRename: () -> Unit,
+    onCloseCart: () -> Unit,
+) {
     var menuOpen by remember { mutableStateOf(false) }
     TopAppBar(
         title = {
-            Column {
-                Text(stringResource(R.string.checkout_title), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (state.carts.size > 1 && state.cartLabel.isNotBlank()) {
-                    Text(
-                        state.cartLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            Text(
+                text = if (state.cartLabel.isNotBlank()) {
+                    stringResource(R.string.checkout_title_with_cart, state.cartLabel)
+                } else {
+                    stringResource(R.string.checkout_title)
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
         navigationIcon = {
             IconButton(onClick = { onEvent(CheckoutEvent.Close) }, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
@@ -258,33 +341,20 @@ private fun CheckoutTopBar(state: CheckoutState, onEvent: (CheckoutEvent) -> Uni
                     Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.checkout_cd_more))
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    state.carts.filter { it.cartId != state.activeCartId }.forEach { cart ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(stringResource(R.string.checkout_menu_switch, cart.label, cart.lineCount))
-                            },
-                            onClick = {
-                                menuOpen = false
-                                onEvent(CheckoutEvent.SwitchCart(cart.cartId))
-                            },
-                        )
-                    }
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.checkout_menu_new_cart)) },
+                        text = { Text(stringResource(R.string.cart_rename)) },
                         onClick = {
                             menuOpen = false
-                            onEvent(CheckoutEvent.NewCart)
+                            onRename()
                         },
                     )
-                    if (state.carts.size > 1) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.checkout_menu_close_cart)) },
-                            onClick = {
-                                menuOpen = false
-                                onEvent(CheckoutEvent.CloseCart)
-                            },
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.checkout_menu_close_cart)) },
+                        onClick = {
+                            menuOpen = false
+                            onCloseCart()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.checkout_menu_estimate)) },
                         enabled = state.lines.isNotEmpty(),

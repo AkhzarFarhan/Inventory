@@ -662,6 +662,28 @@
         <item quantity="one">%1$s · %2$d item</item>
         <item quantity="other">%1$s · %2$d items</item>
     </plurals>
+    <string name="cart_limit_title">Too many carts</string>
+    <string name="cart_limit_message">You can keep up to %1$d carts open. Finish or close one first.</string>
+    <string name="cart_added_title">Added</string>
+    <string name="cart_added_message">%1$s added to %2$s</string>
+    <string name="cart_rename">Rename cart</string>
+    <string name="cart_rename_hint">Customer or cart name</string>
+    <string name="cart_rename_save">Save name</string>
+    <string name="cart_close_title">Close this cart?</string>
+    <string name="cart_close_message">The items in this cart will be removed. Nothing is sold.</string>
+    <string name="cart_close_confirm">Close cart</string>
+    <string name="checkout_title_with_cart">Bill · %1$s</string>
+    <string name="action_sell_cart">Sell · %1$s</string>
+    <string name="add_sheet_adding_to">Adding to %1$s</string>
+    <string name="add_sheet_add">Add</string>
+    <string name="add_sheet_done">Done</string>
+    <string name="add_sheet_go_to_cart_empty">Go to cart</string>
+    <plurals name="add_sheet_go_to_cart">
+        <item quantity="one">Go to cart · %1$d item · %2$s</item>
+        <item quantity="other">Go to cart · %1$d items · %2$s</item>
+    </plurals>
+    <string name="add_sheet_row_cd">%1$s, %2$s, %3$s</string>
+    <string name="add_sheet_qty_title">Quantity</string>
     <string name="cipher_pin_protected_note">PIN mode: the buying price stays hidden behind •••• until seller mode is unlocked.</string>
     <string name="settings_checking_title">Checking backup…</string>
     <string name="settings_checking_body">Please wait. Your current data is not changed yet.</string>
