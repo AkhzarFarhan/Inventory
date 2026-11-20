@@ -241,6 +241,32 @@ class BackupManagerTest {
     }
 
     @Test
+    fun stagingWriteFailure_isAStorageProblem_notAnUnreadableBackup() = runBlocking<Unit> {
+        addItem("a1", "Butt Hinge", 10_000L)
+        val file = manager.exportShareableBackup()
+        val full = object : OutputStream() {
+            override fun write(b: Int) = throw IOException("No space left on device")
+        }
+
+        val failure = expectFailure<BackupException> { file.inputStream().use { manager.stageRestoreFromShareable(it) { full } } }
+
+        assertEquals(com.shopledger.pos.R.string.msg_backup_storage, failure.userMessage)
+        assertFalse(dbSibling(".restore-staged").exists())
+    }
+
+    @Test
+    fun truncatedBackup_isReportedUnreadable() = runBlocking<Unit> {
+        addItem("a1", "Butt Hinge", 10_000L)
+        val bytes = manager.exportShareableBackup().readBytes()
+
+        val failure = expectFailure<BackupException> {
+            manager.stageRestoreFromShareable(bytes.copyOf(bytes.size / 2).inputStream())
+        }
+
+        assertEquals(com.shopledger.pos.R.string.msg_backup_unreadable, failure.userMessage)
+    }
+
+    @Test
     fun exports_keepOnlyTheNewestFileInTheShareFolder() = runBlocking<Unit> {
         addItem("a1", "Butt Hinge", 10_000L)
         val dir = File(context.cacheDir, "backups").apply { mkdirs() }

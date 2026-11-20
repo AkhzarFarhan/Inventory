@@ -104,7 +104,9 @@ class BackupManager(
      * Decodes a shareable (gzip) backup, validates it and leaves it as `<db>.restore-staged` for the next start.
      * Does not touch the live database. Returns the backup's schema version.
      */
-    fun stageRestoreFromShareable(input: InputStream): Int = stage { sink ->
+    fun stageRestoreFromShareable(input: InputStream): Int = stageRestoreFromShareable(input, ::openStagingSink)
+
+    internal fun stageRestoreFromShareable(input: InputStream, openSink: (File) -> OutputStream): Int = stage(openSink) { sink ->
         val buffered = BufferedInputStream(input)
         buffered.mark(2)
         val first = buffered.read()
@@ -115,11 +117,13 @@ class BackupManager(
     }
 
     /** Same as [stageRestoreFromShareable] for an encrypted on-device snapshot. */
-    fun stageRestoreFromSnapshot(file: File): Int = stage { sink ->
+    fun stageRestoreFromSnapshot(file: File): Int = stage(::openStagingSink) { sink ->
         FileInputStream(file).use { raw -> gunzipTo(cipher.decrypt(raw), sink) }
     }
 
-    private fun stage(decode: (OutputStream) -> Unit): Int = synchronized(LOCK) {
+    private fun openStagingSink(file: File): OutputStream = SyncOnCloseOutputStream(FileOutputStream(file))
+
+    private fun stage(openSink: (File) -> OutputStream, decode: (OutputStream) -> Unit): Int = synchronized(LOCK) {
         val live = context.getDatabasePath(dbName)
         live.parentFile?.mkdirs()
         val tmp = File(live.path + ".restore-staged.tmp")
@@ -128,7 +132,13 @@ class BackupManager(
         try {
             deleteWithSidecars(tmp)
             try {
-                SyncOnCloseOutputStream(FileOutputStream(tmp)).use { decode(it) }
+                // Opening, writing, flushing and closing the staging file are storage problems, not a damaged backup.
+                val sink = try {
+                    StorageGuardOutputStream(openSink(tmp))
+                } catch (e: IOException) {
+                    throw BackupException("Could not open the staging file", e, userMessage = com.shopledger.pos.R.string.msg_backup_storage)
+                }
+                sink.use { decode(it) }
             } catch (e: BackupException) {
                 throw e
             } catch (e: Exception) {
@@ -172,7 +182,7 @@ class BackupManager(
         try {
             SQLiteDatabase.openDatabase(candidate.path, null, SQLiteDatabase.OPEN_READONLY, DatabaseErrorHandler { }).use { db ->
                 val integrity = db.rawQuery("PRAGMA integrity_check", null).use { c -> if (c.moveToFirst()) c.getString(0) else "" }
-                if (!integrity.equals("ok", ignoreCase = true)) throw BackupException("The backup file is damaged ($integrity)", userMessage = com.shopledger.pos.R.string.msg_backup_unreadable)
+                if (!integrity.equals("ok", ignoreCase = true)) throw BackupException("The backup failed its integrity check ($integrity)", userMessage = com.shopledger.pos.R.string.msg_backup_integrity)
                 fun hasTable(name: String) = db.rawQuery(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf(name)
                 ).use { it.moveToFirst() }
@@ -254,6 +264,20 @@ class BackupManager(
 
     private fun deleteWithSidecars(file: File) {
         listOf("", "-wal", "-shm", "-journal").forEach { File(file.path + it).delete() }
+    }
+
+    /** Turns any IOException of the staging sink into a storage-problem [BackupException]. */
+    private class StorageGuardOutputStream(private val target: OutputStream) : OutputStream() {
+        private fun <T> guard(block: () -> T): T = try {
+            block()
+        } catch (e: IOException) {
+            throw BackupException("Could not write the staged backup", e, userMessage = com.shopledger.pos.R.string.msg_backup_storage)
+        }
+
+        override fun write(b: Int) = guard { target.write(b) }
+        override fun write(b: ByteArray, off: Int, len: Int) = guard { target.write(b, off, len) }
+        override fun flush() = guard { target.flush() }
+        override fun close() = guard { target.close() }
     }
 
     /** Flushes and fsyncs the file when closed (idempotent), so a finished backup survives a power cut. */

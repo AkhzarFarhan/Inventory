@@ -1,7 +1,6 @@
 package com.shopledger.pos.ui.screens.setup
 
 import androidx.activity.compose.BackHandler
-import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.shopledger.pos.R
 import com.shopledger.pos.core.nlp.ShopVertical
+import com.shopledger.pos.ui.text.labelRes
 import com.shopledger.pos.ui.i18n.AppLanguage
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.SecondaryActionButton
@@ -247,14 +247,14 @@ fun SetupWizard(
             when (state.step) {
                 SetupStep.START -> {
                     PrimaryActionButton(
-                        text = stringResource(if (saving) R.string.setup_saving else R.string.setup_start_sample),
-                        enabled = !saving,
-                        onClick = { finish(true, true) },
-                    )
-                    SecondaryActionButton(
-                        text = stringResource(R.string.setup_start_empty),
+                        text = stringResource(if (saving) R.string.setup_saving else R.string.setup_start_empty),
                         enabled = !saving,
                         onClick = { finish(false, true) },
+                    )
+                    SecondaryActionButton(
+                        text = stringResource(R.string.setup_start_sample),
+                        enabled = !saving,
+                        onClick = { finish(true, true) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -320,15 +320,6 @@ private fun NameStep(state: SetupState, onEvent: (SetupEvent) -> Unit) {
             }
         }
     }
-}
-
-@StringRes
-private fun ShopVertical.labelRes(): Int = when (this) {
-    ShopVertical.HARDWARE -> R.string.vertical_hardware
-    ShopVertical.KIRANA -> R.string.vertical_kirana
-    ShopVertical.PHARMA -> R.string.vertical_pharma
-    ShopVertical.ELECTRONICS -> R.string.vertical_electronics
-    ShopVertical.GENERAL -> R.string.vertical_general
 }
 
 @Composable

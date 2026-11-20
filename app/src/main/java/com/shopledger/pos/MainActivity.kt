@@ -253,7 +253,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onSell = { showCheckout = true },
                         onOpenItem = { item, variant, variants -> quickSellTarget = Triple(item, variant, variants) },
                         onEditItem = { group, variant ->
-                            activeEditorMode = ItemEditorMode.ManageItem(group, variant.id)
+                            if (!isSellerUnlocked) requestToggleSeller()
+                            else activeEditorMode = ItemEditorMode.ManageItem(group, variant.id)
                         },
                         onAddToCart = { item, variant -> viewModel.addOrUpdateCartItem(item, variant, 1.0) },
                         onCommitSearch = viewModel::commitSearchToHistory,
@@ -261,7 +262,10 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onDeleteRecentSearch = viewModel::deleteSearchHistoryItem,
                         onClearRecentSearches = viewModel::clearAllSearchHistory,
                         draftName = savedItemDraft?.takeIf { it.hasContent }?.itemName,
-                        onResumeDraft = { activeEditorMode = ItemEditorMode.AddNewItem },
+                        onResumeDraft = {
+                            if (!isSellerUnlocked) requestToggleSeller()
+                            else activeEditorMode = ItemEditorMode.AddNewItem
+                        },
                         onDiscardDraft = { ItemDraftManager.clearDraft(context) },
                         onStockIn = { showStockInSheet = true },
                         // A review kept while seller mode is locked must stay findable: tap to unlock and continue.
@@ -336,8 +340,11 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             isSellerUnlocked = isSellerUnlocked,
             onRequestUnlock = requestToggleSeller,
             onAddManually = {
-                showStockInSheet = false
-                activeEditorMode = ItemEditorMode.AddNewItem
+                if (!isSellerUnlocked) requestToggleSeller()
+                else {
+                    showStockInSheet = false
+                    activeEditorMode = ItemEditorMode.AddNewItem
+                }
             },
             onDismiss = { showStockInSheet = false },
             reading = stockInReading,
@@ -439,6 +446,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             AddEditItemSheet(
                 mode = mode,
                 existingCategories = allExistingCategories,
+                isSellerUnlocked = isSellerUnlocked,
                 onCheckDuplicate = viewModel::checkCandidateDuplicate,
                 onSaveNewItemWithVariants = viewModel::addNewItemWithVariants,
                 onSaveVariantToParent = viewModel::addVariantToExistingItem,

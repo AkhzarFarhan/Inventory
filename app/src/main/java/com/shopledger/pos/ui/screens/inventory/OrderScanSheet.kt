@@ -539,6 +539,7 @@ fun OrderScanSheet(
                         placeholder = { Text(stringResource(R.string.scan_ai_url_hint)) },
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                         shape = MaterialTheme.shapes.medium,
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(

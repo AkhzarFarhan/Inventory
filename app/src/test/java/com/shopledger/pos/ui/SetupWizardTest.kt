@@ -239,7 +239,7 @@ class SetupWizardTest {
             }
         }
         compose.onNodeWithText(str(R.string.setup_saving)).assertIsNotEnabled()
-        compose.onNodeWithText(str(R.string.setup_start_empty)).assertIsNotEnabled()
+        compose.onNodeWithText(str(R.string.setup_start_sample)).assertIsNotEnabled()
         compose.onNodeWithText(str(R.string.setup_restore_hint)).assertIsDisplayed()
     }
 

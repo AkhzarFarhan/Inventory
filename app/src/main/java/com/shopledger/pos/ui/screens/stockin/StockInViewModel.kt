@@ -113,7 +113,9 @@ data class StockInUiState(
     fun canEditCost(row: ReviewRow): Boolean = role == Role.OWNER || row.variantId == null
 
     fun rowProblem(row: ReviewRow): BlockKind? {
-        val duplicate = row.variantId != null && rows.count { it.variantId == row.variantId } > 1
+        val duplicate = (row.variantId != null && rows.count { it.variantId == row.variantId } > 1) ||
+            (row.variantId == null && row.status == MatchStatus.NEW && row.itemName.isNotBlank() &&
+                rows.count { it.variantId == null && it.status == MatchStatus.NEW && it.itemName.trim().equals(row.itemName.trim(), ignoreCase = true) } > 1)
         return when {
             (row.qtyMilli ?: 0L) <= 0L -> BlockKind.QTY
             row.status == MatchStatus.NEW && row.itemName.isBlank() -> BlockKind.NAME

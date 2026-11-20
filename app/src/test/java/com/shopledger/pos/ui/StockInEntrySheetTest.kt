@@ -64,8 +64,15 @@ class StockInEntrySheetTest {
         assertEquals(0, c.discarded)
     }
 
-    @Test fun addingManuallyDoesNotNeedSellerMode() {
+    @Test fun addingManuallyNeedsSellerMode() {
         val c = show(unlocked = false)
+        click("Add item manually")
+        assertEquals(0, c.manual)
+        assertEquals(1, c.unlock)
+    }
+
+    @Test fun addingManuallyWorksOnceUnlocked() {
+        val c = show(unlocked = true)
         click("Add item manually")
         assertEquals(1, c.manual)
         assertEquals(0, c.unlock)

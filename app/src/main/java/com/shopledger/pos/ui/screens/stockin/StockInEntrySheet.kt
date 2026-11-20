@@ -169,7 +169,7 @@ fun StockInEntrySheet(
             )
             SecondaryActionButton(
                 text = stringResource(R.string.stock_in_add_manually),
-                onClick = onAddManually,
+                onClick = { if (isSellerUnlocked) onAddManually() else onRequestUnlock() },
                 icon = Icons.Filled.Edit,
                 enabled = !reading,
             )

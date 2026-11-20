@@ -104,6 +104,6 @@ object CheckoutStep {
 
 /** Short tag for logs: the resource id (hex) and its arguments, or the raw text. The exception class name is added by `toString()`. */
 private fun technicalTag(uiText: UiText): String = when (uiText) {
-    is UiText.Res -> "res=0x%08x".format(uiText.id) + if (uiText.args.isEmpty()) "" else " args=" + uiText.args.joinToString(prefix = "[", postfix = "]") { it.toString().take(40) }
+    is UiText.Res -> "res=0x%08x".format(java.util.Locale.ROOT, uiText.id) + if (uiText.args.isEmpty()) "" else " args=" + uiText.args.joinToString(prefix = "[", postfix = "]") { it.toString().take(40) }
     is UiText.Raw -> uiText.text.take(120)
 }

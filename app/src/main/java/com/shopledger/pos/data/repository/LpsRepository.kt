@@ -405,14 +405,14 @@ class LpsRepository(
     /** "Start empty": records the starter-catalog decision so sample items are never seeded later. */
     suspend fun markStarterCatalogDone() = withContext(Dispatchers.IO) {
         context.getSharedPreferences("lps_seed_prefs", Context.MODE_PRIVATE)
-            .edit().putBoolean("catalog_seeded_v1", true).apply()
+            .edit().putBoolean("catalog_seeded_v1", true).commit()
     }
 
     suspend fun seedStarterCatalogIfEmpty() = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences("lps_seed_prefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("catalog_seeded_v1", false)) return@withContext
         if (inventoryDao.countItems() > 0) {
-            prefs.edit().putBoolean("catalog_seeded_v1", true).apply()
+            prefs.edit().putBoolean("catalog_seeded_v1", true).commit()
             return@withContext
         }
         fun spec(size: String, material: String, color: String, unit: String, cost: Long, sell: Long, stock: Long, low: Long) =
@@ -438,6 +438,6 @@ class LpsRepository(
         catalog.createItem("seed-v1-adhesive", "Wood Adhesive (Fevicol SH)", "Paints & Adhesives", listOf(
             spec("1 kg", "", "White", "pkt", 23000L, 29000L, 10, 3)
         ), isDemo = true)
-        prefs.edit().putBoolean("catalog_seeded_v1", true).apply()
+        prefs.edit().putBoolean("catalog_seeded_v1", true).commit()
     }
 }

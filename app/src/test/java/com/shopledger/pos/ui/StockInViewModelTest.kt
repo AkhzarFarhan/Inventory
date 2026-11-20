@@ -163,6 +163,14 @@ class StockInViewModelTest {
         assertNull(w.state.value!!.blockReason)
     }
 
+    @Test fun sameNewItemNameTwiceIsInvalid() {
+        val v = vm()
+        v.openMatches(listOf(newLine("Plug Point", 500, 700), newLine("  plug point ", 500, 700)), inventory, null, null)
+        assertEquals(BlockKind.DUPLICATE, v.state.value!!.blockReason!!.kind)
+        v.onEvent(StockInEvent.EditName(v.rows()[1].key, "Plug Point 6A"))
+        assertNull(v.state.value!!.blockReason)
+    }
+
     @Test fun sameVariantTwiceIsInvalid() {
         val v = vm()
         v.openMatches(listOf(matched("1", 4800), matched("2", 20000)), inventory, null, null)

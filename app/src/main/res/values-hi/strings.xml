@@ -376,6 +376,7 @@
     <string name="msg_backup_not_valid">यह ShopLedger का बैकअप नहीं है। सही फ़ाइल चुनें।</string>
     <string name="msg_backup_newer">यह बैकअप ऐप के नए वर्ज़न से बना है। पहले ऐप अपडेट करें।</string>
     <string name="msg_backup_too_large">यह बैकअप इस फ़ोन पर रिस्टोर करने के लिए बहुत बड़ा है।</string>
+    <string name="msg_backup_integrity">यह बैकअप खराब है और जाँच में फेल हो गया। कोई दूसरा बैकअप आज़माएँ।</string>
     <string name="msg_backup_storage">फ़ोन में जगह कम है। जगह खाली करके फिर कोशिश करें।</string>
     <string name="msg_backup_none">अभी कोई ऑटोमैटिक बैकअप नहीं है। कल फिर देखें।</string>
     <string name="msg_restore_no_restart">रिस्टोर शुरू नहीं हुआ। ऐप बंद करके दोबारा खोलें और फिर कोशिश करें।</string>
@@ -475,13 +476,22 @@
     <string name="bills_kpi_sales">कुल बिक्री</string>
     <string name="bills_kpi_margin">मुनाफ़ा (₹)</string>
     <string name="bills_kpi_gain">लागत पर लाभ (%)</string>
-    <string name="bills_sold_count">%1$d बिके</string>
+    <plurals name="bills_sold_count">
+        <item quantity="one">%1$d बिका</item>
+        <item quantity="other">%1$d बिके</item>
+    </plurals>
     <string name="bills_margin_pct">%1$s मार्जिन</string>
     <string name="bills_locked">बंद</string>
     <string name="bills_markup">मार्कअप</string>
     <string name="bills_tap_unlock">खोलने के लिए ऊपर दबाएँ</string>
-    <string name="bills_year_header">%1$d · %2$d बिक्री</string>
-    <string name="bills_month_header">%1$s %2$d · %3$d बिक्री</string>
+    <plurals name="bills_year_header">
+        <item quantity="one">%1$d · %2$d बिक्री</item>
+        <item quantity="other">%1$d · %2$d बिक्री</item>
+    </plurals>
+    <plurals name="bills_month_header">
+        <item quantity="one">%1$s %2$d · %3$d बिक्री</item>
+        <item quantity="other">%1$s %2$d · %3$d बिक्री</item>
+    </plurals>
     <string name="bills_month_fallback">महीना %1$d</string>
     <string name="bills_cd_expand">दिखाएँ</string>
     <string name="bills_cd_collapse">छिपाएँ</string>
@@ -513,8 +523,8 @@
     <string name="sell_tap_customer">नाम और नंबर भरने के लिए ग्राहक दबाएँ:</string>
     <string name="sell_customer_fallback">ग्राहक</string>
     <plurals name="sell_past_visits">
-        <item quantity="one">पुराना ग्राहक · %1$d पिछली बार</item>
-        <item quantity="other">पुराना ग्राहक · %1$d पिछली बार</item>
+        <item quantity="one">पुराना ग्राहक · %1$d बार पहले आए</item>
+        <item quantity="other">पुराना ग्राहक · %1$d बार पहले आए</item>
     </plurals>
     <string name="sell_tap_fill">भरने के लिए दबाएँ</string>
     <string name="sell_pay_title">भुगतान और छूट</string>
@@ -583,6 +593,8 @@
     <string name="item_form_configuring">अभी साइज़ या किस्म %1$d भर रहे हैं (%2$s)</string>
     <string name="item_form_adding_under">\"%1$s\" के नीचे नया साइज़ या किस्म, अपने अलग भाव के साथ</string>
     <string name="item_form_editing_summary">बदल रहे हैं: %1$s · खरीद: %2$s · बिक्री: %3$s</string>
+    <string name="item_form_editing_summary_locked">बदल रहे हैं: %1$s · बिक्री: %2$s</string>
+    <string name="category_uncategorized">बिना श्रेणी</string>
     <string name="item_form_details_new">नया साइज़ या किस्म</string>
     <string name="item_form_details">ब्योरा और भाव</string>
     <string name="item_form_unit">इकाई (पीस, किलो, …)</string>
@@ -660,7 +672,10 @@
     <string name="settings_google_body">साइन इन करने से आपका सामान, खाता और बिक्री आपके सभी फ़ोन पर सिंक होगी।</string>
     <string name="settings_google_button">Google से साइन इन करें</string>
     <string name="settings_connected">जुड़ा है</string>
-    <string name="settings_sync_status">%1$s • %2$d सिंक के लिए बाकी</string>
+    <plurals name="settings_sync_status">
+        <item quantity="one">%1$s • %2$d सिंक के लिए बाकी</item>
+        <item quantity="other">%1$s • %2$d सिंक के लिए बाकी</item>
+    </plurals>
     <string name="settings_sync_now">सारा सामान अभी सिंक करें</string>
     <string name="settings_sign_out">साइन आउट</string>
     <string name="settings_shop_title">दुकान का नाम और WhatsApp</string>

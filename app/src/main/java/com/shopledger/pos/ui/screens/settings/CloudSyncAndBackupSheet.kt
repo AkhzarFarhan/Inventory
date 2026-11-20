@@ -67,9 +67,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.shopledger.pos.BuildConfig
 import com.shopledger.pos.data.command.CommandException
+import com.shopledger.pos.ui.text.labelRes
 import com.shopledger.pos.ui.text.resolve
 import com.shopledger.pos.R
 import androidx.compose.ui.text.font.FontWeight
@@ -404,7 +406,7 @@ fun CloudSyncAndBackupSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = stringResource(R.string.settings_sync_status, syncStatusMessage, pendingSyncCount),
+                                text = pluralStringResource(R.plurals.settings_sync_status, pendingSyncCount, syncStatusMessage, pendingSyncCount),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -527,9 +529,9 @@ fun CloudSyncAndBackupSheet(
                             selected = v == activeVertical,
                             onClick = {
                                 SyncManager.saveShopVertical(context, v)
-                                Toast.makeText(context, context.getString(R.string.msg_trade_pack_switched, v.displayName), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.msg_trade_pack_switched, context.getString(v.labelRes())), Toast.LENGTH_SHORT).show()
                             },
-                            label = { Text(v.displayName, style = MaterialTheme.typography.labelLarge) },
+                            label = { Text(stringResource(v.labelRes()), style = MaterialTheme.typography.labelLarge) },
                             modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)
                         )
                     }

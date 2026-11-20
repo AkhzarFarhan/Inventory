@@ -17,3 +17,16 @@ fun String.orStandard(standardLabel: String): String =
 /** This stored variant summary as shown to the shopkeeper, in the app language. */
 @Composable
 fun String.variantLabel(): String = orStandard(stringResource(R.string.item_form_standard))
+
+/**
+ * Items without a category store "Uncategorized"; the stored text stays as it is, screens show the translated label.
+ */
+private const val STORED_UNCATEGORIZED = "Uncategorized"
+
+/** True when this stored category is the stored "Uncategorized" marker. */
+fun String.isUncategorizedMarker(): Boolean = equals(STORED_UNCATEGORIZED, ignoreCase = true)
+
+/** This stored category as shown to the shopkeeper, in the app language. */
+@Composable
+fun String.categoryLabel(): String =
+    if (isUncategorizedMarker()) stringResource(R.string.category_uncategorized) else this

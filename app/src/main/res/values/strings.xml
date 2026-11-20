@@ -376,6 +376,7 @@
     <string name="msg_backup_not_valid">This is not a ShopLedger backup. Pick the right file.</string>
     <string name="msg_backup_newer">This backup is from a newer app. Update the app first.</string>
     <string name="msg_backup_too_large">This backup is too big to restore on this phone.</string>
+    <string name="msg_backup_integrity">This backup is damaged and failed the safety check. Try another backup.</string>
     <string name="msg_backup_storage">Not enough phone storage. Free some space and try again.</string>
     <string name="msg_backup_none">There is no automatic backup yet. Try again tomorrow.</string>
     <string name="msg_restore_no_restart">Restore did not start. Close the app, open it again and retry.</string>
@@ -475,13 +476,22 @@
     <string name="bills_kpi_sales">Total sales</string>
     <string name="bills_kpi_margin">Profit (₹)</string>
     <string name="bills_kpi_gain">Gain on cost (%)</string>
-    <string name="bills_sold_count">%1$d sold</string>
+    <plurals name="bills_sold_count">
+        <item quantity="one">%1$d sold</item>
+        <item quantity="other">%1$d sold</item>
+    </plurals>
     <string name="bills_margin_pct">%1$s margin</string>
     <string name="bills_locked">Locked</string>
     <string name="bills_markup">Markup</string>
     <string name="bills_tap_unlock">Tap above to unlock</string>
-    <string name="bills_year_header">%1$d · %2$d sales</string>
-    <string name="bills_month_header">%1$s %2$d · %3$d sales</string>
+    <plurals name="bills_year_header">
+        <item quantity="one">%1$d · %2$d sale</item>
+        <item quantity="other">%1$d · %2$d sales</item>
+    </plurals>
+    <plurals name="bills_month_header">
+        <item quantity="one">%1$s %2$d · %3$d sale</item>
+        <item quantity="other">%1$s %2$d · %3$d sales</item>
+    </plurals>
     <string name="bills_month_fallback">Month %1$d</string>
     <string name="bills_cd_expand">Show</string>
     <string name="bills_cd_collapse">Hide</string>
@@ -583,6 +593,8 @@
     <string name="item_form_configuring">Now filling size or type %1$d (%2$s)</string>
     <string name="item_form_adding_under">Adding a new size or type under \"%1$s\" with its own prices</string>
     <string name="item_form_editing_summary">Editing: %1$s · Cost: %2$s · Selling: %3$s</string>
+    <string name="item_form_editing_summary_locked">Editing: %1$s · Selling: %2$s</string>
+    <string name="category_uncategorized">Uncategorized</string>
     <string name="item_form_details_new">New size or type</string>
     <string name="item_form_details">Details and prices</string>
     <string name="item_form_unit">Unit (pcs, kg, …)</string>
@@ -660,7 +672,10 @@
     <string name="settings_google_body">Sign in to sync your items, Khata and sales across your devices.</string>
     <string name="settings_google_button">Sign in with Google</string>
     <string name="settings_connected">Connected</string>
-    <string name="settings_sync_status">%1$s • %2$d waiting to sync</string>
+    <plurals name="settings_sync_status">
+        <item quantity="one">%1$s • %2$d waiting to sync</item>
+        <item quantity="other">%1$s • %2$d waiting to sync</item>
+    </plurals>
     <string name="settings_sync_now">Sync all items now</string>
     <string name="settings_sign_out">Sign out</string>
     <string name="settings_shop_title">Shop name and WhatsApp</string>

@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
@@ -356,11 +357,11 @@ fun SegmentedChoice(
                 .semantics { selected = chosen; role = Role.RadioButton }
             if (chosen) {
                 Button(onClick = { onSelect(index) }, modifier = sized, shape = MaterialTheme.shapes.medium) {
-                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             } else {
                 OutlinedButton(onClick = { onSelect(index) }, modifier = sized, shape = MaterialTheme.shapes.medium) {
-                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

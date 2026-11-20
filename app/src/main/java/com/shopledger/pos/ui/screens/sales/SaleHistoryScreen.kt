@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
@@ -170,7 +171,7 @@ fun SaleHistoryScreen(
                 KpiMetricCard(
                     label = stringResource(R.string.bills_kpi_sales),
                     value = IndianCurrencyFormatter.formatPaise(totalRevenuePaise),
-                    subBadge = stringResource(R.string.bills_sold_count, activeSales.size),
+                    subBadge = pluralStringResource(R.plurals.bills_sold_count, activeSales.size, activeSales.size),
                     valueColor = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
@@ -240,7 +241,7 @@ fun SaleHistoryScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = stringResource(R.string.bills_year_header, year, yearSalesList.size),
+                                    text = pluralStringResource(R.plurals.bills_year_header, yearSalesList.size, year, yearSalesList.size),
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -296,7 +297,7 @@ fun SaleHistoryScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = stringResource(R.string.bills_month_header, monthName, year, activeMonthSales.size),
+                                            text = pluralStringResource(R.plurals.bills_month_header, activeMonthSales.size, monthName, year, activeMonthSales.size),
                                             style = MaterialTheme.typography.titleMedium,
                                             modifier = Modifier.weight(1f)
                                         )

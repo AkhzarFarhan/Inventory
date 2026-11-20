@@ -1,6 +1,7 @@
 package com.shopledger.pos.ui
 
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -233,11 +234,13 @@ class RestyledScreensTest {
         duplicate: DuplicateCheckResult? = null,
         onSwitch: () -> Unit = {},
         onSave: () -> Unit = {},
+        unlocked: Boolean = false,
     ) {
         compose.setContent {
             ShopLedgerTheme {
                 AddEditItemSheet(
                     mode = mode,
+                    isSellerUnlocked = unlocked,
                     onCheckDuplicate = { _, _, _, _, _ -> duplicate ?: noDuplicate() },
                     onSaveNewItemWithVariants = { _, _, _ -> onSave() },
                     onSaveVariantToParent = { _, _, _, _, _, _, _, _, _, _, _, _ -> },
@@ -289,5 +292,18 @@ class RestyledScreensTest {
         compose.onNodeWithText("Save changes").assertExists()
         click("Delete")
         compose.onNodeWithText("Delete this item?").assertIsDisplayed()
+    }
+
+    @Test fun editorHidesCostAndProfitWhileSellerModeIsLocked() {
+        val existing = InventoryItemWithVariants(sellItem, listOf(sellVariant))
+        addSheet(ItemEditorMode.ManageItem(existing))
+        compose.onAllNodesWithText("Cost:", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText("profit", substring = true, ignoreCase = true).assertCountEquals(0)
+    }
+
+    @Test fun editorShowsCostWhileSellerModeIsUnlocked() {
+        val existing = InventoryItemWithVariants(sellItem, listOf(sellVariant))
+        addSheet(ItemEditorMode.ManageItem(existing), unlocked = true)
+        compose.onNode(hasText("Cost:", substring = true)).assertExists()
     }
 }

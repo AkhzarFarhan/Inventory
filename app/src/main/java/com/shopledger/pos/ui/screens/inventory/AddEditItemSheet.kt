@@ -1,5 +1,7 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import com.shopledger.pos.ui.text.categoryLabel
+import com.shopledger.pos.ui.text.isUncategorizedMarker
 import com.shopledger.pos.ui.text.variantLabel
 import android.widget.Toast
 import androidx.annotation.StringRes
@@ -125,6 +127,7 @@ sealed class ItemEditorMode {
 fun AddEditItemSheet(
     mode: ItemEditorMode,
     existingCategories: List<String> = emptyList(),
+    isSellerUnlocked: Boolean = false,
     onCheckDuplicate: (name: String, size: String, material: String, color: String, excludeItemId: String?) -> DuplicateCheckResult,
     onSaveNewItemWithVariants: (
         displayName: String,
@@ -622,13 +625,19 @@ fun AddEditItemSheet(
 
                     // Editable category text field
                     OutlinedTextField(
-                        value = category,
+                        // The stored "Uncategorized" marker is shown as the translated placeholder, not as typed text.
+                        value = if (category.isUncategorizedMarker()) "" else category,
                         onValueChange = {
                             category = it
                             validationError = null
                         },
                         label = { Text(stringResource(R.string.item_form_category)) },
-                        placeholder = { Text(stringResource(R.string.item_form_category_hint)) },
+                        placeholder = {
+                            Text(
+                                if (category.isUncategorizedMarker()) stringResource(R.string.category_uncategorized)
+                                else stringResource(R.string.item_form_category_hint)
+                            )
+                        },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
                         shape = MaterialTheme.shapes.medium,
@@ -644,9 +653,9 @@ fun AddEditItemSheet(
                     ) {
                         categories.forEach { cat ->
                             FilterChip(
-                                selected = category.equals(cat, ignoreCase = true),
+                                selected = category.equals(cat, ignoreCase = true) || (category.isBlank() && cat.isUncategorizedMarker()),
                                 onClick = { category = cat },
-                                label = { Text(cat, style = MaterialTheme.typography.bodyMedium) },
+                                label = { Text(cat.categoryLabel(), style = MaterialTheme.typography.bodyMedium) },
                             )
                         }
                     }
@@ -867,12 +876,20 @@ fun AddEditItemSheet(
                                 text = if (isAddingNewVariant) {
                                     stringResource(R.string.item_form_adding_under, itemName)
                                 } else {
-                                    stringResource(
-                                        R.string.item_form_editing_summary,
-                                        activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
-                                        IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0),
-                                        IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
-                                    )
+                                    if (isSellerUnlocked) {
+                                        stringResource(
+                                            R.string.item_form_editing_summary,
+                                            activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
+                                            IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0),
+                                            IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
+                                        )
+                                    } else {
+                                        stringResource(
+                                            R.string.item_form_editing_summary_locked,
+                                            activeVariant?.buildVariantSummary()?.variantLabel() ?: standardLabel,
+                                            IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
+                                        )
+                                    }
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (isAddingNewVariant) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1075,7 +1092,7 @@ fun AddEditItemSheet(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.secondary
                                 )
-                                if (parsedPurchasePaise > 0 && parsedSellingPaise > 0) {
+                                if (isSellerUnlocked && parsedPurchasePaise > 0 && parsedSellingPaise > 0) {
                                     val analysis = IndianCurrencyFormatter.computeProfitAnalysis(
                                         parsedPurchasePaise,
                                         parsedSellingPaise,
@@ -1101,7 +1118,7 @@ fun AddEditItemSheet(
                         }
                     }
 
-                    CipherReferenceStrip(modifier = Modifier.fillMaxWidth())
+                    if (isSellerUnlocked) CipherReferenceStrip(modifier = Modifier.fillMaxWidth())
 
                     // Current stock + low stock alert
                     Row(
