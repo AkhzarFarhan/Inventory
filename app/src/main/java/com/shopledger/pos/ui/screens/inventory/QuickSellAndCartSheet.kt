@@ -1,50 +1,36 @@
 package com.shopledger.pos.ui.screens.inventory
 
-import com.shopledger.pos.R
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.DocumentScanner
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,34 +40,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.shopledger.pos.R
 import com.shopledger.pos.core.buyer.BuyerHistoryHelper
 import com.shopledger.pos.core.buyer.BuyerOrderLineSnapshot
 import com.shopledger.pos.core.buyer.KnownBuyerProfile
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
-import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.model.CartLineItem
-import com.shopledger.pos.ui.CustomerCartSession
-import com.shopledger.pos.ui.theme.CupertinoCard
-import com.shopledger.pos.ui.theme.CupertinoColors
-import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
-import com.shopledger.pos.ui.theme.CupertinoTextField
 import com.shopledger.pos.ui.theme.HapticHelper
+import com.shopledger.pos.ui.theme.PrimaryActionButton
+import com.shopledger.pos.ui.theme.SecondaryActionButton
+import com.shopledger.pos.ui.theme.SectionCard
+import com.shopledger.pos.ui.theme.SegmentedChoice
+import com.shopledger.pos.ui.theme.ShopLedgerTokens
 
 /**
  * 1-Tap Quick Sell Bottom Sheet for a single hardware item variant.
@@ -132,224 +116,186 @@ fun QuickSellSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = CupertinoColors.SystemGroupedBackground
+        containerColor = MaterialTheme.colorScheme.background
     ) {
         FloatingAppMessageHost()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
         ) {
             Text(
-                text = "Quick Sell Item",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = CupertinoColors.LabelPrimary
+                text = stringResource(R.string.sell_title),
+                style = MaterialTheme.typography.titleLarge,
             )
 
-            // Item Details & Pricing Card
-            CupertinoCard {
+            // Item details & pricing card
+            SectionCard {
                 Text(
                     text = item.displayName,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
+                    style = MaterialTheme.typography.titleMedium,
                 )
 
                 if (allVariants.size > 1) {
-                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "CHOOSE VARIANT:",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CupertinoColors.LabelMuted
+                        text = stringResource(R.string.sell_choose_variant),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         allVariants.forEach { v ->
                             val isSelected = v.id == activeVariant.id
                             val summary = v.buildVariantSummary()
                             val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                                border = BorderStroke(
-                                    width = 1.dp,
-                                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
-                                ),
-                                modifier = Modifier.clickable {
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
                                     activeVariant = v
                                     sellingPriceInput = IndianCurrencyFormatter.paiseToEditableString(v.sellingPricePaise)
-                                }
-                            ) {
-                                Text(
-                                    text = "$summary • $priceLabel",
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
-                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
-                                )
-                            }
+                                },
+                                label = {
+                                    Text("$summary • $priceLabel", style = MaterialTheme.typography.bodyMedium)
+                                },
+                            )
                         }
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
                 }
 
                 Text(
-                    text = "${activeVariant.buildVariantSummary()} • Available: ${
-                        IndianCurrencyFormatter.formatQuantity(activeVariant.stockQuantity)
-                    } ${activeVariant.unit}",
-                    fontSize = 12.sp,
-                    color = CupertinoColors.LabelSecondary
+                    text = stringResource(
+                        R.string.sell_available,
+                        activeVariant.buildVariantSummary(),
+                        IndianCurrencyFormatter.formatQuantity(activeVariant.stockQuantity),
+                        activeVariant.unit
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Coded Purchase Price Symbol Badge (No "PURCHASE CODE" label) + Total Bill
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(CupertinoColors.SecondarySurface)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Coded purchase price badge (hidden unless seller mode) + total bill
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
-                    CodedPurchasePriceBadge(
-                        purchasePricePaise = activeVariant.purchasePricePaise,
-                        isSellerUnlocked = isSellerUnlocked
-                    )
-
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "TOTAL BILL",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.LabelMuted
-                        )
-                        Text(
-                            text = IndianCurrencyFormatter.formatPaise(profitAnalysis.totalRevenuePaise),
-                            fontSize = 21.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = CupertinoColors.SystemBlue
-                        )
-                    }
-                }
-
-                // Profit Margin & Gain % (Hidden by default unless Seller Mode is explicitly unlocked)
-                if (isSellerUnlocked) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (profitAnalysis.totalProfitPaise >= 0) CupertinoColors.EmeraldTint
-                                else CupertinoColors.DestructiveTint
-                            )
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Net Profit: ${
-                                IndianCurrencyFormatter.formatPaise(
-                                    profitAnalysis.totalProfitPaise,
-                                    showPlusSign = true
-                                )
-                            }",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (profitAnalysis.totalProfitPaise >= 0) CupertinoColors.EmeraldGreen
-                            else CupertinoColors.DestructiveRed
+                        CodedPurchasePriceBadge(
+                            purchasePricePaise = activeVariant.purchasePricePaise,
+                            isSellerUnlocked = isSellerUnlocked
                         )
-                        Text(
-                            text = "Gain: ${IndianCurrencyFormatter.formatPercentage(profitAnalysis.gainMarkupPercent)} (${
-                                IndianCurrencyFormatter.formatPercentage(
-                                    profitAnalysis.grossMarginPercent,
-                                    showPlus = false
-                                )
-                            } margin)",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (profitAnalysis.totalProfitPaise >= 0) CupertinoColors.EmeraldGreen
-                            else CupertinoColors.DestructiveRed
-                        )
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = stringResource(R.string.sell_total_bill),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = IndianCurrencyFormatter.formatPaise(profitAnalysis.totalRevenuePaise),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // Profit margin and gain % (hidden unless seller mode is unlocked)
+                if (isSellerUnlocked) {
+                    val profitable = profitAnalysis.totalProfitPaise >= 0
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (profitable) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                        contentColor = if (profitable) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS)
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.sell_net_profit,
+                                    IndianCurrencyFormatter.formatPaise(profitAnalysis.totalProfitPaise, showPlusSign = true)
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.sell_gain,
+                                    IndianCurrencyFormatter.formatPercentage(profitAnalysis.gainMarkupPercent),
+                                    IndianCurrencyFormatter.formatPercentage(profitAnalysis.grossMarginPercent, showPlus = false)
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                }
 
-                // Quantity Stepper + Bargaining Unit Selling Price Override
+                // Quantity stepper
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1.1f)
+                    IconButton(
+                        onClick = {
+                            val next = (parsedQty - 1.0).coerceAtLeast(1.0)
+                            qtyInput = IndianCurrencyFormatter.formatQuantity(next)
+                            HapticHelper.tick(context)
+                        },
+                        modifier = Modifier.size(ShopLedgerTokens.minTouch),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(),
                     ) {
-                        FilledIconButton(
-                            onClick = {
-                                val next = (parsedQty - 1.0).coerceAtLeast(1.0)
-                                qtyInput = IndianCurrencyFormatter.formatQuantity(next)
-                                HapticHelper.tick(context)
-                            },
-                            shape = CircleShape,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = CupertinoColors.SecondarySurface,
-                                contentColor = CupertinoColors.LabelPrimary
-                            ),
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(Icons.Default.Remove, contentDescription = "Decrease Quantity")
-                        }
-
-                        CupertinoTextField(
-                            value = qtyInput,
-                            onValueChange = { qtyInput = it },
-                            label = "Qty (${variant.unit})",
-                            keyboardType = KeyboardType.Decimal,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        FilledIconButton(
-                            onClick = {
-                                val next = parsedQty + 1.0
-                                qtyInput = IndianCurrencyFormatter.formatQuantity(next)
-                                HapticHelper.tick(context)
-                            },
-                            shape = CircleShape,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = CupertinoColors.SystemBlueTint,
-                                contentColor = CupertinoColors.SystemBlue
-                            ),
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Increase Quantity")
-                        }
+                        Icon(Icons.Default.Remove, contentDescription = stringResource(R.string.cd_decrease_quantity))
                     }
 
-                    CupertinoTextField(
-                        value = sellingPriceInput,
-                        onValueChange = { sellingPriceInput = it },
-                        label = "Sale Rate (₹/${variant.unit})",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(0.9f)
+                    OutlinedTextField(
+                        value = qtyInput,
+                        onValueChange = { qtyInput = it },
+                        label = { Text(stringResource(R.string.sell_qty_label, variant.unit)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.weight(1f)
                     )
+
+                    IconButton(
+                        onClick = {
+                            val next = parsedQty + 1.0
+                            qtyInput = IndianCurrencyFormatter.formatQuantity(next)
+                            HapticHelper.tick(context)
+                        },
+                        modifier = Modifier.size(ShopLedgerTokens.minTouch),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.cd_increase_quantity))
+                    }
                 }
+
+                // Bargaining: unit selling price override
+                OutlinedTextField(
+                    value = sellingPriceInput,
+                    onValueChange = { sellingPriceInput = it },
+                    label = { Text(stringResource(R.string.sell_rate_label, variant.unit)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
-            // Smart Buyer Details + Existing Buyer Auto-Suggest (1-Tap Name & Phone Fill)
+            // Buyer details + existing-buyer auto-suggest (1-tap name and phone fill)
             BuyerSuggestAndHistoryCard(
                 buyerName = buyerName,
                 buyerPhone = buyerPhone,
@@ -378,56 +324,18 @@ fun QuickSellSheet(
                 onAmountPaidInputChange = { amountPaidInput = it }
             )
 
-            // Share Estimate Photo vs Complete Sale
-            Row(
+            // Share estimate photo vs complete sale
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(bottom = ShopLedgerTokens.spacingXl),
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
             ) {
-                OutlinedButton(
+                PrimaryActionButton(
+                    text = stringResource(R.string.sell_button, IndianCurrencyFormatter.formatPaise(netPayablePaise)),
+                    icon = Icons.Default.CheckCircle,
                     onClick = {
-                        if (parsedSellingPaise <= 0L) return@OutlinedButton
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                        val lineItem = CartLineItem(
-                            itemId = item.id,
-                            variantId = activeVariant.id,
-                            itemName = item.displayName,
-                            variantSummary = activeVariant.buildVariantSummary(),
-                            unit = activeVariant.unit,
-                            availableStock = activeVariant.stockQuantity,
-                            unitPurchasePricePaise = activeVariant.purchasePricePaise,
-                            defaultSellingPricePaise = activeVariant.sellingPricePaise,
-                            customSellingPricePaise = parsedSellingPaise,
-                            quantity = parsedQty
-                        )
-                        onShareEstimatePhoto(listOf(lineItem), buyerName, buyerPhone)
-                        onDismiss()
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, CupertinoColors.WhatsAppGreen),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 14.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = null,
-                        tint = CupertinoColors.WhatsAppGreen,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Estimate Photo",
-                        color = CupertinoColors.WhatsAppGreen,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        if (parsedSellingPaise <= 0L) return@Button
+                        if (parsedSellingPaise <= 0L) return@PrimaryActionButton
                         keyboardController?.hide()
                         focusManager.clearFocus()
                         HapticHelper.successPulse(context)
@@ -457,22 +365,32 @@ fun QuickSellSheet(
                         onConfirmQuickSell(lineItem, buyerName, buyerPhone, paymentMode, parsedDiscountPaise, paidPaise)
                         onDismiss()
                     },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CupertinoColors.SystemBlue,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier.weight(1.35f),
-                    contentPadding = PaddingValues(vertical = 14.dp)
-                ) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Sell (${IndianCurrencyFormatter.formatPaise(netPayablePaise)})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
+                )
+
+                SecondaryActionButton(
+                    text = stringResource(R.string.sell_estimate_photo),
+                    icon = Icons.Default.Share,
+                    onClick = {
+                        if (parsedSellingPaise <= 0L) return@SecondaryActionButton
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                        val lineItem = CartLineItem(
+                            itemId = item.id,
+                            variantId = activeVariant.id,
+                            itemName = item.displayName,
+                            variantSummary = activeVariant.buildVariantSummary(),
+                            unit = activeVariant.unit,
+                            availableStock = activeVariant.stockQuantity,
+                            unitPurchasePricePaise = activeVariant.purchasePricePaise,
+                            defaultSellingPricePaise = activeVariant.sellingPricePaise,
+                            customSellingPricePaise = parsedSellingPaise,
+                            quantity = parsedQty
+                        )
+                        onShareEstimatePhoto(listOf(lineItem), buyerName, buyerPhone)
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
@@ -508,112 +426,108 @@ private fun BuyerSuggestAndHistoryCard(
         }
     }
 
-    CupertinoCard {
+    SectionCard {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
         ) {
             Icon(
                 imageVector = Icons.Default.PersonSearch,
                 contentDescription = null,
-                tint = CupertinoColors.SystemBlue,
-                modifier = Modifier.size(16.dp)
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
             )
-            Text(
-                text = "Buyer WhatsApp & Name (Type to Auto-Suggest Returning Customers)",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = CupertinoColors.LabelSecondary
-            )
+            Column {
+                Text(
+                    text = stringResource(R.string.sell_buyer_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.sell_buyer_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            CupertinoTextField(
-                value = buyerPhone,
-                onValueChange = onBuyerPhoneChange,
-                label = "Buyer WhatsApp Phone",
-                placeholder = "9876543210",
-                keyboardType = KeyboardType.Phone,
-                modifier = Modifier.weight(1.1f)
-            )
-            CupertinoTextField(
-                value = buyerName,
-                onValueChange = onBuyerNameChange,
-                label = "Buyer Name",
-                placeholder = "Customer Name",
-                capitalization = KeyboardCapitalization.Words,
-                imeAction = ImeAction.Done,
-                onImeAction = {
+        OutlinedTextField(
+            value = buyerPhone,
+            onValueChange = onBuyerPhoneChange,
+            label = { Text(stringResource(R.string.sell_buyer_phone)) },
+            placeholder = { Text(stringResource(R.string.sell_buyer_phone_hint)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = buyerName,
+            onValueChange = onBuyerNameChange,
+            label = { Text(stringResource(R.string.sell_buyer_name)) },
+            placeholder = { Text(stringResource(R.string.sell_buyer_name_hint)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(
+                onDone = {
                     keyboardController?.hide()
                     focusManager.clearFocus()
-                },
-                modifier = Modifier.weight(0.9f)
-            )
-        }
+                }
+            ),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth()
+        )
 
-        // Auto-Suggest Matching Buyers when typing or when known buyers exist
+        // Matching buyers when typing or when known buyers exist
         if (matchingBuyers.isNotEmpty() && exactSelectedBuyer == null) {
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Tap a customer below to fill their Name & WhatsApp number:",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = CupertinoColors.SystemBlue
+                text = stringResource(R.string.sell_tap_customer),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(6.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
+                val fallbackName = stringResource(R.string.sell_customer_fallback)
                 matchingBuyers.forEach { buyer ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(CupertinoColors.SystemBlueTint)
-                            .border(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                            .clickable {
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                                onSingleTapSelectBuyer(buyer)
-                            }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            onSingleTapSelectBuyer(buyer)
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = ShopLedgerTokens.minTouch),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = listOf(buyer.buyerName.ifBlank { "Customer" }, buyer.buyerPhone)
-                                    .filter { it.isNotBlank() }
-                                    .joinToString(" • "),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = CupertinoColors.LabelPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Returning Customer • ${buyer.totalDistinctOrders} past visits",
-                                fontSize = 11.sp,
-                                color = CupertinoColors.LabelSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = CupertinoColors.SystemBlue
+                        Row(
+                            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = listOf(buyer.buyerName.ifBlank { fallbackName }, buyer.buyerPhone)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" • "),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = pluralStringResource(
+                                        R.plurals.sell_past_visits,
+                                        buyer.totalDistinctOrders,
+                                        buyer.totalDistinctOrders
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(ShopLedgerTokens.spacingS))
                             Text(
-                                text = "1-Tap Fill",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                text = stringResource(R.string.sell_tap_fill),
+                                style = MaterialTheme.typography.labelLarge,
                             )
                         }
                     }
@@ -642,50 +556,43 @@ private fun PaymentModeAndDiscountCard(
     }
     val duePaise = (netTotalPaise - paidPaise).coerceAtLeast(0L)
 
-    CupertinoCard {
-        Text(
-            text = "Payment Mode & Discount",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = CupertinoColors.LabelSecondary
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        CupertinoSegmentedControl(
-            options = listOf("Cash", "UPI", "Credit (Udhar)"),
+    SectionCard(title = stringResource(R.string.sell_pay_title)) {
+        SegmentedChoice(
+            options = listOf(
+                stringResource(R.string.checkout_pay_cash),
+                stringResource(R.string.checkout_pay_upi),
+                stringResource(R.string.checkout_pay_udhar),
+            ),
             selectedIndex = paymentModeIndex,
             onSelect = onPaymentModeIndexChange
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            CupertinoTextField(
-                value = discountInput,
-                onValueChange = onDiscountInputChange,
-                label = "Discount (₹, Opt)",
-                placeholder = "0",
-                keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.weight(1f)
+        OutlinedTextField(
+            value = discountInput,
+            onValueChange = onDiscountInputChange,
+            label = { Text(stringResource(R.string.sell_discount_label)) },
+            placeholder = { Text(stringResource(R.string.sell_zero_hint)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (paymentModeIndex == 2) {
+            OutlinedTextField(
+                value = amountPaidInput,
+                onValueChange = onAmountPaidInputChange,
+                label = { Text(stringResource(R.string.sell_paid_now)) },
+                placeholder = { Text(stringResource(R.string.sell_zero_hint)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth()
             )
-            if (paymentModeIndex == 2) {
-                CupertinoTextField(
-                    value = amountPaidInput,
-                    onValueChange = onAmountPaidInputChange,
-                    label = "Paid Now (₹)",
-                    placeholder = "0",
-                    keyboardType = KeyboardType.Decimal,
-                    modifier = Modifier.weight(1f)
-                )
-            }
         }
         if (paymentModeIndex == 2 && duePaise > 0L) {
-            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Khata Balance Due (Baaki): ${IndianCurrencyFormatter.formatPaise(duePaise)}",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = CupertinoColors.DestructiveRed
+                text = stringResource(R.string.checkout_due, IndianCurrencyFormatter.formatPaise(duePaise)),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error
             )
         }
     }

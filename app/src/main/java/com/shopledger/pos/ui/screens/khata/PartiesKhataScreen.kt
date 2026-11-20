@@ -2,24 +2,19 @@ package com.shopledger.pos.ui.screens.khata
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
@@ -30,12 +25,14 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,27 +43,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.entity.PartyEntity
-import com.shopledger.pos.ui.theme.CupertinoCard
+import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
-import com.shopledger.pos.ui.theme.CupertinoColors
-import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
-import com.shopledger.pos.ui.theme.CupertinoTextField
-import com.shopledger.pos.ui.theme.SemanticPillBadge
+import com.shopledger.pos.ui.theme.PrimaryActionButton
+import com.shopledger.pos.ui.theme.SecondaryActionButton
+import com.shopledger.pos.ui.theme.SegmentedChoice
+import com.shopledger.pos.ui.theme.ShopLedgerTokens
+import com.shopledger.pos.ui.theme.StatusChip
 
 /**
  * Customer & Supplier Credit Ledger (*Udhar Khata*) Screen.
@@ -108,137 +102,101 @@ fun PartiesKhataScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(CupertinoColors.SystemGroupedBackground)
-    ) {
-        // Header + Search + KPI Summary
+    Column(modifier = modifier.fillMaxSize()) {
+        // Summary + search + filter
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(CupertinoColors.CardSurface)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingM),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (totalDuePaise > 0L) CupertinoColors.AmberTint else CupertinoColors.EmeraldTint)
-                    .border(
-                        1.dp,
-                        if (totalDuePaise > 0L) CupertinoColors.AmberWarning.copy(alpha = 0.35f)
-                        else CupertinoColors.EmeraldGreen.copy(alpha = 0.35f),
-                        RoundedCornerShape(12.dp)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            val hasDueTotal = totalDuePaise > 0L
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = if (hasDueTotal) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                contentColor = if (hasDueTotal) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(ShopLedgerTokens.spacingM),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AccountBalanceWallet,
-                        contentDescription = null,
-                        tint = if (totalDuePaise > 0L) CupertinoColors.AmberWarning else CupertinoColors.EmeraldGreen,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Column {
-                        Text(
-                            text = "TOTAL KHATA RECEIVABLE (BAAKI)",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.LabelSecondary
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountBalanceWallet,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp)
                         )
-                        Text(
-                            text = "$duePartyCount pending parties • ${parties.size} total",
-                            fontSize = 11.sp,
-                            color = CupertinoColors.LabelSecondary
-                        )
+                        Column {
+                            Text(
+                                text = stringResource(R.string.khata_total_due),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                text = stringResource(R.string.khata_summary, duePartyCount, parties.size),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
+                    Text(
+                        text = IndianCurrencyFormatter.formatPaise(totalDuePaise),
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
                 }
-
-                Text(
-                    text = IndianCurrencyFormatter.formatPaise(totalDuePaise),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (totalDuePaise > 0L) CupertinoColors.DestructiveRed else CupertinoColors.EmeraldGreen
-                )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
             ) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = {
                         Text(
-                            text = "Search customer / phone...",
-                            fontSize = 13.sp,
-                            color = CupertinoColors.LabelMuted,
+                            text = stringResource(R.string.khata_search_hint),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search Parties",
-                            tint = CupertinoColors.LabelSecondary
-                        )
-                    },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.cd_clear_search))
                             }
                         }
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CupertinoColors.SearchFieldFill,
-                        unfocusedContainerColor = CupertinoColors.SearchFieldFill,
-                        focusedBorderColor = CupertinoColors.SystemBlue,
-                        unfocusedBorderColor = Color.Transparent
-                    ),
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.weight(1f)
                 )
 
-                Button(
+                FilledIconButton(
                     onClick = { showAddPartyDialog = true },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CupertinoColors.SystemBlue,
-                        contentColor = Color.White
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
+                    modifier = Modifier.size(ShopLedgerTokens.primaryActionHeight),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Party", modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Party", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.khata_add_party))
                 }
             }
 
-            CupertinoSegmentedControl(
-                options = listOf("All (${parties.size})", "Due ($duePartyCount)", "Settled"),
+            SegmentedChoice(
+                options = listOf(
+                    stringResource(R.string.khata_filter_all, parties.size),
+                    stringResource(R.string.khata_filter_due, duePartyCount),
+                    stringResource(R.string.khata_filter_settled),
+                ),
                 selectedIndex = filterTab,
                 onSelect = { filterTab = it }
             )
         }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(CupertinoColors.Separator)
-        )
 
         if (filteredParties.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -258,122 +216,97 @@ fun PartiesKhataScreen(
             }
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(ShopLedgerTokens.spacingL),
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(items = filteredParties, key = { it.id }) { party ->
                     val hasDue = party.currentBalancePaise > 0L
-                    CupertinoCard(
-                        borderColor = if (hasDue) CupertinoColors.DestructiveRed.copy(alpha = 0.25f) else CupertinoColors.LightBorder
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(
+                            1.dp,
+                            if (hasDue) MaterialTheme.colorScheme.error.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant
+                        ),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
+                        Column(
+                            modifier = Modifier.padding(ShopLedgerTokens.spacingL),
+                            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
                         ) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = null,
-                                    tint = CupertinoColors.SystemBlue,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Column {
-                                    Text(
-                                        text = party.name,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = CupertinoColors.LabelPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = party.phone.ifBlank { party.partyType },
-                                        fontSize = 12.sp,
-                                        color = CupertinoColors.LabelSecondary
-                                    )
-                                }
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = if (hasDue) IndianCurrencyFormatter.formatPaise(party.currentBalancePaise) else "₹0",
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = if (hasDue) CupertinoColors.DestructiveRed else CupertinoColors.EmeraldGreen
-                                )
-                                SemanticPillBadge(
-                                    text = if (hasDue) "BAAKI DUE" else "SETTLED",
-                                    containerColor = if (hasDue) CupertinoColors.DestructiveTint else CupertinoColors.EmeraldTint,
-                                    contentColor = if (hasDue) CupertinoColors.DestructiveRed else CupertinoColors.EmeraldGreen
-                                )
-                            }
-                        }
-
-                        if (hasDue) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Top
                             ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        val shopName = SyncManager.getSellerName(context)
-                                        val upiId = SyncManager.getUpiId(context)
-                                        val amtStr = IndianCurrencyFormatter.formatPaise(party.currentBalancePaise)
-                                        val msg = buildString {
-                                            append("Namaste ${party.name},\n")
-                                            append("Gentle payment reminder from *$shopName*: Your pending Khata balance is *$amtStr*.\n")
-                                            if (upiId.isNotBlank()) {
-                                                append("Pay via UPI: `$upiId`\n")
-                                            }
-                                            append("Thank you!")
-                                        }
-                                        ReceiptShareManager.shareTextToWhatsApp(context, msg, party.phone)
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, CupertinoColors.WhatsAppGreen.copy(alpha = 0.45f)),
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Share,
+                                        imageVector = Icons.Default.Person,
                                         contentDescription = null,
-                                        tint = CupertinoColors.WhatsAppGreen,
-                                        modifier = Modifier.size(15.dp)
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Remind",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = CupertinoColors.WhatsAppGreen
-                                    )
+                                    Column {
+                                        Text(
+                                            text = party.name,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = party.phone.ifBlank { party.partyType },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
 
-                                Button(
-                                    onClick = { paymentTargetParty = party },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = CupertinoColors.EmeraldGreen,
-                                        contentColor = Color.White
-                                    ),
-                                    modifier = Modifier.weight(1.25f)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        text = "+ Receive (Jama)",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
+                                        text = IndianCurrencyFormatter.formatPaise(if (hasDue) party.currentBalancePaise else 0L),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = if (hasDue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                    StatusChip(
+                                        text = stringResource(if (hasDue) R.string.khata_badge_due else R.string.khata_badge_settled),
+                                        tone = if (hasDue) ChipTone.DANGER else ChipTone.SUCCESS,
+                                    )
+                                }
+                            }
+
+                            if (hasDue) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                                ) {
+                                    SecondaryActionButton(
+                                        text = stringResource(R.string.khata_remind),
+                                        icon = Icons.Default.Share,
+                                        onClick = {
+                                            val shopName = SyncManager.getSellerName(context)
+                                            val upiId = SyncManager.getUpiId(context)
+                                            val amtStr = IndianCurrencyFormatter.formatPaise(party.currentBalancePaise)
+                                            val msg = buildString {
+                                                append(context.getString(R.string.khata_reminder_body, party.name, shopName, amtStr))
+                                                if (upiId.isNotBlank()) {
+                                                    append(context.getString(R.string.khata_reminder_upi, upiId))
+                                                }
+                                                append(context.getString(R.string.khata_reminder_thanks))
+                                            }
+                                            ReceiptShareManager.shareTextToWhatsApp(context, msg, party.phone)
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    PrimaryActionButton(
+                                        text = stringResource(R.string.khata_receive),
+                                        icon = Icons.Default.CheckCircle,
+                                        onClick = { paymentTargetParty = party },
+                                        modifier = Modifier.weight(1f),
                                     )
                                 }
                             }
@@ -392,29 +325,36 @@ fun PartiesKhataScreen(
 
         AlertDialog(
             onDismissRequest = { showAddPartyDialog = false },
-            title = { Text("Add Customer / Supplier", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.khata_add_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CupertinoTextField(
+                Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
+                    OutlinedTextField(
                         value = partyName,
                         onValueChange = { partyName = it },
-                        label = "Party Name",
-                        placeholder = "e.g. Ramesh Traders",
-                        capitalization = KeyboardCapitalization.Words
+                        label = { Text(stringResource(R.string.khata_field_name)) },
+                        placeholder = { Text(stringResource(R.string.khata_field_name_hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = partyPhone,
                         onValueChange = { partyPhone = it },
-                        label = "WhatsApp / Mobile",
-                        placeholder = "9876543210",
-                        keyboardType = KeyboardType.Phone
+                        label = { Text(stringResource(R.string.khata_field_phone)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = openingBalInput,
                         onValueChange = { openingBalInput = it },
-                        label = "Opening Due Balance (₹, Optional)",
-                        placeholder = "0",
-                        keyboardType = KeyboardType.Decimal
+                        label = { Text(stringResource(R.string.khata_field_opening)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             },
@@ -428,14 +368,18 @@ fun PartiesKhataScreen(
                         val openingPaise = IndianCurrencyFormatter.parseRupeesToPaise(openingBalInput)
                         onAddParty(partyName.trim(), partyPhone.trim(), "CUSTOMER", openingPaise)
                         showAddPartyDialog = false
-                    }
+                    },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                 ) {
-                    Text("Save Party", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.khata_save_party), style = MaterialTheme.typography.labelLarge)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddPartyDialog = false }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { showAddPartyDialog = false },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
                 }
             }
         )
@@ -451,31 +395,43 @@ fun PartiesKhataScreen(
 
         AlertDialog(
             onDismissRequest = { paymentTargetParty = null },
-            title = { Text("Receive Payment (Jama)", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.khata_pay_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
                     Text(
-                        text = "${target.name} • Pending Due: ${IndianCurrencyFormatter.formatPaise(target.currentBalancePaise)}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = CupertinoColors.LabelSecondary
+                        text = stringResource(
+                            R.string.khata_pay_party_due,
+                            target.name,
+                            IndianCurrencyFormatter.formatPaise(target.currentBalancePaise)
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = amountInput,
                         onValueChange = { amountInput = it },
-                        label = "Amount Received (₹)",
-                        keyboardType = KeyboardType.Decimal
+                        label = { Text(stringResource(R.string.khata_pay_amount)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    CupertinoSegmentedControl(
-                        options = listOf("Cash", "UPI"),
+                    SegmentedChoice(
+                        options = listOf(
+                            stringResource(R.string.checkout_pay_cash),
+                            stringResource(R.string.checkout_pay_upi),
+                        ),
                         selectedIndex = modeIndex,
                         onSelect = { modeIndex = it }
                     )
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        label = "Note (Optional)",
-                        placeholder = "e.g. Part payment"
+                        label = { Text(stringResource(R.string.khata_pay_note)) },
+                        placeholder = { Text(stringResource(R.string.khata_pay_note_hint)) },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             },
@@ -492,14 +448,17 @@ fun PartiesKhataScreen(
                         paymentTargetParty = null
                         Toast.makeText(context, R.string.msg_payment_recorded, Toast.LENGTH_SHORT).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = CupertinoColors.EmeraldGreen)
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                 ) {
-                    Text("Confirm Jama", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.khata_pay_confirm), style = MaterialTheme.typography.labelLarge)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { paymentTargetParty = null }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { paymentTargetParty = null },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
                 }
             }
         )

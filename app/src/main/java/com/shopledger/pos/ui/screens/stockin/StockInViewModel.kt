@@ -245,7 +245,7 @@ class StockInViewModel(
     /** null = no review open. */
     val state: StateFlow<StockInUiState?> = _state.asStateFlow()
 
-    private val photoNotRead = UiText.Res(R.string.err_photo_not_read)
+    private val photoNotRead = UiText.Res(R.string.err_ocr_title)
 
     private val _reading = MutableStateFlow(false)
     /** True while a photo is being read (OCR and tidy-up). It lives here so it survives rotation. */

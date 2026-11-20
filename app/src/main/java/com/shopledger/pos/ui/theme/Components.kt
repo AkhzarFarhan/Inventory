@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -41,6 +42,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -327,6 +332,37 @@ fun SectionCard(
         ) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
             content()
+        }
+    }
+}
+
+/** One-of-N choice shown as a row of equal-width buttons (>= 48 dp tall); the chosen one is filled. */
+@Composable
+fun SegmentedChoice(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+    ) {
+        options.forEachIndexed { index, label ->
+            val chosen = index == selectedIndex
+            val sized = Modifier
+                .weight(1f)
+                .heightIn(min = ShopLedgerTokens.minTouch)
+                .semantics { selected = chosen; role = Role.RadioButton }
+            if (chosen) {
+                Button(onClick = { onSelect(index) }, modifier = sized, shape = MaterialTheme.shapes.medium) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
+            } else {
+                OutlinedButton(onClick = { onSelect(index) }, modifier = sized, shape = MaterialTheme.shapes.medium) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
+            }
         }
     }
 }

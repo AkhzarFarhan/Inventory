@@ -41,13 +41,19 @@ enum class InventoryFilterMode {
 
 data class CustomerCartSession(
     val cartId: String,
-    val label: String,
+    /** A name typed by the user. Blank for default carts, which show "Cart N" in the current language. */
+    val label: String = "",
+    val cartNumber: Int = 1,
     val buyerName: String = "",
     val buyerPhone: String = "",
     val items: List<CartLineItem> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val checkoutActionId: String = UUID.randomUUID().toString()
 )
+
+/** The cart name to show: the user's own name, or "Cart N" in the current app language. */
+fun CustomerCartSession.displayLabel(context: android.content.Context): String =
+    label.ifBlank { context.getString(R.string.cart_default_label, cartNumber) }
 
 class MainViewModel(
     private val repository: LpsRepository
@@ -71,7 +77,7 @@ class MainViewModel(
     private var nextCartSequence = 2
     private var quickSellActionId: String = UUID.randomUUID().toString()
     private val _carts = MutableStateFlow(
-        listOf(CustomerCartSession(cartId = "cart-1", label = "Cart 1"))
+        listOf(CustomerCartSession(cartId = "cart-1", cartNumber = 1))
     )
     val cartsState: StateFlow<List<CustomerCartSession>> = _carts.asStateFlow()
 
@@ -477,10 +483,12 @@ class MainViewModel(
         initialBuyerPhone: String = ""
     ): String {
         val newId = "cart-${UUID.randomUUID()}"
-        val label = customLabel?.trim().takeUnless { it.isNullOrBlank() } ?: "Cart ${nextCartSequence++}"
+        val customName = customLabel?.trim().takeUnless { it.isNullOrBlank() }
+        val number = if (customName == null) nextCartSequence++ else 0
         val created = CustomerCartSession(
             cartId = newId,
-            label = label,
+            label = customName.orEmpty(),
+            cartNumber = number,
             buyerName = initialBuyerName,
             buyerPhone = initialBuyerPhone
         )
@@ -492,7 +500,7 @@ class MainViewModel(
     fun closeCart(cartId: String) {
         val remaining = _carts.value.filterNot { it.cartId == cartId }
         if (remaining.isEmpty()) {
-            val fresh = CustomerCartSession(cartId = "cart-${UUID.randomUUID()}", label = "Cart 1")
+            val fresh = CustomerCartSession(cartId = "cart-${UUID.randomUUID()}", cartNumber = 1)
             nextCartSequence = 2
             _carts.value = listOf(fresh)
             _activeCartId.value = fresh.cartId

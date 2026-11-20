@@ -19,11 +19,11 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
-/** [userMessage] is the plain-language string resource shown to the shopkeeper; [message] is for logs and debug. */
+/** [userMessage] is the plain-language string resource shown to the shopkeeper (default: a storage problem while copying or staging; reading a damaged backup says so explicitly); [message] is for logs and debug. */
 class BackupException(
     message: String,
     cause: Throwable? = null,
-    @androidx.annotation.StringRes val userMessage: Int = com.shopledger.pos.R.string.msg_backup_unreadable,
+    @androidx.annotation.StringRes val userMessage: Int = com.shopledger.pos.R.string.msg_backup_storage,
 ) : Exception(message, cause)
 
 /**
@@ -132,7 +132,7 @@ class BackupManager(
             } catch (e: BackupException) {
                 throw e
             } catch (e: Exception) {
-                throw BackupException("The backup file is damaged or incomplete", e)
+                throw BackupException("The backup file is damaged or incomplete", e, userMessage = com.shopledger.pos.R.string.msg_backup_unreadable)
             }
             val version = validate(tmp)
             // Validation may have created -wal/-shm/-journal next to the tmp file; the staged file must stand alone.
@@ -162,7 +162,7 @@ class BackupManager(
         } catch (e: BackupException) {
             throw e
         } catch (e: IOException) {
-            throw BackupException("The backup file is damaged or incomplete", e)
+            throw BackupException("The backup file is damaged or incomplete", e, userMessage = com.shopledger.pos.R.string.msg_backup_unreadable)
         }
     }
 
@@ -172,7 +172,7 @@ class BackupManager(
         try {
             SQLiteDatabase.openDatabase(candidate.path, null, SQLiteDatabase.OPEN_READONLY, DatabaseErrorHandler { }).use { db ->
                 val integrity = db.rawQuery("PRAGMA integrity_check", null).use { c -> if (c.moveToFirst()) c.getString(0) else "" }
-                if (!integrity.equals("ok", ignoreCase = true)) throw BackupException("The backup file is damaged ($integrity)")
+                if (!integrity.equals("ok", ignoreCase = true)) throw BackupException("The backup file is damaged ($integrity)", userMessage = com.shopledger.pos.R.string.msg_backup_unreadable)
                 fun hasTable(name: String) = db.rawQuery(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf(name)
                 ).use { it.moveToFirst() }
@@ -187,7 +187,7 @@ class BackupManager(
         } catch (e: BackupException) {
             throw e
         } catch (e: Exception) {
-            throw BackupException("The backup file is damaged", e)
+            throw BackupException("The backup file is damaged", e, userMessage = com.shopledger.pos.R.string.msg_backup_unreadable)
         }
     }
 

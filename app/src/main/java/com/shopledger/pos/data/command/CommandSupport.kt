@@ -25,7 +25,7 @@ interface CommandEnvironment {
  * [uiText] is the plain-language message shown to the shopkeeper (a string resource, so it follows the app language);
  * the exception's own `message` is only a short technical tag for logs.
  */
-sealed class CommandException(val uiText: UiText) : Exception(uiText.toString()) {
+sealed class CommandException(val uiText: UiText) : Exception(technicalTag(uiText)) {
     class Validation(uiText: UiText) : CommandException(uiText) {
         constructor(@StringRes id: Int, vararg args: Any) : this(UiText.Res(id, args.toList()))
     }
@@ -100,4 +100,10 @@ object CheckoutStep {
     const val LEDGER = "LEDGER"
     const val OUTBOX = "OUTBOX"
     val ALL = listOf(NUMBER, HEADER, LINES, MOVEMENTS, LEDGER, OUTBOX)
+}
+
+/** Short tag for logs: the resource id (hex) and its arguments, or the raw text. The exception class name is added by `toString()`. */
+private fun technicalTag(uiText: UiText): String = when (uiText) {
+    is UiText.Res -> "res=0x%08x".format(uiText.id) + if (uiText.args.isEmpty()) "" else " args=" + uiText.args.joinToString(prefix = "[", postfix = "]") { it.toString().take(40) }
+    is UiText.Raw -> uiText.text.take(120)
 }

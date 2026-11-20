@@ -1,28 +1,20 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import android.widget.Toast
 import androidx.annotation.StringRes
-import com.shopledger.pos.R
-import com.shopledger.pos.ui.text.UiText
-import com.shopledger.pos.ui.text.asString
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -30,13 +22,13 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,18 +44,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.shopledger.pos.R
 import com.shopledger.pos.core.cipher.CipherReferenceStrip
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.draft.ItemDraftManager
@@ -73,6 +64,7 @@ import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.DuplicateCheckResult
 import com.shopledger.pos.core.nlp.DuplicateDecisionType
+import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.nlp.TradeTaxonomyRegistry
 import com.shopledger.pos.core.scanner.BarcodeScannerHelper
 import com.shopledger.pos.core.sync.SyncManager
@@ -80,9 +72,12 @@ import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.data.repository.LpsRepository
-import com.shopledger.pos.ui.theme.CupertinoCard
-import com.shopledger.pos.ui.theme.CupertinoColors
-import com.shopledger.pos.ui.theme.CupertinoTextField
+import com.shopledger.pos.ui.text.UiText
+import com.shopledger.pos.ui.text.asString
+import com.shopledger.pos.ui.theme.PrimaryActionButton
+import com.shopledger.pos.ui.theme.SecondaryActionButton
+import com.shopledger.pos.ui.theme.SectionCard
+import com.shopledger.pos.ui.theme.ShopLedgerTokens
 import java.util.UUID
 
 /**
@@ -100,9 +95,10 @@ data class VariantDraft(
     var stockQtyInput: String = "10",
     var lowStockInput: String = "5"
 ) {
+    /** The size / material / colour text, or "" when none is filled in (the screen shows a translated "Standard"). */
     fun buildSummary(): String {
         val parts = listOf(sizeLabel, materialLabel, colorFinishLabel).filter { it.isNotBlank() }
-        return if (parts.isEmpty()) "Standard" else parts.joinToString(" · ")
+        return parts.joinToString(" · ")
     }
 }
 
@@ -480,7 +476,7 @@ fun AddEditItemSheet(
             onDismiss()
         },
         sheetState = sheetState,
-        containerColor = CupertinoColors.SystemGroupedBackground
+        containerColor = MaterialTheme.colorScheme.background
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             FloatingAppMessageHost(
@@ -492,25 +488,26 @@ fun AddEditItemSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
             ) {
-                // SHEET HEADER: Clean title and optional Clear Draft / Delete action
+                // SHEET HEADER: title and optional clear-draft / delete action
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = when (mode) {
-                            is ItemEditorMode.AddNewItem -> if (existingSavedDraft?.hasContent == true && !isDraftClearedOrSaved) {
-                                "Add Product (Draft)"
-                            } else "Add Product"
-                            is ItemEditorMode.ManageItem -> "Edit Product & Variants"
-                        },
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = CupertinoColors.LabelPrimary
+                        text = stringResource(
+                            when (mode) {
+                                is ItemEditorMode.AddNewItem ->
+                                    if (existingSavedDraft?.hasContent == true && !isDraftClearedOrSaved) R.string.item_form_title_add_draft
+                                    else R.string.item_form_title_add
+                                is ItemEditorMode.ManageItem -> R.string.item_form_title_edit
+                            }
+                        ),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f)
                     )
 
                     if (mode is ItemEditorMode.AddNewItem) {
@@ -525,56 +522,64 @@ fun AddEditItemSheet(
                         if (hasAnyDraftInput) {
                             TextButton(
                                 onClick = { clearAddDraftAndReset() },
-                                colors = ButtonDefaults.textButtonColors(contentColor = CupertinoColors.DestructiveRed)
+                                modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.DeleteOutline,
-                                    contentDescription = "Clear Draft",
-                                    modifier = Modifier.size(16.dp)
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Clear Draft", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(
+                                    stringResource(R.string.item_form_clear_draft),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(start = ShopLedgerTokens.spacingXs)
+                                )
                             }
                         }
                     } else if (mode is ItemEditorMode.ManageItem) {
                         TextButton(
                             onClick = { showDeleteConfirm = true },
-                            colors = ButtonDefaults.textButtonColors(contentColor = CupertinoColors.DestructiveRed)
+                            modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DeleteOutline,
-                                contentDescription = "Delete Item",
-                                modifier = Modifier.size(17.dp)
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Delete", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                stringResource(R.string.action_delete),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(start = ShopLedgerTokens.spacingXs)
+                            )
                         }
                     }
                 }
 
-            // CARD 1: Item Name & User-Writable Category (Requirement #2)
-            CupertinoCard(contentPadding = PaddingValues(12.dp)) {
-                CupertinoTextField(
-                    value = itemName,
-                    onValueChange = {
-                        itemName = it
-                        validationError = null
-                    },
-                    label = "Product Name",
-                    placeholder = "e.g. Product Name, Brand, or Trade Name",
-                    capitalization = KeyboardCapitalization.Words
-                )
+                // CARD 1: item name and user-writable category
+                SectionCard {
+                    OutlinedTextField(
+                        value = itemName,
+                        onValueChange = {
+                            itemName = it
+                            validationError = null
+                        },
+                        label = { Text(stringResource(R.string.item_form_name)) },
+                        placeholder = { Text(stringResource(R.string.item_form_name_hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                // Auto-extracted attributes helper pill if user typed size/material/color in the name
-                val sig = duplicateCheckResult?.candidateSignature
-                if (sig != null && (sig.canonicalSize.isNotEmpty() || sig.canonicalMaterial.isNotEmpty() || sig.canonicalColorFinish.isNotEmpty())) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(CupertinoColors.SystemBlueTint)
-                            .clickable {
+                    // Helper if the user typed a size / material / colour inside the name
+                    val sig = duplicateCheckResult?.candidateSignature
+                    if (sig != null && (sig.canonicalSize.isNotEmpty() || sig.canonicalMaterial.isNotEmpty() || sig.canonicalColorFinish.isNotEmpty())) {
+                        Surface(
+                            onClick = {
                                 if (sizeLabel.isBlank() && sig.canonicalSize.isNotEmpty()) {
                                     sizeLabel = sig.canonicalSize
                                 }
@@ -585,412 +590,307 @@ fun AddEditItemSheet(
                                     colorFinishLabel = sig.canonicalColorFinish
                                 }
                                 itemName = sig.suggestedCleanBaseName
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = CupertinoColors.SystemBlue,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Text(
-                            text = "Smart Extract: Fill Variant (${
-                                listOf(sig.canonicalSize, sig.canonicalMaterial, sig.canonicalColorFinish)
-                                    .filter { it.isNotEmpty() }
-                                    .joinToString(" · ")
-                            }) & clean name",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = CupertinoColors.SystemBlue
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Editable User-Writable Category Text Field (Requirement #2)
-                CupertinoTextField(
-                    value = category,
-                    onValueChange = {
-                        category = it
-                        validationError = null
-                    },
-                    label = "Category (Type custom or select below)",
-                    placeholder = "e.g. Fittings, Staples, Tablets, Cables...",
-                    capitalization = KeyboardCapitalization.Words
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Quick Category Suggestions Chips
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    categories.forEach { cat ->
-                        val selected = category.equals(cat, ignoreCase = true)
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (selected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                            border = BorderStroke(1.dp, if (selected) CupertinoColors.SystemBlue else CupertinoColors.Separator),
-                            modifier = Modifier.clickable { category = cat }
-                        ) {
-                            Text(
-                                text = cat,
-                                fontSize = 11.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) Color.White else CupertinoColors.LabelPrimary,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Smart Duplicate / Existing Parent Item Detected Banner (New Item flow)
-            if (duplicateCheckResult != null && duplicateCheckResult.decision != DuplicateDecisionType.UNIQUE_NEW_ITEM) {
-                val matched = duplicateCheckResult.matchedItem
-                if (matched != null) {
-                    val isExactDup = duplicateCheckResult.decision == DuplicateDecisionType.EXACT_DUPLICATE
-                    CupertinoCard(
-                        containerColor = if (isExactDup) CupertinoColors.DestructiveTint else CupertinoColors.AmberTint,
-                        borderColor = if (isExactDup) CupertinoColors.DestructiveRed else CupertinoColors.AmberWarning,
-                        contentPadding = PaddingValues(10.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.WarningAmber,
-                                contentDescription = null,
-                                tint = if (isExactDup) CupertinoColors.DestructiveRed else CupertinoColors.AmberWarning,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = if (isExactDup) "Duplicate Item Detected!" else "Existing Parent Item Found!",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isExactDup) CupertinoColors.DestructiveRed else CupertinoColors.AmberWarning
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = duplicateCheckResult.explanationMessage,
-                            fontSize = 11.sp,
-                            color = CupertinoColors.LabelPrimary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (isExactDup) {
-                                Button(
-                                    onClick = {
-                                        onSwitchToManageItem(
-                                            matched,
-                                            duplicateCheckResult.matchedVariantId,
-                                            false,
-                                            "", "", ""
-                                        )
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = CupertinoColors.DestructiveRed,
-                                        contentColor = Color.White
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = "Edit Existing \"${matched.item.displayName}\" Instead",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            } else {
-                                Button(
-                                    onClick = {
-                                        val cSig = duplicateCheckResult.candidateSignature
-                                        onSwitchToManageItem(
-                                            matched,
-                                            null,
-                                            true,
-                                            sizeLabel.ifBlank { cSig.canonicalSize },
-                                            materialLabel.ifBlank { cSig.canonicalMaterial },
-                                            colorFinishLabel.ifBlank { cSig.canonicalColorFinish }
-                                        )
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = CupertinoColors.SystemBlue,
-                                        contentColor = Color.White
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = "Add as Variant under \"${matched.item.displayName}\"",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // VARIANTS SELECTOR BAR (Requirement #1: Different variants have different prices)
-            // Available both when adding brand-new items (multiple drafts) and managing existing items
-            when (mode) {
-                is ItemEditorMode.AddNewItem -> {
-                    CupertinoCard(contentPadding = PaddingValues(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "ITEM VARIANTS (${draftVariants.size})",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = CupertinoColors.LabelMuted
-                            )
-
-                            if (draftVariants.size > 1) {
-                                TextButton(
-                                    onClick = {
-                                        if (draftVariants.size > 1) {
-                                            draftVariants.removeAt(activeDraftIndex)
-                                            activeDraftIndex = activeDraftIndex.coerceIn(0, draftVariants.lastIndex)
-                                            loadDraft(draftVariants[activeDraftIndex])
-                                        }
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "Remove Variant",
-                                        color = CupertinoColors.DestructiveRed,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            draftVariants.forEachIndexed { idx, draft ->
-                                val isSelected = idx == activeDraftIndex
-                                val summary = draft.buildSummary()
-                                val pricePart = if (draft.sellingPriceInput.isNotBlank()) " • ₹${draft.sellingPriceInput}" else ""
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                                    border = BorderStroke(
-                                        width = 1.dp,
-                                        color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
-                                    ),
-                                    modifier = Modifier.clickable {
-                                        if (idx != activeDraftIndex) {
-                                            saveCurrentIntoDraft(draftVariants[activeDraftIndex])
-                                            activeDraftIndex = idx
-                                            loadDraft(draftVariants[idx])
-                                        }
-                                    }
-                                ) {
-                                    Text(
-                                        text = "$summary$pricePart",
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-
-                            // Unified [+ Add Variant] chip for adding another variant with distinct price
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = CupertinoColors.SystemBlueTint,
-                                border = BorderStroke(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.4f)),
-                                modifier = Modifier.clickable {
-                                    saveCurrentIntoDraft(draftVariants[activeDraftIndex])
-                                    val nextDraft = VariantDraft(unit = unit.ifBlank { "pcs" })
-                                    draftVariants.add(nextDraft)
-                                    activeDraftIndex = draftVariants.lastIndex
-                                    loadDraft(nextDraft)
-                                }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = "Add Variant",
-                                        tint = CupertinoColors.SystemBlue,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = "Add Variant",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = CupertinoColors.SystemBlue
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "● Configuring Variant #${activeDraftIndex + 1} (${draftVariants[activeDraftIndex].buildSummary()})",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = CupertinoColors.SystemBlue
-                        )
-                    }
-                }
-
-                is ItemEditorMode.ManageItem -> {
-                    CupertinoCard(contentPadding = PaddingValues(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "ITEM VARIANTS (${variants.size})",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = CupertinoColors.LabelMuted
-                            )
-
-                            if (!isAddingNewVariant && variants.size > 1 && activeVariant != null) {
-                                TextButton(
-                                    onClick = { showDeleteVariantConfirm = true },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "Delete This Variant",
-                                        color = CupertinoColors.DestructiveRed,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            variants.forEach { v ->
-                                val isSelected = !isAddingNewVariant && v.id == (activeVariant?.id ?: selectedVariantId)
-                                val summary = v.buildVariantSummary()
-                                val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                                    border = BorderStroke(
-                                        width = 1.dp,
-                                        color = if (isSelected) CupertinoColors.SystemBlue else CupertinoColors.Separator
-                                    ),
-                                    modifier = Modifier.clickable { selectVariant(v) }
-                                ) {
-                                    Text(
-                                        text = "$summary • $priceLabel",
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else CupertinoColors.LabelPrimary,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-
-                            // Unified [+ Add Variant] chip
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.SystemBlueTint,
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.SystemBlue.copy(alpha = 0.4f)
-                                ),
-                                modifier = Modifier.clickable { startAddNewVariant() }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = "Add Variant",
-                                        tint = if (isAddingNewVariant) Color.White else CupertinoColors.SystemBlue,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = "Add Variant",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isAddingNewVariant) Color.White else CupertinoColors.SystemBlue
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (isAddingNewVariant) {
-                                "● Adding new variant under \"$itemName\" (with distinct purchase & selling price)"
-                            } else {
-                                "Editing: ${activeVariant?.buildVariantSummary() ?: "Standard"} • Purchase: ${IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0)} • Sale: ${IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)}"
                             },
-                            fontSize = 11.sp,
-                            fontWeight = if (isAddingNewVariant) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isAddingNewVariant) CupertinoColors.SystemBlue else CupertinoColors.LabelSecondary
-                        )
+                            modifier = Modifier.fillMaxWidth().heightIn(min = ShopLedgerTokens.minTouch),
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.item_form_smart_extract,
+                                        listOf(sig.canonicalSize, sig.canonicalMaterial, sig.canonicalColorFinish)
+                                            .filter { it.isNotEmpty() }
+                                            .joinToString(" · ")
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+
+                    // Editable category text field
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = {
+                            category = it
+                            validationError = null
+                        },
+                        label = { Text(stringResource(R.string.item_form_category)) },
+                        placeholder = { Text(stringResource(R.string.item_form_category_hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Quick category suggestions
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                    ) {
+                        categories.forEach { cat ->
+                            FilterChip(
+                                selected = category.equals(cat, ignoreCase = true),
+                                onClick = { category = cat },
+                                label = { Text(cat, style = MaterialTheme.typography.bodyMedium) },
+                            )
+                        }
                     }
                 }
-            }
 
-            // CARD 2: COMPACT 2-IN-A-ROW SPECIFICATIONS & PRICING FORM
-            val parsedPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
-            val parsedSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
+                // Smart duplicate / existing parent item banner (new item flow)
+                if (duplicateCheckResult != null && duplicateCheckResult.decision != DuplicateDecisionType.UNIQUE_NEW_ITEM) {
+                    val matched = duplicateCheckResult.matchedItem
+                    if (matched != null) {
+                        val isExactDup = duplicateCheckResult.decision == DuplicateDecisionType.EXACT_DUPLICATE
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.large,
+                            color = if (isExactDup) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = if (isExactDup) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onTertiaryContainer,
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(ShopLedgerTokens.spacingM),
+                                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.WarningAmber,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Text(
+                                        text = stringResource(if (isExactDup) R.string.item_form_dup_exact_title else R.string.item_form_dup_similar_title),
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
+                                }
+                                Text(
+                                    text = stringResource(
+                                        if (isExactDup) R.string.item_form_dup_exact_msg else R.string.item_form_dup_similar_msg,
+                                        matched.item.displayName
+                                    ),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                if (isExactDup) {
+                                    PrimaryActionButton(
+                                        text = stringResource(R.string.item_form_edit_existing),
+                                        onClick = {
+                                            onSwitchToManageItem(
+                                                matched,
+                                                duplicateCheckResult.matchedVariantId,
+                                                false,
+                                                "", "", ""
+                                            )
+                                        },
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                    )
+                                } else {
+                                    PrimaryActionButton(
+                                        text = stringResource(R.string.item_form_add_as_variant, matched.item.displayName),
+                                        onClick = {
+                                            val cSig = duplicateCheckResult.candidateSignature
+                                            onSwitchToManageItem(
+                                                matched,
+                                                null,
+                                                true,
+                                                sizeLabel.ifBlank { cSig.canonicalSize },
+                                                materialLabel.ifBlank { cSig.canonicalMaterial },
+                                                colorFinishLabel.ifBlank { cSig.canonicalColorFinish }
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
-            CupertinoCard(contentPadding = PaddingValues(12.dp)) {
-                Text(
-                    text = if (isAddingNewVariant) "New Variant Details" else "Specifications & Pricing",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                // VARIANTS SELECTOR (different variants have different prices)
+                // Available both when adding brand-new items (multiple drafts) and managing existing items
+                val standardLabel = stringResource(R.string.item_form_standard)
+                when (mode) {
+                    is ItemEditorMode.AddNewItem -> {
+                        SectionCard {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.item_form_variants_count, draftVariants.size),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
 
-                // ROW 1 (Two small named text boxes): Vertical Attr1 + Vertical Attr2
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                if (draftVariants.size > 1) {
+                                    TextButton(
+                                        onClick = {
+                                            if (draftVariants.size > 1) {
+                                                draftVariants.removeAt(activeDraftIndex)
+                                                activeDraftIndex = activeDraftIndex.coerceIn(0, draftVariants.lastIndex)
+                                                loadDraft(draftVariants[activeDraftIndex])
+                                            }
+                                        },
+                                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.item_form_remove_variant),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                draftVariants.forEachIndexed { idx, draft ->
+                                    val summary = draft.buildSummary().ifEmpty { standardLabel }
+                                    val pricePart = if (draft.sellingPriceInput.isNotBlank()) " • ₹${draft.sellingPriceInput}" else ""
+                                    FilterChip(
+                                        selected = idx == activeDraftIndex,
+                                        onClick = {
+                                            if (idx != activeDraftIndex) {
+                                                saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+                                                activeDraftIndex = idx
+                                                loadDraft(draftVariants[idx])
+                                            }
+                                        },
+                                        label = { Text("$summary$pricePart", style = MaterialTheme.typography.bodyMedium) },
+                                    )
+                                }
+
+                                // [+ Add variant] chip for another variant with its own price
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+                                        val nextDraft = VariantDraft(unit = unit.ifBlank { "pcs" })
+                                        draftVariants.add(nextDraft)
+                                        activeDraftIndex = draftVariants.lastIndex
+                                        loadDraft(nextDraft)
+                                    },
+                                    label = { Text(stringResource(R.string.item_form_add_variant), style = MaterialTheme.typography.bodyMedium) },
+                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                )
+                            }
+
+                            Text(
+                                text = stringResource(
+                                    R.string.item_form_configuring,
+                                    activeDraftIndex + 1,
+                                    draftVariants[activeDraftIndex].buildSummary().ifEmpty { standardLabel }
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    is ItemEditorMode.ManageItem -> {
+                        SectionCard {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.item_form_variants_count, variants.size),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                if (!isAddingNewVariant && variants.size > 1 && activeVariant != null) {
+                                    TextButton(
+                                        onClick = { showDeleteVariantConfirm = true },
+                                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.item_form_delete_variant),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                variants.forEach { v ->
+                                    val isSelected = !isAddingNewVariant && v.id == (activeVariant?.id ?: selectedVariantId)
+                                    val summary = v.buildVariantSummary()
+                                    val priceLabel = IndianCurrencyFormatter.formatPaise(v.sellingPricePaise)
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { selectVariant(v) },
+                                        label = { Text("$summary • $priceLabel", style = MaterialTheme.typography.bodyMedium) },
+                                    )
+                                }
+
+                                // [+ Add variant] chip
+                                FilterChip(
+                                    selected = isAddingNewVariant,
+                                    onClick = { startAddNewVariant() },
+                                    label = { Text(stringResource(R.string.item_form_add_variant), style = MaterialTheme.typography.bodyMedium) },
+                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                )
+                            }
+
+                            Text(
+                                text = if (isAddingNewVariant) {
+                                    stringResource(R.string.item_form_adding_under, itemName)
+                                } else {
+                                    stringResource(
+                                        R.string.item_form_editing_summary,
+                                        activeVariant?.buildVariantSummary() ?: standardLabel,
+                                        IndianCurrencyFormatter.formatPaise(activeVariant?.purchasePricePaise ?: 0),
+                                        IndianCurrencyFormatter.formatPaise(activeVariant?.sellingPricePaise ?: 0)
+                                    )
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isAddingNewVariant) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // CARD 2: specifications and pricing form
+                val parsedPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
+                val parsedSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
+                val attr1 = verticalAttr(activeVertical, 1)
+                val attr2 = verticalAttr(activeVertical, 2)
+                val attr3 = verticalAttr(activeVertical, 3)
+
+                SectionCard(
+                    title = stringResource(if (isAddingNewVariant) R.string.item_form_details_new else R.string.item_form_details)
                 ) {
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = sizeLabel,
                         onValueChange = {
                             sizeLabel = it
@@ -998,13 +898,15 @@ fun AddEditItemSheet(
                                 draftVariants[activeDraftIndex].sizeLabel = it
                             }
                         },
-                        label = activeVertical.attr1Label,
-                        placeholder = activeVertical.attr1Placeholder,
-                        capitalization = KeyboardCapitalization.None,
-                        modifier = Modifier.weight(1f)
+                        label = { Text(stringResource(attr1.label)) },
+                        placeholder = { Text(stringResource(attr1.hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = materialLabel,
                         onValueChange = {
                             materialLabel = it
@@ -1012,21 +914,15 @@ fun AddEditItemSheet(
                                 draftVariants[activeDraftIndex].materialLabel = it
                             }
                         },
-                        label = activeVertical.attr2Label,
-                        placeholder = activeVertical.attr2Placeholder,
-                        capitalization = KeyboardCapitalization.Words,
-                        modifier = Modifier.weight(1f)
+                        label = { Text(stringResource(attr2.label)) },
+                        placeholder = { Text(stringResource(attr2.hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ROW 2 (Two small named text boxes): Vertical Attr3 + Unit of Measure
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = colorFinishLabel,
                         onValueChange = {
                             colorFinishLabel = it
@@ -1034,13 +930,15 @@ fun AddEditItemSheet(
                                 draftVariants[activeDraftIndex].colorFinishLabel = it
                             }
                         },
-                        label = activeVertical.attr3Label,
-                        placeholder = activeVertical.attr3Placeholder,
-                        capitalization = KeyboardCapitalization.Words,
-                        modifier = Modifier.weight(1f)
+                        label = { Text(stringResource(attr3.label)) },
+                        placeholder = { Text(stringResource(attr3.hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = unit,
                         onValueChange = {
                             unit = it
@@ -1048,377 +946,364 @@ fun AddEditItemSheet(
                                 draftVariants[activeDraftIndex].unit = it
                             }
                         },
-                        label = "Unit of Measure",
-                        placeholder = "e.g. ${activeVertical.defaultUnit}",
-                        capitalization = KeyboardCapitalization.None,
-                        modifier = Modifier.weight(1f)
+                        label = { Text(stringResource(R.string.item_form_unit)) },
+                        placeholder = { Text(stringResource(R.string.item_form_unit_hint, activeVertical.defaultUnit)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Barcode / SKU Code with 1-Tap Camera Scan button
-                CupertinoTextField(
-                    value = barcodeInput,
-                    onValueChange = {
-                        barcodeInput = it
-                        if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                            draftVariants[activeDraftIndex].barcode = it
-                        }
-                    },
-                    label = "Barcode / SKU Code (Optional)",
-                    placeholder = "Scan EAN-13 / QR or type SKU code",
-                    capitalization = KeyboardCapitalization.None,
-                    trailingIcon = {
-                        IconButton(
-                            onClick = {
-                                BarcodeScannerHelper.scanBarcode(
-                                    context = context,
-                                    onScanned = { scanned ->
-                                        barcodeInput = scanned
-                                        if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                            draftVariants[activeDraftIndex].barcode = scanned
-                                        }
-                                    },
-                                    onError = { _ ->
-                                        Toast.makeText(context, R.string.err_scanner_detail, Toast.LENGTH_SHORT).show()
+                    // Unit quick-chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                    ) {
+                        units.forEach { u ->
+                            FilterChip(
+                                selected = unit.equals(u, ignoreCase = true),
+                                onClick = {
+                                    unit = u
+                                    if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                        draftVariants[activeDraftIndex].unit = u
                                     }
+                                },
+                                label = { Text(u, style = MaterialTheme.typography.bodyMedium) },
+                            )
+                        }
+                    }
+
+                    // Barcode / SKU with 1-tap camera scan button
+                    val scanBarcodeDesc = stringResource(R.string.cd_scan_barcode)
+                    OutlinedTextField(
+                        value = barcodeInput,
+                        onValueChange = {
+                            barcodeInput = it
+                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                draftVariants[activeDraftIndex].barcode = it
+                            }
+                        },
+                        label = { Text(stringResource(R.string.item_form_barcode)) },
+                        placeholder = { Text(stringResource(R.string.item_form_barcode_hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    BarcodeScannerHelper.scanBarcode(
+                                        context = context,
+                                        onScanned = { scanned ->
+                                            barcodeInput = scanned
+                                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                                draftVariants[activeDraftIndex].barcode = scanned
+                                            }
+                                        },
+                                        onError = { _ ->
+                                            Toast.makeText(context, R.string.err_scanner_detail, Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QrCodeScanner,
+                                    contentDescription = scanBarcodeDesc,
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                             }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.QrCodeScanner,
-                                contentDescription = "Scan Product Barcode",
-                                tint = CupertinoColors.SystemBlue
-                            )
                         }
-                    }
-                )
+                    )
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Compact Unit quick-chips (single row, 22dp height)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    units.forEach { u ->
-                        val selected = unit.equals(u, ignoreCase = true)
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (selected) CupertinoColors.SystemBlue else CupertinoColors.SecondarySurface,
-                            border = BorderStroke(1.dp, if (selected) CupertinoColors.SystemBlue else CupertinoColors.Separator),
-                            modifier = Modifier.clickable {
-                                unit = u
+                    // Purchase price + selling price
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
+                    ) {
+                        OutlinedTextField(
+                            value = purchasePriceInput,
+                            onValueChange = {
+                                purchasePriceInput = it
                                 if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                    draftVariants[activeDraftIndex].unit = u
+                                    draftVariants[activeDraftIndex].purchasePriceInput = it
+                                }
+                                validationError = null
+                            },
+                            label = { Text(stringResource(R.string.item_form_purchase)) },
+                            placeholder = { Text(stringResource(R.string.item_form_purchase_hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        OutlinedTextField(
+                            value = sellingPriceInput,
+                            onValueChange = {
+                                sellingPriceInput = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].sellingPriceInput = it
+                                }
+                                validationError = null
+                            },
+                            label = { Text(stringResource(R.string.item_form_selling)) },
+                            placeholder = { Text(stringResource(R.string.item_form_selling_hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // Live coded symbol preview + profit / gain
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.item_form_coded_preview),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                if (parsedPurchasePaise > 0 && parsedSellingPaise > 0) {
+                                    val analysis = IndianCurrencyFormatter.computeProfitAnalysis(
+                                        parsedPurchasePaise,
+                                        parsedSellingPaise,
+                                        1.0
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.item_form_profit_preview,
+                                            IndianCurrencyFormatter.formatPaise(analysis.totalProfitPaise, showPlusSign = true),
+                                            IndianCurrencyFormatter.formatPercentage(analysis.gainMarkupPercent)
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
-                        ) {
-                            Text(
-                                text = u,
-                                fontSize = 11.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) Color.White else CupertinoColors.LabelPrimary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+
+                            CodedPurchasePriceBadge(
+                                purchasePricePaise = parsedPurchasePaise,
+                                isSellerUnlocked = false,
+                                glyphSize = 18.dp
                             )
                         }
                     }
+
+                    CipherReferenceStrip(modifier = Modifier.fillMaxWidth())
+
+                    // Current stock + low stock alert
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
+                    ) {
+                        OutlinedTextField(
+                            value = stockQtyInput,
+                            onValueChange = {
+                                stockQtyInput = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].stockQtyInput = it
+                                }
+                            },
+                            label = { Text(stringResource(R.string.item_form_stock)) },
+                            placeholder = { Text(stringResource(R.string.item_form_stock_hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        OutlinedTextField(
+                            value = lowStockInput,
+                            onValueChange = {
+                                lowStockInput = it
+                                if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
+                                    draftVariants[activeDraftIndex].lowStockInput = it
+                                }
+                            },
+                            label = { Text(stringResource(R.string.item_form_low_stock)) },
+                            placeholder = { Text(stringResource(R.string.item_form_low_stock_hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }
+                            ),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ROW 3 (Two small named text boxes): Purchase Price (₹) + Selling Price (₹)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    CupertinoTextField(
-                        value = purchasePriceInput,
-                        onValueChange = {
-                            purchasePriceInput = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].purchasePriceInput = it
-                            }
-                            validationError = null
-                        },
-                        label = "Purchase Price (₹)",
-                        placeholder = "e.g. 140",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    CupertinoTextField(
-                        value = sellingPriceInput,
-                        onValueChange = {
-                            sellingPriceInput = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].sellingPriceInput = it
-                            }
-                            validationError = null
-                        },
-                        label = "Selling Price (₹)",
-                        placeholder = "e.g. 210",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(1f)
+                validationError?.let { vErr ->
+                    Text(
+                        text = vErr.asString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingXs)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Live Coded Symbol Preview Box (IMG_20261031_222339.jpg cipher + profit/gain)
-                Row(
+                // BOTTOM ACTIONS: save, then save draft / close
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(CupertinoColors.SecondarySurface)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(bottom = ShopLedgerTokens.spacingXl),
+                    verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                 ) {
-                    Column {
-                        Text(
-                            text = "LIVE CODED PURCHASE SYMBOL",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.CipherIndigo
-                        )
-                        if (parsedPurchasePaise > 0 && parsedSellingPaise > 0) {
-                            val analysis = IndianCurrencyFormatter.computeProfitAnalysis(
-                                parsedPurchasePaise,
-                                parsedSellingPaise,
-                                1.0
-                            )
-                            Text(
-                                text = "Profit: ${IndianCurrencyFormatter.formatPaise(analysis.totalProfitPaise, showPlusSign = true)} (${
-                                    IndianCurrencyFormatter.formatPercentage(analysis.gainMarkupPercent)
-                                } gain)",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = CupertinoColors.EmeraldGreen
-                            )
-                        }
-                    }
-
-                    CodedPurchasePriceBadge(
-                        purchasePricePaise = parsedPurchasePaise,
-                        isSellerUnlocked = false,
-                        glyphSize = 18.dp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                CipherReferenceStrip(modifier = Modifier.fillMaxWidth())
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ROW 4 (Two small named text boxes): Current Stock + Low Stock Alert
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    CupertinoTextField(
-                        value = stockQtyInput,
-                        onValueChange = {
-                            stockQtyInput = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].stockQtyInput = it
-                            }
+                    PrimaryActionButton(
+                        text = when {
+                            mode is ItemEditorMode.AddNewItem ->
+                                if (draftVariants.size > 1) stringResource(R.string.item_form_save_n, draftVariants.size)
+                                else stringResource(R.string.item_form_save)
+                            mode is ItemEditorMode.ManageItem && isAddingNewVariant -> stringResource(R.string.item_form_add_variant_btn)
+                            else -> stringResource(R.string.item_form_save_changes)
                         },
-                        label = "Current Stock",
-                        placeholder = "10",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    CupertinoTextField(
-                        value = lowStockInput,
-                        onValueChange = {
-                            lowStockInput = it
-                            if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
-                                draftVariants[activeDraftIndex].lowStockInput = it
-                            }
-                        },
-                        label = "Low Stock Alert At",
-                        placeholder = "5",
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Done,
-                        onImeAction = {
+                        onClick = {
                             keyboardController?.hide()
                             focusManager.clearFocus()
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
 
-            validationError?.let { vErr ->
-                Text(
-                    text = vErr.asString(),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.DestructiveRed,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
-
-            // BOTTOM ACTION ROW: Cancel + Save / Add Variant
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                        if (mode is ItemEditorMode.AddNewItem && !isDraftClearedOrSaved) {
-                            if (persistAddDraft()) {
-                                AppErrorManager.reportInfo(UiText.Res(R.string.msg_draft_saved_title), UiText.Res(R.string.msg_draft_saved))
+                            if (itemName.isBlank()) {
+                                failValidation(R.string.err_missing_name_title, UiText.Res(R.string.msg_item_name_required))
+                                return@PrimaryActionButton
                             }
-                        }
-                        onDismiss()
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 13.dp)
-                ) {
-                    Text("Save Draft / Close", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
+                            val cleanCategory = category.trim().ifEmpty { "Uncategorized" }
 
-                Button(
-                    onClick = {
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-
-                        if (itemName.isBlank()) {
-                            failValidation(R.string.err_missing_name_title, UiText.Res(R.string.msg_item_name_required))
-                            return@Button
-                        }
-                        val cleanCategory = category.trim().ifEmpty { "Uncategorized" }
-
-                        when (mode) {
-                            is ItemEditorMode.AddNewItem -> {
-                                if (duplicateCheckResult?.decision == DuplicateDecisionType.EXACT_DUPLICATE) {
-                                    failValidation(R.string.err_duplicate_item_title, UiText.Res(R.string.msg_item_exists))
-                                    return@Button
-                                }
-
-                                saveCurrentIntoDraft(draftVariants[activeDraftIndex])
-
-                                val specs = mutableListOf<LpsRepository.NewVariantSpec>()
-                                draftVariants.forEachIndexed { index, draft ->
-                                    val finalSelling = IndianCurrencyFormatter.parseRupeesToPaise(draft.sellingPriceInput)
-                                    val finalPurchase = IndianCurrencyFormatter.parseRupeesToPaise(draft.purchasePriceInput)
-                                    if (finalSelling <= 0L) {
-                                        val hint = if (draft.buildSummary() == "Standard") context.getString(R.string.msg_variant_number, index + 1) else draft.buildSummary()
-                                        failValidation(R.string.err_price_missing_title, UiText.Res(R.string.msg_variant_price, listOf(hint)))
-                                        activeDraftIndex = index
-                                        loadDraft(draft)
-                                        return@Button
+                            when (mode) {
+                                is ItemEditorMode.AddNewItem -> {
+                                    if (duplicateCheckResult?.decision == DuplicateDecisionType.EXACT_DUPLICATE) {
+                                        failValidation(R.string.err_duplicate_item_title, UiText.Res(R.string.msg_item_exists))
+                                        return@PrimaryActionButton
                                     }
-                                    specs.add(
-                                        LpsRepository.NewVariantSpec(
-                                            sizeLabel = draft.sizeLabel,
-                                            materialLabel = draft.materialLabel,
-                                            colorFinishLabel = draft.colorFinishLabel,
-                                            unit = draft.unit.ifBlank { activeVertical.defaultUnit },
-                                            purchasePricePaise = finalPurchase,
-                                            sellingPricePaise = finalSelling,
-                                            stockQuantity = draft.stockQtyInput.toDoubleOrNull() ?: 10.0,
-                                            lowStockThreshold = draft.lowStockInput.toDoubleOrNull() ?: 5.0,
-                                            barcode = draft.barcode
+
+                                    saveCurrentIntoDraft(draftVariants[activeDraftIndex])
+
+                                    val specs = mutableListOf<LpsRepository.NewVariantSpec>()
+                                    draftVariants.forEachIndexed { index, draft ->
+                                        val finalSelling = IndianCurrencyFormatter.parseRupeesToPaise(draft.sellingPriceInput)
+                                        val finalPurchase = IndianCurrencyFormatter.parseRupeesToPaise(draft.purchasePriceInput)
+                                        if (finalSelling <= 0L) {
+                                            val hint = if (draft.buildSummary().isEmpty()) context.getString(R.string.msg_variant_number, index + 1) else draft.buildSummary()
+                                            failValidation(R.string.err_price_missing_title, UiText.Res(R.string.msg_variant_price, listOf(hint)))
+                                            activeDraftIndex = index
+                                            loadDraft(draft)
+                                            return@PrimaryActionButton
+                                        }
+                                        specs.add(
+                                            LpsRepository.NewVariantSpec(
+                                                sizeLabel = draft.sizeLabel,
+                                                materialLabel = draft.materialLabel,
+                                                colorFinishLabel = draft.colorFinishLabel,
+                                                unit = draft.unit.ifBlank { activeVertical.defaultUnit },
+                                                purchasePricePaise = finalPurchase,
+                                                sellingPricePaise = finalSelling,
+                                                stockQuantity = draft.stockQtyInput.toDoubleOrNull() ?: 10.0,
+                                                lowStockThreshold = draft.lowStockInput.toDoubleOrNull() ?: 5.0,
+                                                barcode = draft.barcode
+                                            )
                                         )
-                                    )
-                                }
+                                    }
 
-                                isDraftClearedOrSaved = true
-                                ItemDraftManager.clearDraft(context)
-                                onSaveNewItemWithVariants(itemName, cleanCategory, specs)
-                                AppErrorManager.reportSuccess(UiText.Res(R.string.msg_item_added_title), UiText.Res(R.string.msg_item_added, listOf(itemName)))
+                                    isDraftClearedOrSaved = true
+                                    ItemDraftManager.clearDraft(context)
+                                    onSaveNewItemWithVariants(itemName, cleanCategory, specs)
+                                    AppErrorManager.reportSuccess(UiText.Res(R.string.msg_item_added_title), UiText.Res(R.string.msg_item_added, listOf(itemName)))
+                                }
+                                is ItemEditorMode.ManageItem -> {
+                                    val finalPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
+                                    val finalSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
+                                    val finalStock = stockQtyInput.toDoubleOrNull() ?: 0.0
+                                    val finalLowAlert = lowStockInput.toDoubleOrNull() ?: 5.0
+
+                                    if (finalSellingPaise <= 0L) {
+                                        failValidation(R.string.err_price_missing_title, UiText.Res(R.string.msg_price_required))
+                                        return@PrimaryActionButton
+                                    }
+
+                                    if (isAddingNewVariant) {
+                                        onSaveVariantToParent(
+                                            mode.itemWithVariants.item,
+                                            itemName,
+                                            cleanCategory,
+                                            sizeLabel,
+                                            materialLabel,
+                                            colorFinishLabel,
+                                            unit,
+                                            finalPurchasePaise,
+                                            finalSellingPaise,
+                                            finalStock,
+                                            finalLowAlert,
+                                            barcodeInput
+                                        )
+                                    } else {
+                                        val targetVar = activeVariant ?: mode.itemWithVariants.variants.first()
+                                        onUpdateExisting(
+                                            mode.itemWithVariants.item,
+                                            itemName,
+                                            cleanCategory,
+                                            targetVar,
+                                            sizeLabel,
+                                            materialLabel,
+                                            colorFinishLabel,
+                                            unit,
+                                            finalPurchasePaise,
+                                            finalSellingPaise,
+                                            finalStock,
+                                            finalLowAlert,
+                                            barcodeInput
+                                        )
+                                    }
+                                }
                             }
-                            is ItemEditorMode.ManageItem -> {
-                                val finalPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
-                                val finalSellingPaise = IndianCurrencyFormatter.parseRupeesToPaise(sellingPriceInput)
-                                val finalStock = stockQtyInput.toDoubleOrNull() ?: 0.0
-                                val finalLowAlert = lowStockInput.toDoubleOrNull() ?: 5.0
-
-                                if (finalSellingPaise <= 0L) {
-                                    failValidation(R.string.err_price_missing_title, UiText.Res(R.string.msg_price_required))
-                                    return@Button
-                                }
-
-                                if (isAddingNewVariant) {
-                                    onSaveVariantToParent(
-                                        mode.itemWithVariants.item,
-                                        itemName,
-                                        cleanCategory,
-                                        sizeLabel,
-                                        materialLabel,
-                                        colorFinishLabel,
-                                        unit,
-                                        finalPurchasePaise,
-                                        finalSellingPaise,
-                                        finalStock,
-                                        finalLowAlert,
-                                        barcodeInput
-                                    )
-                                } else {
-                                    val targetVar = activeVariant ?: mode.itemWithVariants.variants.first()
-                                    onUpdateExisting(
-                                        mode.itemWithVariants.item,
-                                        itemName,
-                                        cleanCategory,
-                                        targetVar,
-                                        sizeLabel,
-                                        materialLabel,
-                                        colorFinishLabel,
-                                        unit,
-                                        finalPurchasePaise,
-                                        finalSellingPaise,
-                                        finalStock,
-                                        finalLowAlert,
-                                        barcodeInput
-                                    )
-                                }
-                            }
-                        }
-                        onDismiss()
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CupertinoColors.SystemBlue,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier.weight(1.3f),
-                    contentPadding = PaddingValues(vertical = 13.dp)
-                ) {
-                    Text(
-                        text = when {
-                            mode is ItemEditorMode.AddNewItem -> if (draftVariants.size > 1) "Save (${draftVariants.size} Variants)" else "Save Item"
-                            mode is ItemEditorMode.ManageItem && isAddingNewVariant -> "+ Add Variant"
-                            else -> "Save Changes"
+                            onDismiss()
                         },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                    )
+
+                    SecondaryActionButton(
+                        text = stringResource(R.string.item_form_save_draft_close),
+                        onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            if (mode is ItemEditorMode.AddNewItem && !isDraftClearedOrSaved) {
+                                if (persistAddDraft()) {
+                                    AppErrorManager.reportInfo(UiText.Res(R.string.msg_draft_saved_title), UiText.Res(R.string.msg_draft_saved))
+                                }
+                            }
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
-            }
             }
         }
     }
 
-    // Confirm dialog for deleting entire item
+    // Confirm dialog for deleting the entire item
     if (showDeleteConfirm && mode is ItemEditorMode.ManageItem) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete Product?", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.item_form_delete_title)) },
             text = {
                 Text(
-                    "Are you sure you want to permanently delete \"${mode.itemWithVariants.item.displayName}\" and all ${mode.itemWithVariants.variants.size} variant(s) from inventory?"
+                    pluralStringResource(
+                        R.plurals.item_form_delete_message,
+                        mode.itemWithVariants.variants.size,
+                        mode.itemWithVariants.item.displayName,
+                        mode.itemWithVariants.variants.size
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
                 )
             },
             confirmButton = {
@@ -1427,14 +1312,22 @@ fun AddEditItemSheet(
                         showDeleteConfirm = false
                         onDeleteItemOrVariant(mode.itemWithVariants.item.id, null, 1)
                         onDismiss()
-                    }
+                    },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                 ) {
-                    Text("Delete Item", color = CupertinoColors.DestructiveRed, fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(R.string.item_form_delete_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { showDeleteConfirm = false },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
                 }
             }
         )
@@ -1444,10 +1337,15 @@ fun AddEditItemSheet(
     if (showDeleteVariantConfirm && mode is ItemEditorMode.ManageItem && activeVariant != null) {
         AlertDialog(
             onDismissRequest = { showDeleteVariantConfirm = false },
-            title = { Text("Delete Variant?", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.item_form_delete_variant_title)) },
             text = {
                 Text(
-                    "Delete only the \"${activeVariant.buildVariantSummary()}\" variant from \"${mode.itemWithVariants.item.displayName}\"?"
+                    stringResource(
+                        R.string.item_form_delete_variant_message,
+                        activeVariant.buildVariantSummary(),
+                        mode.itemWithVariants.item.displayName
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
                 )
             },
             confirmButton = {
@@ -1456,16 +1354,55 @@ fun AddEditItemSheet(
                         showDeleteVariantConfirm = false
                         onDeleteItemOrVariant(mode.itemWithVariants.item.id, activeVariant.id, mode.itemWithVariants.variants.size)
                         onDismiss()
-                    }
+                    },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                 ) {
-                    Text("Delete Variant", color = CupertinoColors.DestructiveRed, fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(R.string.item_form_delete_variant_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteVariantConfirm = false }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { showDeleteVariantConfirm = false },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
                 }
             }
         )
+    }
+}
+
+private class AttrRes(@StringRes val label: Int, @StringRes val hint: Int)
+
+/** Field label and example for the 1st, 2nd or 3rd variant attribute of a shop type, in the app language. */
+private fun verticalAttr(vertical: ShopVertical, index: Int): AttrRes = when (vertical) {
+    ShopVertical.HARDWARE -> when (index) {
+        1 -> AttrRes(R.string.attr_hardware_1, R.string.attr_hardware_1_hint)
+        2 -> AttrRes(R.string.attr_hardware_2, R.string.attr_hardware_2_hint)
+        else -> AttrRes(R.string.attr_hardware_3, R.string.attr_hardware_3_hint)
+    }
+    ShopVertical.KIRANA -> when (index) {
+        1 -> AttrRes(R.string.attr_kirana_1, R.string.attr_kirana_1_hint)
+        2 -> AttrRes(R.string.attr_kirana_2, R.string.attr_kirana_2_hint)
+        else -> AttrRes(R.string.attr_kirana_3, R.string.attr_kirana_3_hint)
+    }
+    ShopVertical.PHARMA -> when (index) {
+        1 -> AttrRes(R.string.attr_pharma_1, R.string.attr_pharma_1_hint)
+        2 -> AttrRes(R.string.attr_pharma_2, R.string.attr_pharma_2_hint)
+        else -> AttrRes(R.string.attr_pharma_3, R.string.attr_pharma_3_hint)
+    }
+    ShopVertical.ELECTRONICS -> when (index) {
+        1 -> AttrRes(R.string.attr_electronics_1, R.string.attr_electronics_1_hint)
+        2 -> AttrRes(R.string.attr_electronics_2, R.string.attr_electronics_2_hint)
+        else -> AttrRes(R.string.attr_electronics_3, R.string.attr_electronics_3_hint)
+    }
+    ShopVertical.GENERAL -> when (index) {
+        1 -> AttrRes(R.string.attr_general_1, R.string.attr_general_1_hint)
+        2 -> AttrRes(R.string.attr_general_2, R.string.attr_general_2_hint)
+        else -> AttrRes(R.string.attr_general_3, R.string.attr_general_3_hint)
     }
 }

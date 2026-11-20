@@ -64,6 +64,7 @@ import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.ui.InventoryFilterMode
 import com.shopledger.pos.ui.MainViewModel
+import com.shopledger.pos.ui.displayLabel
 import com.shopledger.pos.ui.i18n.AppLanguage
 import com.shopledger.pos.ui.i18n.AppLanguageStore
 import com.shopledger.pos.ui.navigation.AppScaffold
@@ -502,7 +503,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         if (showOrderScanSheet) {
             OrderScanSheet(
                 inventory = allInventory,
-                activeCartLabel = activeCartSession.label,
+                activeCartLabel = activeCartSession.displayLabel(context),
                 onAddScannedItemsAndOpenCart = { scannedLines ->
                     viewModel.batchAddItemsToActiveCart(scannedLines)
                     showOrderScanSheet = false

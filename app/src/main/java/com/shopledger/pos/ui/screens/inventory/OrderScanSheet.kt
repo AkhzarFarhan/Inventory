@@ -1,9 +1,5 @@
 package com.shopledger.pos.ui.screens.inventory
 
-import androidx.compose.ui.res.stringResource
-import com.shopledger.pos.BuildConfig
-import com.shopledger.pos.R
-import com.shopledger.pos.ui.text.UiText
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -11,20 +7,17 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -35,14 +28,14 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.ShoppingCartCheckout
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -57,27 +50,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
-import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.BuildConfig
+import com.shopledger.pos.R
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.FloatingAppMessageHost
+import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.scanner.LlmModelState
 import com.shopledger.pos.core.scanner.OnDeviceOrderScannerManager
 import com.shopledger.pos.core.scanner.OrderScanResult
 import com.shopledger.pos.data.model.CartLineItem
 import com.shopledger.pos.data.model.InventoryItemWithVariants
-import com.shopledger.pos.ui.theme.CupertinoCard
-import com.shopledger.pos.ui.theme.CupertinoColors
-import com.shopledger.pos.ui.theme.CupertinoTextField
-import com.shopledger.pos.ui.theme.SemanticPillBadge
+import com.shopledger.pos.ui.text.UiText
+import com.shopledger.pos.ui.theme.ChipTone
+import com.shopledger.pos.ui.theme.PrimaryActionButton
+import com.shopledger.pos.ui.theme.SecondaryActionButton
+import com.shopledger.pos.ui.theme.SectionCard
+import com.shopledger.pos.ui.theme.ShopLedgerTokens
+import com.shopledger.pos.ui.theme.StatusChip
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -133,9 +130,12 @@ fun OrderScanSheet(
                 lastScanResult = result
 
                 if (autoOpenIfClean && result.matchedCartLines.isNotEmpty() && result.unmatchedLines.isEmpty()) {
+                    val count = result.matchedCartLines.size
                     AppErrorManager.reportSuccess(
                         UiText.Res(R.string.msg_cart_ready_title),
-                        UiText.Res(R.string.msg_cart_ready, listOf(activeCartLabel, result.matchedCartLines.size))
+                        UiText.Raw(
+                            context.resources.getQuantityString(R.plurals.msg_cart_ready, count, activeCartLabel, count)
+                        )
                     )
                     onAddScannedItemsAndOpenCart(result.matchedCartLines)
                 } else if (result.matchedCartLines.isEmpty()) {
@@ -241,15 +241,15 @@ fun OrderScanSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = CupertinoColors.SystemGroupedBackground
+        containerColor = MaterialTheme.colorScheme.background
     ) {
         FloatingAppMessageHost()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -258,39 +258,31 @@ fun OrderScanSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Scan Order List / Receipt",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = CupertinoColors.LabelPrimary
+                        text = stringResource(R.string.scan_title),
+                        style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
-                        text = "Target: $activeCartLabel • Cart fills automatically",
-                        fontSize = 12.sp,
-                        color = CupertinoColors.LabelSecondary
+                        text = stringResource(R.string.scan_target, activeCartLabel),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                SemanticPillBadge(
-                    text = if (modelState is LlmModelState.Ready) "On-Device LLM Ready" else "Unbundled AI",
-                    containerColor = if (modelState is LlmModelState.Ready) CupertinoColors.EmeraldTint else CupertinoColors.SystemBlueTint,
-                    contentColor = if (modelState is LlmModelState.Ready) CupertinoColors.EmeraldGreen else CupertinoColors.SystemBlue
+                Spacer(Modifier.padding(horizontal = ShopLedgerTokens.spacingXs))
+                StatusChip(
+                    text = stringResource(if (modelState is LlmModelState.Ready) R.string.scan_ai_ready else R.string.scan_ai_none),
+                    tone = if (modelState is LlmModelState.Ready) ChipTone.SUCCESS else ChipTone.NEUTRAL
                 )
             }
 
-            // 1. Camera / Document Scan & Gallery Actions
-            CupertinoCard {
-                Text(
-                    text = "1. Scan Photo or Receipt",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
+            // 1. Camera / document scan and gallery
+            SectionCard(title = stringResource(R.string.scan_step1)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                 ) {
-                    Button(
+                    PrimaryActionButton(
+                        text = stringResource(R.string.scan_camera),
+                        icon = Icons.Default.CameraAlt,
                         onClick = {
                             if (activity != null) {
                                 val opts = GmsDocumentScannerOptions.Builder()
@@ -312,160 +304,124 @@ fun OrderScanSheet(
                             }
                         },
                         enabled = !isProcessing,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CupertinoColors.SystemBlue,
-                            contentColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1.1f),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Camera Scan", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
+                        modifier = Modifier.weight(1f),
+                    )
 
-                    OutlinedButton(
+                    SecondaryActionButton(
+                        text = stringResource(R.string.scan_gallery),
+                        icon = Icons.Default.PhotoLibrary,
                         onClick = { galleryPickerLauncher.launch("image/*") },
                         enabled = !isProcessing,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(0.9f),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Gallery", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
+                        modifier = Modifier.weight(1f).heightIn(min = ShopLedgerTokens.primaryActionHeight),
+                    )
                 }
 
                 if (isProcessing) {
-                    Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Text(
-                            text = "Reading order list & matching inventory...",
-                            fontSize = 12.sp,
-                            color = CupertinoColors.SystemBlue,
-                            fontWeight = FontWeight.SemiBold
+                            text = stringResource(R.string.scan_reading),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
             }
 
-            // 2. Paste / Review Order List Text -> Instant Cart Fill
-            CupertinoCard {
-                Text(
-                    text = "2. Order List Text (Scanned or Copied from WhatsApp)",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                CupertinoTextField(
+            // 2. Paste / review order list text -> instant cart fill
+            SectionCard(title = stringResource(R.string.scan_step2)) {
+                OutlinedTextField(
                     value = rawOrderText,
                     onValueChange = { rawOrderText = it },
-                    label = "Order Lines",
-                    placeholder = "1. White Cement 1kg x 5\n2. 4 inch SS Kabza - 12 pcs\n3. Fevicol SH 2",
+                    label = { Text(stringResource(R.string.scan_field_lines)) },
+                    placeholder = { Text(stringResource(R.string.scan_field_lines_hint)) },
                     singleLine = false,
-                    capitalization = KeyboardCapitalization.Sentences
+                    minLines = 3,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
+                PrimaryActionButton(
+                    text = stringResource(R.string.scan_fill_cart, activeCartLabel),
+                    icon = Icons.Default.ShoppingCartCheckout,
                     onClick = { processTextIntoCart(rawOrderText, autoOpenIfClean = true) },
                     enabled = rawOrderText.isNotBlank() && !isProcessing,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CupertinoColors.EmeraldGreen,
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.ShoppingCartCheckout, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Scan Text & Fill $activeCartLabel", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
+                )
             }
 
-            // 3. Scan Preview & Unmatched Lines Review (shown if partial/manual review needed)
+            // 3. Scan preview and unmatched lines review (shown if partial/manual review needed)
             lastScanResult?.let { result ->
-                CupertinoCard(
-                    containerColor = if (result.matchedCartLines.isNotEmpty()) CupertinoColors.EmeraldTint else CupertinoColors.AmberTint
+                val hasMatches = result.matchedCartLines.isNotEmpty()
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    color = if (hasMatches) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = if (hasMatches) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(ShopLedgerTokens.spacingL),
+                        verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                     ) {
-                        Text(
-                            text = "Matched ${result.matchedCartLines.size} Item(s)",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.LabelPrimary
-                        )
-                        if (result.usedOnDeviceLlm) {
-                            SemanticPillBadge(
-                                text = "On-Device LLM",
-                                containerColor = CupertinoColors.SystemBlueTint,
-                                contentColor = CupertinoColors.SystemBlue
-                            )
-                        }
-                    }
-
-                    if (result.matchedCartLines.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        result.matchedCartLines.forEach { line ->
-                            Text(
-                                text = "• ${line.itemName} (${line.variantSummary}) × ${
-                                    IndianCurrencyFormatter.formatQuantity(line.quantity)
-                                } ${line.unit}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = CupertinoColors.LabelPrimary
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = { onAddScannedItemsAndOpenCart(result.matchedCartLines) },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CupertinoColors.SystemBlue,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Add ${result.matchedCartLines.size} Items & Open $activeCartLabel",
-                                fontWeight = FontWeight.Bold
+                                text = pluralStringResource(
+                                    R.plurals.scan_matched,
+                                    result.matchedCartLines.size,
+                                    result.matchedCartLines.size
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            if (result.usedOnDeviceLlm) {
+                                StatusChip(text = stringResource(R.string.scan_ai_used), tone = ChipTone.INFO)
+                            }
+                        }
+
+                        if (hasMatches) {
+                            result.matchedCartLines.forEach { line ->
+                                Text(
+                                    text = "• ${line.itemName} (${line.variantSummary}) × ${
+                                        IndianCurrencyFormatter.formatQuantity(line.quantity)
+                                    } ${line.unit}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                            }
+                            PrimaryActionButton(
+                                text = pluralStringResource(
+                                    R.plurals.scan_add_open,
+                                    result.matchedCartLines.size,
+                                    result.matchedCartLines.size,
+                                    activeCartLabel
+                                ),
+                                icon = Icons.Default.CheckCircle,
+                                onClick = { onAddScannedItemsAndOpenCart(result.matchedCartLines) },
                             )
                         }
-                    }
 
-                    if (result.unmatchedLines.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Unmatched Lines (edit above to retry):",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.AmberWarning
-                        )
-                        result.unmatchedLines.forEach { u ->
+                        if (result.unmatchedLines.isNotEmpty()) {
                             Text(
-                                text = "– $u",
-                                fontSize = 11.sp,
-                                color = CupertinoColors.LabelSecondary
+                                text = stringResource(R.string.scan_unmatched),
+                                style = MaterialTheme.typography.titleMedium,
                             )
+                            result.unmatchedLines.forEach { u ->
+                                Text(
+                                    text = "– $u",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // 4. Downloadable On-Device LLM Model Card (NOT bundled inside APK)
-            CupertinoCard {
+            // 4. Downloadable on-device AI model (NOT bundled inside the APK)
+            SectionCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -473,147 +429,145 @@ fun OrderScanSheet(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = null,
-                            tint = CupertinoColors.CipherIndigo,
-                            modifier = Modifier.size(18.dp)
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(24.dp)
                         )
                         Column {
                             Text(
-                                text = "Downloadable On-Device LLM",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = CupertinoColors.LabelPrimary
+                                text = stringResource(R.string.scan_ai_title),
+                                style = MaterialTheme.typography.titleMedium,
                             )
                             Text(
-                                text = "Optional offline AI model (not bundled in APK) for complex messy lists",
-                                fontSize = 11.sp,
-                                color = CupertinoColors.LabelSecondary
+                                text = stringResource(R.string.scan_ai_desc),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                    TextButton(onClick = { showModelSettings = !showModelSettings }) {
-                        Text(if (showModelSettings) "Hide" else "Manage", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    TextButton(
+                        onClick = { showModelSettings = !showModelSettings },
+                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                    ) {
+                        Text(
+                            stringResource(if (showModelSettings) R.string.scan_ai_hide else R.string.scan_ai_manage),
+                            style = MaterialTheme.typography.labelLarge
+                        )
                     }
                 }
 
                 when (val s = modelState) {
                     is LlmModelState.Downloading -> {
-                        Spacer(modifier = Modifier.height(8.dp))
                         val mbDone = String.format(Locale.ENGLISH, "%.1f", s.bytesDownloaded / (1024.0 * 1024.0))
                         val mbTotal = if (s.totalBytes > 0L) {
                             String.format(Locale.ENGLISH, "%.1f", s.totalBytes / (1024.0 * 1024.0))
                         } else "?"
                         Text(
-                            text = "Downloading On-Device Model: $mbDone / $mbTotal MB",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = CupertinoColors.SystemBlue
+                            text = stringResource(R.string.scan_ai_downloading, mbDone, mbTotal),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         LinearProgressIndicator(
                             progress = { s.progress.coerceIn(0f, 1f) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
+                                .clip(MaterialTheme.shapes.small)
                         )
                     }
                     is LlmModelState.Ready -> {
                         val sizeMb = String.format(Locale.ENGLISH, "%.1f MB", s.sizeBytes / (1024.0 * 1024.0))
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(CupertinoColors.EmeraldTint)
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         ) {
-                            Text(
-                                text = "Active: ${s.modelName} ($sizeMb)",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = CupertinoColors.EmeraldGreen,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(
-                                onClick = {
-                                    OnDeviceOrderScannerManager.deleteDownloadedModel(context)
-                                    Toast.makeText(context, R.string.msg_model_removed, Toast.LENGTH_SHORT).show()
-                                },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            Row(
+                                modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.DeleteOutline,
-                                    contentDescription = "Delete Model",
-                                    tint = CupertinoColors.DestructiveRed,
-                                    modifier = Modifier.size(14.dp)
+                                Text(
+                                    text = stringResource(R.string.scan_ai_active, s.modelName, sizeMb),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Text("Remove", fontSize = 11.sp, color = CupertinoColors.DestructiveRed)
+                                TextButton(
+                                    onClick = {
+                                        OnDeviceOrderScannerManager.deleteDownloadedModel(context)
+                                        Toast.makeText(context, R.string.msg_model_removed, Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        stringResource(R.string.scan_ai_remove),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }
                     is LlmModelState.Error -> {
-                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = stringResource(R.string.msg_model_error) + if (BuildConfig.DEBUG) " (${s.message})" else "",
-                            fontSize = 11.sp,
-                            color = CupertinoColors.DestructiveRed
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
                     is LlmModelState.NotDownloaded -> Unit
                 }
 
                 if (showModelSettings || modelState is LlmModelState.Error) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CupertinoTextField(
+                    OutlinedTextField(
                         value = modelUrlInput,
                         onValueChange = { modelUrlInput = it },
-                        label = "MediaPipe LLM Task/Bin Download URL",
-                        placeholder = "https://.../model.task",
-                        capitalization = KeyboardCapitalization.None
+                        label = { Text(stringResource(R.string.scan_ai_url)) },
+                        placeholder = { Text(stringResource(R.string.scan_ai_url_hint)) },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                     ) {
-                        Button(
+                        PrimaryActionButton(
+                            text = stringResource(R.string.scan_ai_download),
+                            icon = Icons.Default.Download,
                             onClick = {
                                 coroutineScope.launch {
                                     OnDeviceOrderScannerManager.downloadModel(context, modelUrlInput)
                                 }
                             },
                             enabled = modelState !is LlmModelState.Downloading,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Download LLM", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
+                            modifier = Modifier.weight(1f),
+                        )
 
-                        OutlinedButton(
+                        SecondaryActionButton(
+                            text = stringResource(R.string.scan_ai_import),
+                            icon = Icons.Default.FolderOpen,
                             onClick = { modelFilePickerLauncher.launch(arrayOf("*/*")) },
                             enabled = modelState !is LlmModelState.Downloading,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Import File", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
+                            modifier = Modifier.weight(1f).heightIn(min = ShopLedgerTokens.primaryActionHeight),
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(ShopLedgerTokens.spacingL))
         }
     }
 }

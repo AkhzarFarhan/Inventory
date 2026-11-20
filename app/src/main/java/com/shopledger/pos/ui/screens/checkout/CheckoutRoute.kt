@@ -13,6 +13,8 @@ import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.ui.MainViewModel
+import com.shopledger.pos.ui.displayLabel
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Connects [CheckoutScreen] to the existing cart + idempotent checkout in [MainViewModel].
@@ -33,6 +35,7 @@ fun CheckoutRoute(
     val session by viewModel.activeCartSessionState.collectAsState()
     val cartItems by viewModel.cartItems.collectAsState()
 
+    val appContext = LocalContext.current
     val cartId = session.cartId
     var query by rememberSaveable { mutableStateOf("") }
     // Re-read whenever the session's stored buyer changes (scanned order, picked buyer, cart switch).
@@ -80,8 +83,8 @@ fun CheckoutRoute(
     }
 
     val state = CheckoutState(
-        cartLabel = session.label,
-        carts = carts.map { CheckoutCartTab(it.cartId, it.label, it.items.size) },
+        cartLabel = session.displayLabel(appContext),
+        carts = carts.map { CheckoutCartTab(it.cartId, it.displayLabel(appContext), it.items.size) },
         activeCartId = cartId,
         lines = cartItems,
         searchQuery = query,

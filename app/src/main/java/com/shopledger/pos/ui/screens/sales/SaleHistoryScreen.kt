@@ -1,9 +1,6 @@
 package com.shopledger.pos.ui.screens.sales
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ExpandLess
@@ -27,8 +24,10 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,24 +41,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.shopledger.pos.R
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
-import com.shopledger.pos.ui.theme.CupertinoCard
+import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
-import com.shopledger.pos.ui.theme.CupertinoColors
-import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
-import com.shopledger.pos.ui.theme.SemanticPillBadge
+import com.shopledger.pos.ui.theme.SecondaryActionButton
+import com.shopledger.pos.ui.theme.SegmentedChoice
+import com.shopledger.pos.ui.theme.ShopLedgerTokens
+import com.shopledger.pos.ui.theme.StatusChip
 import java.text.DateFormatSymbols
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -114,117 +112,98 @@ fun SaleHistoryScreen(
 
     val expandedYears = remember { mutableStateMapOf<Int, Boolean>() }
     val expandedMonths = remember { mutableStateMapOf<String, Boolean>() }
+    val displayLocale = LocalConfiguration.current.locales[0] ?: Locale.ENGLISH
+    val monthNames = remember(displayLocale) { DateFormatSymbols(displayLocale).months }
+    val expandText = stringResource(R.string.bills_cd_expand)
+    val collapseText = stringResource(R.string.bills_cd_collapse)
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(CupertinoColors.SystemGroupedBackground)
-    ) {
-        // Top Controls & KPI Dashboard Header
+    Column(modifier = modifier.fillMaxSize()) {
+        // Top controls & KPI summary
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(CupertinoColors.CardSurface)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingM),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM)
         ) {
-            // Seller Privacy Banner (Hidden by default per Requirement 3.1)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (isSellerUnlocked) CupertinoColors.EmeraldTint
-                        else CupertinoColors.CipherContainer
-                    )
-                    .border(
-                        1.dp,
-                        if (isSellerUnlocked) CupertinoColors.EmeraldGreen.copy(alpha = 0.35f)
-                        else CupertinoColors.CipherIndigo.copy(alpha = 0.25f),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .clickable { onToggleSellerUnlocked() }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Seller privacy banner (cost and profit hidden unless unlocked)
+            Surface(
+                onClick = onToggleSellerUnlocked,
+                modifier = Modifier.fillMaxWidth().heightIn(min = ShopLedgerTokens.minTouch),
+                shape = MaterialTheme.shapes.medium,
+                color = if (isSellerUnlocked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = if (isSellerUnlocked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
             ) {
                 Row(
+                    modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
                 ) {
                     Icon(
                         imageVector = if (isSellerUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
                         contentDescription = null,
-                        tint = if (isSellerUnlocked) CupertinoColors.EmeraldGreen else CupertinoColors.CipherIndigo,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Text(
-                        text = if (isSellerUnlocked) {
-                            "Seller Mode Active: Margins & % Gains Visible (Tap to Hide)"
-                        } else {
-                            "Buyer Safe Mode: Margins Hidden by Default (Tap Seller Unlock)"
-                        },
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSellerUnlocked) CupertinoColors.EmeraldGreen else CupertinoColors.CipherIndigo
+                        text = stringResource(if (isSellerUnlocked) R.string.bills_seller_on else R.string.bills_seller_off),
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
             }
 
-            // Period Segmented Control
-            CupertinoSegmentedControl(
-                options = listOf("Today", "This Month", "All Time"),
+            // Period filter
+            SegmentedChoice(
+                options = listOf(
+                    stringResource(R.string.bills_period_today),
+                    stringResource(R.string.bills_period_month),
+                    stringResource(R.string.bills_period_all),
+                ),
                 selectedIndex = selectedPeriodIndex,
                 onSelect = { selectedPeriodIndex = it }
             )
 
-            // 3-Column KPI Summary Row
+            // 3-column KPI summary row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
             ) {
                 KpiMetricCard(
-                    label = "Total Sales",
+                    label = stringResource(R.string.bills_kpi_sales),
                     value = IndianCurrencyFormatter.formatPaise(totalRevenuePaise),
-                    subBadge = "${activeSales.size} sold",
-                    valueColor = CupertinoColors.LabelPrimary,
+                    subBadge = stringResource(R.string.bills_sold_count, activeSales.size),
+                    valueColor = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
                 KpiMetricCard(
-                    label = "Net Margin (₹)",
+                    label = stringResource(R.string.bills_kpi_margin),
                     value = if (isSellerUnlocked) {
                         IndianCurrencyFormatter.formatPaise(totalProfitPaise, showPlusSign = true)
                     } else {
                         "₹ ••••"
                     },
                     subBadge = if (isSellerUnlocked) {
-                        "${IndianCurrencyFormatter.formatPercentage(avgMarginPercent, showPlus = false)} margin"
+                        stringResource(
+                            R.string.bills_margin_pct,
+                            IndianCurrencyFormatter.formatPercentage(avgMarginPercent, showPlus = false)
+                        )
                     } else {
-                        "Locked"
+                        stringResource(R.string.bills_locked)
                     },
-                    valueColor = if (isSellerUnlocked) CupertinoColors.EmeraldGreen else CupertinoColors.LabelMuted,
+                    valueColor = if (isSellerUnlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
                 KpiMetricCard(
-                    label = "Gain on Cost (%)",
+                    label = stringResource(R.string.bills_kpi_gain),
                     value = if (isSellerUnlocked) {
                         IndianCurrencyFormatter.formatPercentage(avgGainPercent)
                     } else {
                         "••• %"
                     },
-                    subBadge = if (isSellerUnlocked) "Markup %" else "Tap Unlock",
-                    valueColor = if (isSellerUnlocked) CupertinoColors.SystemBlue else CupertinoColors.LabelMuted,
+                    subBadge = stringResource(if (isSellerUnlocked) R.string.bills_markup else R.string.bills_tap_unlock),
+                    valueColor = if (isSellerUnlocked) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
             }
         }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(CupertinoColors.Separator)
-        )
 
         if (filteredSales.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -234,10 +213,10 @@ fun SaleHistoryScreen(
                 )
             }
         } else {
-            // Compact Multi-Level Hierarchical & Collapsible List (Year -> Month -> Day Item Cards)
+            // Multi-level collapsible list (Year -> Month -> sale cards)
             LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingM),
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
                 modifier = Modifier.fillMaxSize()
             ) {
                 groupedByYearMonth.forEach { (year, monthsMap) ->
@@ -247,45 +226,42 @@ fun SaleHistoryScreen(
                     val yearProfit = yearSalesList.sumOf { it.netProfitPaise }
 
                     item(key = "year_$year") {
-                        // Level 1: Year Tinted Header
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(CupertinoColors.SystemBlue.copy(alpha = 0.10f))
-                                .border(1.dp, CupertinoColors.SystemBlue.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                                .clickable { expandedYears[year] = !isYearExpanded }
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            onClick = { expandedYears[year] = !isYearExpanded },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = ShopLedgerTokens.minTouch),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         ) {
-                            Text(
-                                text = "Year $year • ${yearSalesList.size} sales",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = CupertinoColors.SystemBlue
-                            )
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isSellerUnlocked) {
-                                        "${IndianCurrencyFormatter.formatPaise(yearRevenue)} (${
-                                            IndianCurrencyFormatter.formatPaise(yearProfit, showPlusSign = true)
-                                        })"
-                                    } else {
-                                        IndianCurrencyFormatter.formatPaise(yearRevenue)
-                                    },
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = CupertinoColors.LabelPrimary
+                                    text = stringResource(R.string.bills_year_header, year, yearSalesList.size),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Icon(
-                                    imageVector = if (isYearExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = null,
-                                    tint = CupertinoColors.SystemBlue
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                                ) {
+                                    Text(
+                                        text = if (isSellerUnlocked) {
+                                            "${IndianCurrencyFormatter.formatPaise(yearRevenue)} (${
+                                                IndianCurrencyFormatter.formatPaise(yearProfit, showPlusSign = true)
+                                            })"
+                                        } else {
+                                            IndianCurrencyFormatter.formatPaise(yearRevenue)
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
+                                    Icon(
+                                        imageVector = if (isYearExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = if (isYearExpanded) collapseText else expandText,
+                                    )
+                                }
                             }
                         }
                     }
@@ -296,61 +272,52 @@ fun SaleHistoryScreen(
                             val isMonthExpanded = expandedMonths.getOrPut(monthKey) {
                                 year == currentYear && month == currentMonth
                             }
-                            val monthName = DateFormatSymbols(Locale.ENGLISH).months.getOrElse(month - 1) { "Month $month" }
                             val activeMonthSales = monthSales.filter { !it.isReturned }
                             val monthRevenue = activeMonthSales.sumOf { it.netRevenuePaise }
                             val monthProfit = activeMonthSales.sumOf { it.netProfitPaise }
 
                             item(key = "month_$monthKey") {
-                                // Level 2: Month Header with Left Vertical Stripe (4.dp start margin)
-                                Row(
+                                val monthName = monthNames.getOrNull(month - 1)?.takeIf { it.isNotBlank() }
+                                    ?: stringResource(R.string.bills_month_fallback, month)
+                                Surface(
+                                    onClick = { expandedMonths[monthKey] = !isMonthExpanded },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(start = 4.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(CupertinoColors.CardSurface)
-                                        .border(1.dp, CupertinoColors.Separator, RoundedCornerShape(10.dp))
-                                        .clickable { expandedMonths[monthKey] = !isMonthExpanded }
-                                        .padding(end = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .padding(start = ShopLedgerTokens.spacingXs)
+                                        .heightIn(min = ShopLedgerTokens.minTouch),
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                 ) {
                                     Row(
+                                        modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingM, vertical = ShopLedgerTokens.spacingS),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .width(4.dp)
-                                                .height(40.dp)
-                                                .background(CupertinoColors.SystemBlue)
-                                        )
-                                        Text(
-                                            text = "$monthName $year • ${activeMonthSales.size} entries",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = CupertinoColors.LabelPrimary
-                                        )
-                                    }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = if (isSellerUnlocked) {
-                                                IndianCurrencyFormatter.formatPaise(monthProfit, showPlusSign = true)
-                                            } else {
-                                                IndianCurrencyFormatter.formatPaise(monthRevenue)
-                                            },
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSellerUnlocked) CupertinoColors.EmeraldGreen else CupertinoColors.LabelSecondary
+                                            text = stringResource(R.string.bills_month_header, monthName, year, activeMonthSales.size),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            modifier = Modifier.weight(1f)
                                         )
-                                        Icon(
-                                            imageVector = if (isMonthExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                            contentDescription = null,
-                                            tint = CupertinoColors.LabelSecondary
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs)
+                                        ) {
+                                            Text(
+                                                text = if (isSellerUnlocked) {
+                                                    IndianCurrencyFormatter.formatPaise(monthProfit, showPlusSign = true)
+                                                } else {
+                                                    IndianCurrencyFormatter.formatPaise(monthRevenue)
+                                                },
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = if (isSellerUnlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Icon(
+                                                imageVector = if (isMonthExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                                contentDescription = if (isMonthExpanded) collapseText else expandText,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -358,13 +325,12 @@ fun SaleHistoryScreen(
                             if (isMonthExpanded) {
                                 monthSales.forEach { sale ->
                                     item(key = "sale_${sale.id}") {
-                                        // Level 3: Day Sale Item Card (8.dp start margin)
                                         SaleRecordCard(
                                             sale = sale,
                                             isSellerUnlocked = isSellerUnlocked,
                                             onShareReceipt = { onOpenReceiptShare(sale) },
                                             onReturnClick = { saleToReturnConfirm = sale },
-                                            modifier = Modifier.padding(start = 8.dp)
+                                            modifier = Modifier.padding(start = ShopLedgerTokens.spacingS)
                                         )
                                     }
                                 }
@@ -384,21 +350,27 @@ fun SaleHistoryScreen(
         val qtyValid = qtyMilli != null && qtyMilli in 1L..remainingMilli
         AlertDialog(
             onDismissRequest = { saleToReturnConfirm = null },
-            title = { Text("Return Sale (Wapsi)?", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.bills_return_title)) },
             text = {
                 Column {
                     Text(
-                        "\"${target.itemNameSnapshot} (${target.variantSummarySnapshot})\": up to " +
-                            "${IndianCurrencyFormatter.formatMilliUnits(remainingMilli)} ${target.unitSnapshot} can be returned. " +
-                            "Stock is restored and a credit note is created."
+                        stringResource(
+                            R.string.bills_return_message,
+                            target.itemNameSnapshot,
+                            target.variantSummarySnapshot,
+                            IndianCurrencyFormatter.formatMilliUnits(remainingMilli),
+                            target.unitSnapshot
+                        ),
+                        style = MaterialTheme.typography.bodyLarge,
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(ShopLedgerTokens.spacingM))
                     OutlinedTextField(
                         value = qtyText,
                         onValueChange = { qtyText = it },
-                        label = { Text("Quantity to return (${target.unitSnapshot})") },
+                        label = { Text(stringResource(R.string.bills_return_qty, target.unitSnapshot)) },
                         singleLine = true,
                         isError = !qtyValid,
+                        shape = MaterialTheme.shapes.medium,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                     )
                 }
@@ -406,21 +378,25 @@ fun SaleHistoryScreen(
             confirmButton = {
                 TextButton(
                     enabled = qtyValid,
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                     onClick = {
                         onReturnSale(target, qtyMilli!!, returnActionId)
                         saleToReturnConfirm = null
                     }
                 ) {
                     Text(
-                        text = "Confirm Return & Restore Stock",
-                        color = if (qtyValid) CupertinoColors.DestructiveRed else CupertinoColors.LabelMuted,
-                        fontWeight = FontWeight.Bold
+                        text = stringResource(R.string.bills_return_confirm),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (qtyValid) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { saleToReturnConfirm = null }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { saleToReturnConfirm = null },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
                 }
             }
         )
@@ -437,36 +413,33 @@ private fun KpiMetricCard(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = CupertinoColors.SecondarySurface,
-        border = BorderStroke(1.dp, CupertinoColors.Separator)
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingS, vertical = ShopLedgerTokens.spacingS),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
                 text = label,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = CupertinoColors.LabelMuted,
-                maxLines = 1,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = value,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.titleMedium,
                 color = valueColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subBadge,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = CupertinoColors.LabelSecondary,
-                maxLines = 1,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -484,151 +457,126 @@ private fun SaleRecordCard(
     val timeFormatted = remember(sale.soldAt) {
         SimpleDateFormat("dd MMM, hh:mm a", Locale.ENGLISH).format(Date(sale.soldAt))
     }
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    CupertinoCard(
-        modifier = modifier,
-        containerColor = if (sale.isReturned) CupertinoColors.SecondarySurface else CupertinoColors.CardSurface,
-        borderColor = if (sale.isReturned) CupertinoColors.DestructiveRed.copy(alpha = 0.25f) else CupertinoColors.LightBorder,
-        contentPadding = PaddingValues(12.dp)
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = if (sale.isReturned) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (sale.isReturned) MaterialTheme.colorScheme.error.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+        Column(
+            modifier = Modifier.padding(ShopLedgerTokens.spacingM),
+            verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = sale.itemNameSnapshot,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (sale.isReturned) CupertinoColors.LabelMuted else CupertinoColors.LabelPrimary,
-                    textDecoration = if (sale.isReturned) TextDecoration.LineThrough else TextDecoration.None,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${sale.variantSummarySnapshot} • #${sale.receiptNumber}",
-                    fontSize = 11.sp,
-                    color = CupertinoColors.LabelSecondary
-                )
-                Text(
-                    text = buildString {
-                        append(timeFormatted)
-                        if (sale.buyerName.isNotBlank() || sale.buyerPhone.isNotBlank()) {
-                            append(" • ")
-                            append(listOf(sale.buyerName, sale.buyerPhone).filter { it.isNotBlank() }.joinToString(" "))
-                        }
-                    },
-                    fontSize = 11.sp,
-                    color = CupertinoColors.LabelMuted
-                )
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = IndianCurrencyFormatter.formatPaise(sale.totalRevenuePaise),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (sale.isReturned) CupertinoColors.LabelMuted else CupertinoColors.LabelPrimary,
-                    textDecoration = if (sale.isReturned) TextDecoration.LineThrough else TextDecoration.None
-                )
-                Text(
-                    text = "${IndianCurrencyFormatter.formatQuantity(sale.quantitySold)} ${sale.unitSnapshot} × ${
-                        IndianCurrencyFormatter.formatPaise(sale.unitSellingPricePaise)
-                    }",
-                    fontSize = 11.sp,
-                    color = CupertinoColors.LabelSecondary
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Coded Unit Cost + Profit Margin / Gain % Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CodedPurchasePriceBadge(
-                purchasePricePaise = sale.unitPurchasePricePaise,
-                isSellerUnlocked = isSellerUnlocked,
-                glyphSize = 14.dp
-            )
-
-            if (sale.isReturned) {
-                SemanticPillBadge(
-                    text = "Returned (Wapsi)",
-                    containerColor = CupertinoColors.DestructiveTint,
-                    contentColor = CupertinoColors.DestructiveRed
-                )
-            } else if (sale.returnedMilliUnits > 0L) {
-                SemanticPillBadge(
-                    text = "Returned ${IndianCurrencyFormatter.formatMilliUnits(sale.returnedMilliUnits)} ${sale.unitSnapshot}",
-                    containerColor = CupertinoColors.DestructiveTint,
-                    contentColor = CupertinoColors.DestructiveRed
-                )
-            } else if (isSellerUnlocked) {
-                val isProfitPositive = sale.totalProfitPaise >= 0L
-                SemanticPillBadge(
-                    text = "${
-                        IndianCurrencyFormatter.formatPaise(sale.totalProfitPaise, showPlusSign = true)
-                    } (${IndianCurrencyFormatter.formatPercentage(sale.gainMarkupPercent)} gain • ${
-                        IndianCurrencyFormatter.formatPercentage(sale.grossMarginPercent, showPlus = false)
-                    } margin)",
-                    containerColor = if (isProfitPositive) CupertinoColors.EmeraldTint else CupertinoColors.DestructiveTint,
-                    contentColor = if (isProfitPositive) CupertinoColors.EmeraldGreen else CupertinoColors.DestructiveRed
-                )
-            }
-        }
-
-        if (!sale.isReturned) {
-            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                OutlinedButton(
-                    onClick = onShareReceipt,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, CupertinoColors.WhatsAppGreen.copy(alpha = 0.5f)),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1.3f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Receipt,
-                        contentDescription = null,
-                        tint = CupertinoColors.WhatsAppGreen,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Receipt / WhatsApp",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CupertinoColors.WhatsAppGreen
+                        text = sale.itemNameSnapshot,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (sale.isReturned) mutedColor else MaterialTheme.colorScheme.onSurface,
+                        textDecoration = if (sale.isReturned) TextDecoration.LineThrough else TextDecoration.None,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${sale.variantSummarySnapshot} • #${sale.receiptNumber}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = mutedColor
+                    )
+                    Text(
+                        text = buildString {
+                            append(timeFormatted)
+                            if (sale.buyerName.isNotBlank() || sale.buyerPhone.isNotBlank()) {
+                                append(" • ")
+                                append(listOf(sale.buyerName, sale.buyerPhone).filter { it.isNotBlank() }.joinToString(" "))
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = mutedColor
                     )
                 }
 
-                OutlinedButton(
-                    onClick = onReturnClick,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, CupertinoColors.Separator),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(0.9f)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Undo,
-                        contentDescription = null,
-                        tint = CupertinoColors.LabelSecondary,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
+                Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "Return (Wapsi)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = CupertinoColors.LabelPrimary
+                        text = IndianCurrencyFormatter.formatPaise(sale.totalRevenuePaise),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = if (sale.isReturned) mutedColor else MaterialTheme.colorScheme.onSurface,
+                        textDecoration = if (sale.isReturned) TextDecoration.LineThrough else TextDecoration.None
+                    )
+                    Text(
+                        text = "${IndianCurrencyFormatter.formatQuantity(sale.quantitySold)} ${sale.unitSnapshot} × ${
+                            IndianCurrencyFormatter.formatPaise(sale.unitSellingPricePaise)
+                        }",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = mutedColor
+                    )
+                }
+            }
+
+            // Coded unit cost + profit / returned status
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CodedPurchasePriceBadge(
+                    purchasePricePaise = sale.unitPurchasePricePaise,
+                    isSellerUnlocked = isSellerUnlocked,
+                    glyphSize = 14.dp
+                )
+                Spacer(Modifier.width(ShopLedgerTokens.spacingS))
+
+                if (sale.isReturned) {
+                    StatusChip(text = stringResource(R.string.bills_returned), tone = ChipTone.DANGER)
+                } else if (sale.returnedMilliUnits > 0L) {
+                    StatusChip(
+                        text = stringResource(
+                            R.string.bills_returned_qty,
+                            IndianCurrencyFormatter.formatMilliUnits(sale.returnedMilliUnits),
+                            sale.unitSnapshot
+                        ),
+                        tone = ChipTone.DANGER
+                    )
+                } else if (isSellerUnlocked) {
+                    val isProfitPositive = sale.totalProfitPaise >= 0L
+                    StatusChip(
+                        text = stringResource(
+                            R.string.bills_profit_chip,
+                            IndianCurrencyFormatter.formatPaise(sale.totalProfitPaise, showPlusSign = true),
+                            IndianCurrencyFormatter.formatPercentage(sale.gainMarkupPercent),
+                            IndianCurrencyFormatter.formatPercentage(sale.grossMarginPercent, showPlus = false)
+                        ),
+                        tone = if (isProfitPositive) ChipTone.SUCCESS else ChipTone.DANGER
+                    )
+                }
+            }
+
+            if (!sale.isReturned) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)
+                ) {
+                    SecondaryActionButton(
+                        text = stringResource(R.string.bills_receipt_share),
+                        icon = Icons.Default.Receipt,
+                        onClick = onShareReceipt,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SecondaryActionButton(
+                        text = stringResource(R.string.bills_return),
+                        icon = Icons.AutoMirrored.Filled.Undo,
+                        onClick = onReturnClick,
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
