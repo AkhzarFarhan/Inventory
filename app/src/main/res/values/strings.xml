@@ -657,6 +657,11 @@
     <string name="attr_general_3">Notes / Color</string>
     <string name="attr_general_3_hint">For example Assorted, Red</string>
     <string name="cart_default_label">Cart %1$d</string>
+    <string name="cart_new">New cart</string>
+    <plurals name="cart_chip_label">
+        <item quantity="one">%1$s · %2$d item</item>
+        <item quantity="other">%1$s · %2$d items</item>
+    </plurals>
     <string name="cipher_pin_protected_note">PIN mode: the buying price stays hidden behind •••• until seller mode is unlocked.</string>
     <string name="settings_checking_title">Checking backup…</string>
     <string name="settings_checking_body">Please wait. Your current data is not changed yet.</string>

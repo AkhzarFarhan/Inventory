@@ -657,6 +657,11 @@
     <string name="attr_general_3">नोट / रंग</string>
     <string name="attr_general_3_hint">जैसे मिक्स, लाल</string>
     <string name="cart_default_label">कार्ट %1$d</string>
+    <string name="cart_new">नई कार्ट</string>
+    <plurals name="cart_chip_label">
+        <item quantity="one">%1$s · %2$d सामान</item>
+        <item quantity="other">%1$s · %2$d सामान</item>
+    </plurals>
     <string name="cipher_pin_protected_note">PIN मोड: सेलर मोड खुलने तक खरीद भाव •••• के पीछे छिपा रहता है।</string>
     <string name="settings_checking_title">बैकअप जाँच रहे हैं…</string>
     <string name="settings_checking_body">कृपया रुकें। आपका अभी का डेटा बदला नहीं गया है।</string>
