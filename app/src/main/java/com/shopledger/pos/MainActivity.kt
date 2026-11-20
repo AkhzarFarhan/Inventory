@@ -67,7 +67,7 @@ import com.shopledger.pos.ui.i18n.AppLanguageStore
 import com.shopledger.pos.ui.navigation.AppScaffold
 import com.shopledger.pos.ui.navigation.AppTab
 import com.shopledger.pos.ui.screens.inventory.AddEditItemSheet
-import com.shopledger.pos.ui.screens.inventory.CounterCartSheet
+import com.shopledger.pos.ui.screens.checkout.CheckoutRoute
 import com.shopledger.pos.ui.screens.inventory.ItemEditorMode
 import com.shopledger.pos.ui.screens.inventory.OrderScanSheet
 import com.shopledger.pos.ui.screens.inventory.QuickSellSheet
@@ -196,7 +196,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     var currentTab by rememberSaveable { mutableStateOf(AppTab.ITEMS) }
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
     var quickSellTarget by remember { mutableStateOf<Triple<InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>>?>(null) }
-    var showCounterCartSheet by remember { mutableStateOf(false) }
+    var showCheckout by rememberSaveable { mutableStateOf(false) }
     var showOrderScanSheet by remember { mutableStateOf(false) }
     var showCloudSyncSheet by remember { mutableStateOf(false) }
     var showOwnerPinDialog by remember { mutableStateOf(false) }
@@ -238,7 +238,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSeller = requestToggleSeller,
                         cartLineCount = carts.sumOf { it.items.size },
-                        onSell = { showCounterCartSheet = true },
+                        onSell = { showCheckout = true },
                         onOpenItem = { item, variant, variants -> quickSellTarget = Triple(item, variant, variants) },
                         onEditItem = { group, variant ->
                             activeEditorMode = ItemEditorMode.ManageItem(group, variant.id)
@@ -379,6 +379,18 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             }
         }
 
+        // One-screen checkout: a full-screen destination above the tabs (Sell button, "open cart", scanned order list).
+        if (showCheckout) {
+            BackHandler(onBack = { showCheckout = false })
+            Surface(modifier = Modifier.fillMaxSize().zIndex(9f)) {
+                CheckoutRoute(
+                    viewModel = viewModel,
+                    onClose = { showCheckout = false },
+                    onOpenOrderScanner = { showOrderScanSheet = true },
+                )
+            }
+        }
+
         FloatingAppMessageHost(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -447,51 +459,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                     viewModel.fillCartFromBuyerHistory(snapshots)
                     viewModel.updateActiveCartBuyer(buyerName, buyerPhone)
                     quickSellTarget = null
-                    showCounterCartSheet = true
+                    showCheckout = true
                 },
                 onDismiss = { quickSellTarget = null }
-            )
-        }
-
-        // Multi-Item & Multi-Session Counter Cart Sheet
-        if (showCounterCartSheet) {
-            CounterCartSheet(
-                cartItems = cartItems,
-                isSellerUnlocked = isSellerUnlocked,
-                knownBuyers = knownBuyers,
-                carts = carts,
-                activeCartId = activeCartSession.cartId,
-                initialBuyerName = activeCartSession.buyerName,
-                initialBuyerPhone = activeCartSession.buyerPhone,
-                onSwitchCart = viewModel::switchActiveCart,
-                onCreateNewCart = { viewModel.createNewCart() },
-                onCloseCart = viewModel::closeCart,
-                onActiveCartBuyerChange = viewModel::updateActiveCartBuyer,
-                onUpdateCartLine = viewModel::updateCartLineQuantityAndPrice,
-                onRemoveCartLine = viewModel::removeCartLine,
-                onRemoveMultipleCartLines = viewModel::removeMultipleCartLines,
-                onClearCart = viewModel::clearCart,
-                onFillCartFromBuyerOrder = viewModel::fillCartFromBuyerHistory,
-                onOpenOrderScanner = { showOrderScanSheet = true },
-                onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
-                    viewModel.prepareEstimateImageForSharing(
-                        itemsToEstimate = itemsToEstimate,
-                        buyerName = buyerName,
-                        buyerPhone = buyerPhone
-                    )
-                },
-                onCheckoutCart = { buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
-                    viewModel.completeSaleAndPrepareReceipt(
-                        itemsToSell = cartItems,
-                        buyerName = buyerName,
-                        buyerPhone = buyerPhone,
-                        clearCounterCart = true,
-                        paymentMode = paymentMode,
-                        discountPaise = discountPaise,
-                        amountPaidPaise = amountPaidPaise
-                    )
-                },
-                onDismiss = { showCounterCartSheet = false }
             )
         }
 
@@ -503,7 +473,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 onAddScannedItemsAndOpenCart = { scannedLines ->
                     viewModel.batchAddItemsToActiveCart(scannedLines)
                     showOrderScanSheet = false
-                    showCounterCartSheet = true
+                    showCheckout = true
                 },
                 onDismiss = { showOrderScanSheet = false }
             )
