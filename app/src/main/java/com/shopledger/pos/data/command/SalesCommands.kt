@@ -1,5 +1,6 @@
 package com.shopledger.pos.data.command
 
+import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.ledger.CalendarParts
 import com.shopledger.pos.core.ledger.InvoiceMath
@@ -54,13 +55,13 @@ class SalesCommands(
 
     suspend fun checkout(request: CheckoutRequest): InvoiceResult =
         writer.runIdempotent(request.actionId, "CHECKOUT", replay = { loadInvoice(it) }) {
-            if (request.lines.isEmpty()) throw CommandException.Validation("The cart is empty")
+            if (request.lines.isEmpty()) throw CommandException.Validation(R.string.msg_cart_empty)
             if (request.lines.map { it.variantId }.toSet().size != request.lines.size) {
-                throw CommandException.Validation("Each item can appear only once in a bill")
+                throw CommandException.Validation(R.string.msg_item_once)
             }
             for (line in request.lines) {
-                if (line.qtyMilli <= 0L) throw CommandException.Validation("Quantity must be more than 0")
-                if (line.unitSellPaise < 0L) throw CommandException.Validation("Price cannot be negative")
+                if (line.qtyMilli <= 0L) throw CommandException.Validation(R.string.msg_qty_positive)
+                if (line.unitSellPaise < 0L) throw CommandException.Validation(R.string.msg_price_negative)
             }
             val device = writer.localDevice()
             val now = env.now()
@@ -70,20 +71,20 @@ class SalesCommands(
             // Read everything inside the transaction: prices, names and costs come from the database.
             val resolved = request.lines.map { line ->
                 val variant = inventory.getVariantById(line.variantId)?.takeUnless { it.isDeleted }
-                    ?: throw CommandException.NotFound("Item variant")
-                val item = inventory.getItemById(variant.itemId) ?: throw CommandException.NotFound("Item")
+                    ?: throw CommandException.NotFound(R.string.msg_not_found_item)
+                val item = inventory.getItemById(variant.itemId) ?: throw CommandException.NotFound(R.string.msg_not_found_item)
                 Triple(line, variant, item)
             }
             val lineTotals = resolved.map { (line, _, _) -> InvoiceMath.lineTotalPaise(line.unitSellPaise, line.qtyMilli) }
             val subtotal = lineTotals.sum()
             if (request.discountPaise < 0L || request.discountPaise > subtotal) {
-                throw CommandException.Validation("Discount must be between 0 and the bill total")
+                throw CommandException.Validation(R.string.msg_discount_range)
             }
             val maxStaffBps = ledger.getShopProfile(shopId)?.maxStaffDiscountBps ?: 1000
             if (actor.role == Role.STAFF && !request.ownerPinVerified &&
                 request.discountPaise * 10_000L > subtotal * maxStaffBps
             ) {
-                throw CommandException.PermissionDenied("A discount above ${maxStaffBps / 100}% needs the owner PIN")
+                throw CommandException.PermissionDenied(R.string.msg_discount_needs_pin, maxStaffBps / 100)
             }
             val gstBps = if (env.gstEnabled() && request.gstRateBps > 0) request.gstRateBps else 0
             val tax = IndianCurrencyFormatter.computeGstBreakdown(subtotal - request.discountPaise, gstBps)
@@ -178,20 +179,20 @@ class SalesCommands(
 
     suspend fun returnItems(actionId: String, originalInvoiceId: String, lines: List<ReturnLine>): InvoiceResult =
         writer.runIdempotent(actionId, "RETURN", replay = { loadInvoice(it) }) {
-            if (lines.isEmpty()) throw CommandException.Validation("Choose at least one item to return")
+            if (lines.isEmpty()) throw CommandException.Validation(R.string.msg_return_pick)
             if (lines.map { it.originalLineId }.toSet().size != lines.size) {
-                throw CommandException.Validation("Each item can appear only once in a return")
+                throw CommandException.Validation(R.string.msg_item_once)
             }
             val original = ledger.getInvoiceById(originalInvoiceId)?.takeIf { it.docType == DocType.SALE }
-                ?: throw CommandException.NotFound("Original bill")
+                ?: throw CommandException.NotFound(R.string.msg_not_found_bill)
             val originalLines = ledger.getInvoiceLines(original.id).associateBy { it.id }
             val device = writer.localDevice()
             val now = env.now()
             val creditNoteId = env.newId()
 
             val creditLines = lines.map { request ->
-                if (request.qtyMilli <= 0L) throw CommandException.Validation("Return quantity must be more than 0")
-                val sold = originalLines[request.originalLineId] ?: throw CommandException.NotFound("Bill line")
+                if (request.qtyMilli <= 0L) throw CommandException.Validation(R.string.msg_qty_positive)
+                val sold = originalLines[request.originalLineId] ?: throw CommandException.NotFound(R.string.msg_not_found_bill)
                 val remaining = sold.qtyMilliUnits - ledger.sumReturnedMilliForLine(sold.id)
                 if (request.qtyMilli > remaining) throw CommandException.ReturnExceedsSold(sold.itemNameSnapshot, remaining)
                 val total = InvoiceMath.lineTotalPaise(sold.unitSellPaise, request.qtyMilli)

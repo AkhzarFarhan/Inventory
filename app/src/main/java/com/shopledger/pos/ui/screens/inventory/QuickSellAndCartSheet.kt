@@ -1,5 +1,6 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import com.shopledger.pos.R
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -361,7 +362,7 @@ fun QuickSellSheet(
                     buyerPhone = selectedBuyer.buyerPhone
                     Toast.makeText(
                         context,
-                        "Selected customer: ${selectedBuyer.buyerName.ifBlank { selectedBuyer.buyerPhone }}",
+                        context.getString(R.string.msg_customer_selected, selectedBuyer.buyerName.ifBlank { selectedBuyer.buyerPhone }),
                         Toast.LENGTH_SHORT
                     ).show()
                 }

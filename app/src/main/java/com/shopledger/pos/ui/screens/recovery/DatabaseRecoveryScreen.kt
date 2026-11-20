@@ -25,6 +25,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shopledger.pos.BuildConfig
+import com.shopledger.pos.R
+import androidx.compose.ui.res.stringResource
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.PendingRestore
 import com.shopledger.pos.ui.theme.CupertinoColors
@@ -58,27 +61,27 @@ fun DatabaseRecoveryScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text("We couldn't open your shop data", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = CupertinoColors.LabelPrimary)
+        Text(stringResource(R.string.recovery_title), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = CupertinoColors.LabelPrimary)
         Spacer(modifier = Modifier.height(12.dp))
-        Text(reason, fontSize = 15.sp, color = CupertinoColors.LabelSecondary)
+        if (BuildConfig.DEBUG) Text(reason, fontSize = 15.sp, color = CupertinoColors.LabelSecondary)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Nothing has been deleted. Install the latest app update if one is available, or send the data file to support so it can be recovered.",
+            stringResource(R.string.recovery_body),
             fontSize = 14.sp,
             color = CupertinoColors.LabelSecondary
         )
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = onRetry, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+        Button(onClick = onRetry, enabled = !restoring, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_retry)) }
         if (snapshotLabel != null && !restorePending) {
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(onClick = { confirming = true }, enabled = !restoring, modifier = Modifier.fillMaxWidth()) {
-                Text("Restore last automatic backup ($snapshotLabel)")
+                Text(stringResource(R.string.recovery_restore_button, snapshotLabel))
             }
         }
         if (hasSafetyCopy) {
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(onClick = onShareSafetyCopy, enabled = !restoring, modifier = Modifier.fillMaxWidth()) {
-                Text("Send data file to support")
+                Text(stringResource(R.string.recovery_send_support))
             }
         }
     }
@@ -86,11 +89,10 @@ fun DatabaseRecoveryScreen(
     if (confirming) {
         AlertDialog(
             onDismissRequest = { confirming = false },
-            title = { Text("Restore the automatic backup?") },
+            title = { Text(stringResource(R.string.recovery_restore_title)) },
             text = {
                 Text(
-                    "The data on this phone will be replaced by the automatic backup from $snapshotLabel. " +
-                        "Anything entered since then will be lost."
+                    stringResource(R.string.recovery_restore_body, snapshotLabel.orEmpty())
                 )
             },
             confirmButton = {
@@ -103,16 +105,16 @@ fun DatabaseRecoveryScreen(
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            "The backup could not be read"
+                            context.getString(R.string.msg_backup_unreadable)
                         }
                         if (error != null) {
                             restoring = false
                             Toast.makeText(context, error, Toast.LENGTH_LONG).show()
                         }
                     }
-                }) { Text("Restore", color = CupertinoColors.DestructiveRed) }
+                }) { Text(stringResource(R.string.recovery_restore_confirm), color = CupertinoColors.DestructiveRed) }
             },
-            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 }

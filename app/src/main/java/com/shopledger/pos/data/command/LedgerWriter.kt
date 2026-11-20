@@ -1,5 +1,7 @@
 package com.shopledger.pos.data.command
 
+import com.shopledger.pos.R
+import com.shopledger.pos.ui.text.UiText
 import androidx.room.withTransaction
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.data.local.LpsDatabase
@@ -30,12 +32,12 @@ class LedgerWriter(private val db: LpsDatabase, private val env: CommandEnvironm
         replay: suspend (resultRef: String) -> T,
         body: suspend () -> Pair<T, String>
     ): T {
-        if (actionId.isBlank()) throw CommandException.Validation("Missing action id")
+        if (actionId.isBlank()) throw CommandException.Validation(R.string.msg_action_invalid)
         val result = db.withTransaction {
             val prior = actions.get(actionId)
             if (prior != null) {
                 if (prior.kind != kind) {
-                    throw CommandException.Validation("Action id already used for ${prior.kind}")
+                    throw CommandException.Validation(R.string.msg_action_invalid)
                 }
                 replay(prior.resultRef)
             } else {
@@ -46,7 +48,7 @@ class LedgerWriter(private val db: LpsDatabase, private val env: CommandEnvironm
         }
         // The action is already committed; failing to schedule background work must not undo that for the caller.
         runCatching { env.afterCommit() }.onFailure {
-            AppErrorManager.reportError("Background sync scheduling failed", it)
+            AppErrorManager.reportError(UiText.Res(R.string.err_sync_schedule_title), it)
         }
         return result
     }
@@ -63,7 +65,7 @@ class LedgerWriter(private val db: LpsDatabase, private val env: CommandEnvironm
         device: DeviceEntity,
         enqueue: Boolean
     ): StockMovementEntity {
-        if (deltaMilli == 0L) throw CommandException.Validation("Stock change cannot be zero")
+        if (deltaMilli == 0L) throw CommandException.Validation(R.string.msg_stock_change_zero)
         val movement = StockMovementEntity(
             movementId = env.newId(),
             shopId = env.shopId(),
@@ -79,7 +81,7 @@ class LedgerWriter(private val db: LpsDatabase, private val env: CommandEnvironm
         )
         ledger.insertStockMovement(movement)
         if (inventory.addToStockProjection(skuId, deltaMilli) != 1) {
-            throw CommandException.NotFound("Item variant $skuId")
+            throw CommandException.NotFound(R.string.msg_not_found_item)
         }
         if (enqueue) enqueue(OutboxDocType.MOVEMENT, movement.movementId, OutboxOp.APPEND)
         return movement
@@ -95,7 +97,7 @@ class LedgerWriter(private val db: LpsDatabase, private val env: CommandEnvironm
         device: DeviceEntity,
         enqueue: Boolean
     ): PartyTransactionEntity {
-        if (deltaPaise == 0L) throw CommandException.Validation("Amount cannot be zero")
+        if (deltaPaise == 0L) throw CommandException.Validation(R.string.msg_amount_zero)
         val entry = PartyTransactionEntity(
             entryId = env.newId(),
             shopId = env.shopId(),
@@ -111,7 +113,7 @@ class LedgerWriter(private val db: LpsDatabase, private val env: CommandEnvironm
         )
         ledger.insertLedgerEntry(entry)
         if (ledger.addToPartyBalance(partyId, deltaPaise) != 1) {
-            throw CommandException.NotFound("Party $partyId")
+            throw CommandException.NotFound(R.string.msg_not_found_party)
         }
         if (enqueue) enqueue(OutboxDocType.LEDGER, entry.entryId, OutboxOp.APPEND)
         return entry

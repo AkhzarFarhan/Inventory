@@ -13,6 +13,8 @@ import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.PendingRestore
 import com.shopledger.pos.data.local.PreMigrationGuard
 import com.shopledger.pos.data.repository.LpsRepository
+import com.shopledger.pos.ui.i18n.AppLanguageStore
+import com.shopledger.pos.ui.text.UiText
 import java.util.concurrent.TimeUnit
 
 /**
@@ -34,19 +36,19 @@ class ShopLedgerApp : Application() {
         super.onCreate()
         AppErrorManager.installGlobalExceptionHandler(this)
         runCatching { ItemDraftManager.init(this) }
-            .onFailure { AppErrorManager.reportError("Failed to restore saved item draft", it) }
+            .onFailure { AppErrorManager.reportError(UiText.Res(R.string.err_draft_restore_title), it) }
         runCatching { GoogleAuthManager.init(this) }
-            .onFailure { AppErrorManager.reportError("Auth initialization issue", it) }
+            .onFailure { AppErrorManager.reportError(UiText.Res(R.string.err_auth_init_title), it) }
         runCatching { SyncManager.init(this) }
-            .onFailure { AppErrorManager.reportError("Settings initialization issue", it) }
+            .onFailure { AppErrorManager.reportError(UiText.Res(R.string.err_settings_init_title), it) }
         database = LpsDatabase.getInstance(this)
         // getInstance has already swapped in a staged restore (if any); the marker says it still needs confirming.
         val restoring = PendingRestore.isPending(this, LpsDatabase.DB_NAME)
         if (PendingRestore.takeDiscardedNotice()) {
-            AppErrorManager.reportWarning("Restore cancelled", "An unfinished restore was discarded. Your data was not changed.")
+            AppErrorManager.reportWarning(UiText.Res(R.string.msg_restore_cancelled_title), UiText.Res(R.string.msg_restore_discarded))
         }
         if (PendingRestore.takeRollbackResumedNotice()) {
-            AppErrorManager.reportWarning("Restore cancelled", "An interrupted restore was undone. Your previous data was put back.")
+            AppErrorManager.reportWarning(UiText.Res(R.string.msg_restore_cancelled_title), UiText.Res(R.string.msg_restore_undone))
         }
         if (restoring) {
             // Always resolve a pending restore first: any failure caused by the restored file (open, migration,
@@ -58,11 +60,12 @@ class ShopLedgerApp : Application() {
             ) {
                 is PendingRestore.Outcome.Restored ->
                     if (outcome.violations.isEmpty()) {
-                        AppErrorManager.reportSuccess("Backup restored", "Your data was replaced by the backup.")
+                        AppErrorManager.reportSuccess(UiText.Res(R.string.msg_restore_done_title), UiText.Res(R.string.msg_restore_done))
                     } else {
+                        runCatching { android.util.Log.w("ShopLedgerPOS", "Restore inconsistencies: " + outcome.violations.take(3)) }
                         AppErrorManager.reportWarning(
-                            "Backup restored, but it has inconsistencies",
-                            outcome.violations.take(3).joinToString("\n")
+                            UiText.Res(R.string.msg_restore_odd_title),
+                            UiText.Res(R.string.msg_restore_odd),
                         )
                     }
                 is PendingRestore.Outcome.RolledBack -> {
@@ -71,8 +74,9 @@ class ShopLedgerApp : Application() {
                     if (outcome.originalBack && DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
                         runCatching { database.openHelper.writableDatabase }.onFailure { markUpgradeFailed(it) }
                         AppErrorManager.reportError(
-                            "Restore failed",
-                            customDetail = "The backup could not be opened. Your previous data was kept."
+                            UiText.Res(R.string.err_restore_failed_title),
+                            UiText.Res(R.string.msg_restore_rolled_back),
+                            IllegalStateException(outcome.reason),
                         )
                     }
                 }
@@ -92,16 +96,17 @@ class ShopLedgerApp : Application() {
         if (DatabaseHealth.state.value is DatabaseHealth.State.Ok) {
             PreMigrationGuard.deleteSafetyCopiesOlderThan(this, TimeUnit.DAYS.toMillis(14))
             runCatching { SyncManager.scheduleDeltaSync(this) }
-                .onFailure { AppErrorManager.reportError("Background sync scheduling failed", it) }
+                .onFailure { AppErrorManager.reportError(UiText.Res(R.string.err_sync_schedule_title), it) }
             runCatching { LocalSnapshotWorker.schedule(this) }
-                .onFailure { AppErrorManager.reportError("Backup scheduling failed", it) }
+                .onFailure { AppErrorManager.reportError(UiText.Res(R.string.err_backup_schedule_title), it) }
             if (BuildConfig.DEBUG) verifyLedgerInBackground()
         }
     }
 
     private fun markUpgradeFailed(error: Throwable) {
         DatabaseHealth.markFailed(
-            "Upgrading your data failed (${error.message ?: error.javaClass.simpleName}). Your data is safe.",
+            AppLanguageStore.localizedContext(this).getString(R.string.err_upgrade_failed) +
+                if (BuildConfig.DEBUG) " (${error.message ?: error.javaClass.simpleName})" else "",
             PreMigrationGuard.latestSafetyCopy(this)
         )
     }
@@ -112,10 +117,10 @@ class ShopLedgerApp : Application() {
             runCatching { IntegrityChecker.findViolations(database.openHelper.readableDatabase) }
                 .onSuccess { violations ->
                     if (violations.isNotEmpty()) {
-                        AppErrorManager.reportWarning("Ledger check failed (debug)", violations.take(3).joinToString("\n"))
+                        AppErrorManager.reportWarning(UiText.Res(R.string.err_ledger_check_title), UiText.Raw(violations.take(3).joinToString("; ")))
                     }
                 }
-                .onFailure { AppErrorManager.reportError("Ledger check crashed (debug)", it) }
+                .onFailure { AppErrorManager.reportError(UiText.Res(R.string.err_ledger_check_crashed_title), it) }
         }.start()
     }
 }

@@ -1,5 +1,6 @@
 package com.shopledger.pos.data.command
 
+import com.shopledger.pos.R
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.DeviceEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
@@ -20,7 +21,7 @@ class KhataCommands(private val db: LpsDatabase, private val env: CommandEnviron
         openingBalancePaise: Long = 0L
     ): String = writer.runIdempotent(actionId, "CREATE_PARTY", replay = { it }) {
         val cleanName = name.trim()
-        if (cleanName.isEmpty()) throw CommandException.Validation("Name is required")
+        if (cleanName.isEmpty()) throw CommandException.Validation(R.string.msg_name_required)
         val type = normalizeType(partyType)
         val device = writer.localDevice()
         val partyId = insertParty(type, cleanName, phone, gstin, device)
@@ -64,10 +65,10 @@ class KhataCommands(private val db: LpsDatabase, private val env: CommandEnviron
     ) {
         writer.runIdempotent(actionId, "UPDATE_PARTY", replay = { }) {
             val current = parties.getPartyById(partyId)?.takeUnless { it.isDeleted }
-                ?: throw CommandException.NotFound("Party")
-            if (current.updatedAt != expectedUpdatedAt) throw CommandException.StaleEdit("Party \"${current.name}\"")
+                ?: throw CommandException.NotFound(R.string.msg_not_found_party)
+            if (current.updatedAt != expectedUpdatedAt) throw CommandException.StaleEdit.party(current.name)
             val cleanName = name.trim()
-            if (cleanName.isEmpty()) throw CommandException.Validation("Name is required")
+            if (cleanName.isEmpty()) throw CommandException.Validation(R.string.msg_name_required)
             parties.updateParty(
                 current.copy(
                     name = cleanName,
@@ -91,9 +92,9 @@ class KhataCommands(private val db: LpsDatabase, private val env: CommandEnviron
         direction: PaymentDirection = PaymentDirection.IN,
         note: String = ""
     ): String = writer.runIdempotent(actionId, "RECORD_PAYMENT", replay = { it }) {
-        if (amountPaise <= 0L) throw CommandException.Validation("Amount must be more than 0")
+        if (amountPaise <= 0L) throw CommandException.Validation(R.string.msg_amount_positive)
         val party = parties.getPartyById(partyId)?.takeUnless { it.isDeleted }
-            ?: throw CommandException.NotFound("Party")
+            ?: throw CommandException.NotFound(R.string.msg_not_found_party)
         val mode = paymentMode.trim().uppercase(Locale.ROOT).ifEmpty { "CASH" }
         val incoming = direction == PaymentDirection.IN
         val entry = writer.appendLedgerEntry(
@@ -111,7 +112,7 @@ class KhataCommands(private val db: LpsDatabase, private val env: CommandEnviron
 
     private fun normalizeType(raw: String): String {
         val type = raw.trim().uppercase(Locale.ROOT)
-        if (type !in setOf("CUSTOMER", "SUPPLIER", "BOTH")) throw CommandException.Validation("Unknown party type $raw")
+        if (type !in setOf("CUSTOMER", "SUPPLIER", "BOTH")) throw CommandException.Validation(R.string.msg_party_type_unknown)
         return type
     }
 }

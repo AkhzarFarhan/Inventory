@@ -1,5 +1,9 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import androidx.compose.ui.res.stringResource
+import com.shopledger.pos.BuildConfig
+import com.shopledger.pos.R
+import com.shopledger.pos.ui.text.UiText
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -115,7 +119,7 @@ fun OrderScanSheet(
 
     fun processTextIntoCart(text: String, autoOpenIfClean: Boolean) {
         if (text.isBlank()) {
-            AppErrorManager.reportWarning("Empty Order List", "No readable order text detected.")
+            AppErrorManager.reportWarning(UiText.Res(R.string.err_empty_order_title), UiText.Res(R.string.msg_empty_order))
             return
         }
         coroutineScope.launch {
@@ -130,18 +134,18 @@ fun OrderScanSheet(
 
                 if (autoOpenIfClean && result.matchedCartLines.isNotEmpty() && result.unmatchedLines.isEmpty()) {
                     AppErrorManager.reportSuccess(
-                        title = "Cart Ready",
-                        detail = "$activeCartLabel filled with ${result.matchedCartLines.size} scanned items."
+                        UiText.Res(R.string.msg_cart_ready_title),
+                        UiText.Res(R.string.msg_cart_ready, listOf(activeCartLabel, result.matchedCartLines.size))
                     )
                     onAddScannedItemsAndOpenCart(result.matchedCartLines)
                 } else if (result.matchedCartLines.isEmpty()) {
                     AppErrorManager.reportWarning(
-                        title = "No Direct Catalog Match",
-                        detail = "Review or adjust item names below to match your inventory."
+                        UiText.Res(R.string.err_no_match_title),
+                        UiText.Res(R.string.msg_no_match)
                     )
                 }
             } catch (t: Throwable) {
-                AppErrorManager.reportError("Order Parsing Failed", t)
+                AppErrorManager.reportError(UiText.Res(R.string.err_order_parse_title), t)
             } finally {
                 isProcessing = false
             }
@@ -160,7 +164,7 @@ fun OrderScanSheet(
                     rawOrderText = text
                     processTextIntoCart(text, autoOpenIfClean = true)
                 }.onFailure { err ->
-                    AppErrorManager.reportError("OCR Scan Failed", err)
+                    AppErrorManager.reportError(UiText.Res(R.string.err_ocr_title), UiText.Res(R.string.stock_in_scan_failed), err)
                 }
             }
         }
@@ -190,9 +194,9 @@ fun OrderScanSheet(
                         processTextIntoCart(mergedText, autoOpenIfClean = true)
                     } else {
                         AppErrorManager.reportError(
-                            title = "Document OCR Failed",
-                            throwable = firstError,
-                            customDetail = firstError?.localizedMessage ?: "Could not read text from scanned document."
+                            UiText.Res(R.string.err_ocr_title),
+                            UiText.Res(R.string.stock_in_scan_failed),
+                            firstError
                         )
                     }
                 }
@@ -212,7 +216,7 @@ fun OrderScanSheet(
                     rawOrderText = text
                     processTextIntoCart(text, autoOpenIfClean = true)
                 }.onFailure { err ->
-                    AppErrorManager.reportError("Gallery Image OCR Failed", err)
+                    AppErrorManager.reportError(UiText.Res(R.string.err_ocr_title), UiText.Res(R.string.stock_in_scan_failed), err)
                 }
             }
         }
@@ -225,10 +229,10 @@ fun OrderScanSheet(
             coroutineScope.launch {
                 OnDeviceOrderScannerManager.importLocalModelUri(context, uri)
                     .onSuccess { file ->
-                        AppErrorManager.reportSuccess("On-Device LLM Ready", "Loaded ${file.name}")
+                        AppErrorManager.reportSuccess(UiText.Res(R.string.msg_model_ready_title), UiText.Res(R.string.msg_model_ready, listOf(file.name)))
                     }
                     .onFailure { err ->
-                        AppErrorManager.reportError("LLM Model Import Failed", err)
+                        AppErrorManager.reportError(UiText.Res(R.string.err_model_import_title), err)
                     }
             }
         }
@@ -541,7 +545,7 @@ fun OrderScanSheet(
                             TextButton(
                                 onClick = {
                                     OnDeviceOrderScannerManager.deleteDownloadedModel(context)
-                                    Toast.makeText(context, "On-device LLM removed", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, R.string.msg_model_removed, Toast.LENGTH_SHORT).show()
                                 },
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {
@@ -558,7 +562,7 @@ fun OrderScanSheet(
                     is LlmModelState.Error -> {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Model Error: ${s.message}",
+                            text = stringResource(R.string.msg_model_error) + if (BuildConfig.DEBUG) " (${s.message})" else "",
                             fontSize = 11.sp,
                             color = CupertinoColors.DestructiveRed
                         )

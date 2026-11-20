@@ -1,5 +1,8 @@
 package com.shopledger.pos.ui
 
+import androidx.annotation.StringRes
+import com.shopledger.pos.R
+import com.shopledger.pos.ui.text.UiText
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -183,14 +186,18 @@ class MainViewModel(
         )
 
     private fun launchSafe(
-        operationName: String,
+        @StringRes titleRes: Int,
+        @StringRes fallbackDetail: Int? = null,
         block: suspend CoroutineScope.() -> Unit
     ) {
-        viewModelScope.launch(AppErrorManager.exceptionHandler(operationName)) {
+        val title = UiText.Res(titleRes)
+        val fallback = UiText.Res(fallbackDetail ?: R.string.err_generic_detail)
+        viewModelScope.launch(AppErrorManager.exceptionHandler(title)) {
             try {
                 block()
             } catch (t: Throwable) {
-                AppErrorManager.reportError(operationName, t)
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                AppErrorManager.reportError(title, t, fallback)
             }
         }
     }
@@ -198,7 +205,7 @@ class MainViewModel(
     init {
         // Existing installs keep today's behaviour. A fresh install seeds nothing until the setup wizard's choice.
         if (SyncManager.isSetupCompleted()) {
-            launchSafe("Catalog Initialization") {
+            launchSafe(R.string.err_catalog_init_title) {
                 repository.seedStarterCatalogIfEmpty()
             }
         }
@@ -217,12 +224,12 @@ class MainViewModel(
     fun finishSetup(sampleData: Boolean, applySettings: () -> Unit) {
         if (_setupSaving.value) return
         _setupSaving.value = true
-        viewModelScope.launch(AppErrorManager.exceptionHandler("Setup")) {
+        viewModelScope.launch(AppErrorManager.exceptionHandler(UiText.Res(R.string.err_setup_title))) {
             try {
                 if (sampleData) repository.seedStarterCatalogIfEmpty() else repository.markStarterCatalogDone()
                 applySettings()
             } catch (t: Throwable) {
-                AppErrorManager.reportError("Setup", t)
+                AppErrorManager.reportError(UiText.Res(R.string.err_setup_title), t)
             } finally {
                 _setupSaving.value = false
             }
@@ -244,7 +251,7 @@ class MainViewModel(
     fun commitSearchToHistory(query: String) {
         val trimmed = query.trim()
         if (trimmed.length < 2) return
-        launchSafe("Save Search History") {
+        launchSafe(R.string.err_search_history_title) {
             val matchCount = allInventoryState.value.count {
                 SmartItemMatcher.matchesSearchQuery(trimmed, it)
             }
@@ -253,13 +260,13 @@ class MainViewModel(
     }
 
     fun deleteSearchHistoryItem(id: Long) {
-        launchSafe("Delete Search Entry") {
+        launchSafe(R.string.err_search_history_title) {
             repository.deleteSearchHistoryItem(id)
         }
     }
 
     fun clearAllSearchHistory() {
-        launchSafe("Clear Search History") {
+        launchSafe(R.string.err_search_history_title) {
             repository.clearAllSearchHistory()
         }
     }
@@ -288,7 +295,7 @@ class MainViewModel(
                 excludeItemId = excludeItemId
             )
         }.getOrElse { err ->
-            AppErrorManager.reportError("Duplicate Check Failed", err)
+            AppErrorManager.reportError(UiText.Res(R.string.err_duplicate_check_title), err)
             DuplicateCheckResult(
                 decision = com.shopledger.pos.core.nlp.DuplicateDecisionType.UNIQUE_NEW_ITEM,
                 matchedItem = null,
@@ -305,7 +312,7 @@ class MainViewModel(
         category: String,
         variants: List<LpsRepository.NewVariantSpec>
     ) {
-        launchSafe("Failed to Save New Product") {
+        launchSafe(R.string.err_item_not_saved_title) {
             repository.addNewItemWithVariants(
                 displayName = displayName,
                 category = category,
@@ -326,7 +333,7 @@ class MainViewModel(
         stockQuantity: Double,
         lowStockThreshold: Double
     ) {
-        launchSafe("Failed to Save Product") {
+        launchSafe(R.string.err_item_not_saved_title) {
             repository.addNewItemWithVariant(
                 displayName = displayName,
                 category = category,
@@ -356,7 +363,7 @@ class MainViewModel(
         lowStockThreshold: Double,
         barcode: String = ""
     ) {
-        launchSafe("Failed to Add Variant") {
+        launchSafe(R.string.err_variant_not_added_title) {
             repository.addVariantToExistingItem(
                 itemId = itemId,
                 newDisplayName = newDisplayName,
@@ -419,7 +426,7 @@ class MainViewModel(
         newLowStockThreshold: Double,
         newBarcode: String = variant.barcode
     ) {
-        launchSafe("Failed to Update Item") {
+        launchSafe(R.string.err_item_not_updated_title) {
             repository.updateItemAndVariant(
                 item = item,
                 newDisplayName = newDisplayName,
@@ -439,7 +446,7 @@ class MainViewModel(
     }
 
     fun deleteItemOrVariant(itemId: String, variantId: String?, totalVariantsCount: Int) {
-        launchSafe("Failed to Delete Item") {
+        launchSafe(R.string.err_item_not_deleted_title) {
             repository.deleteItemOrVariant(itemId, variantId, totalVariantsCount)
         }
     }
@@ -640,7 +647,7 @@ class MainViewModel(
         buyerPhone: String
     ) {
         if (itemsToEstimate.isEmpty()) return
-        launchSafe("Failed to Prepare Estimate") {
+        launchSafe(R.string.err_estimate_title) {
             val estimateData = repository.prepareEstimateReceiptData(
                 cartItems = itemsToEstimate,
                 buyerName = buyerName,
@@ -672,7 +679,7 @@ class MainViewModel(
         } else {
             quickSellActionId
         }
-        launchSafe("Checkout Failed") {
+        launchSafe(R.string.err_sale_not_saved, R.string.err_sale_not_saved_detail) {
             val outcome = repository.executeCheckoutAndDeductStock(
                 actionId = actionId,
                 cartItems = itemsToSell,
@@ -699,8 +706,8 @@ class MainViewModel(
             }
             if (!outcome.replayed && outcome.oversoldItemNames.isNotEmpty()) {
                 AppErrorManager.reportWarning(
-                    "Stock below zero",
-                    "Sold more than recorded stock: ${outcome.oversoldItemNames.distinct().joinToString()}. Please recount."
+                    UiText.Res(R.string.msg_stock_below_zero_title),
+                    UiText.Res(R.string.msg_stock_below_zero, listOf(outcome.oversoldItemNames.distinct().joinToString())),
                 )
             }
             _activeReceiptForSharing.value = outcome.receipt
@@ -714,7 +721,7 @@ class MainViewModel(
         partyType: String = "CUSTOMER",
         openingBalancePaise: Long = 0L
     ) {
-        launchSafe("Failed to Save Khata Party") {
+        launchSafe(R.string.err_party_not_saved_title) {
             repository.addOrUpdateParty(
                 name = name,
                 phone = phone,
@@ -730,7 +737,7 @@ class MainViewModel(
         paymentMode: String = "CASH",
         note: String = ""
     ) {
-        launchSafe("Failed to Record Payment") {
+        launchSafe(R.string.err_payment_not_saved_title) {
             repository.recordPartyPaymentReceived(
                 partyId = partyId,
                 amountPaise = amountPaise,
@@ -783,15 +790,15 @@ class MainViewModel(
     }
 
     fun returnSaleLine(sale: SaleRecordEntity, qtyMilli: Long, actionId: String) {
-        launchSafe("Failed to Return Sale") {
+        launchSafe(R.string.err_return_not_saved_title) {
             repository.returnSaleLine(actionId, sale, qtyMilli)
-            AppErrorManager.reportSuccess("Return Recorded", "Stock restored for #${sale.receiptNumber}.")
+            AppErrorManager.reportSuccess(UiText.Res(R.string.msg_return_done_title), UiText.Res(R.string.msg_return_done, listOf(sale.receiptNumber.toString())))
         }
     }
 
     suspend fun importBackupJson(json: String): Boolean {
         return runCatching { repository.importBackupJson(json) }
-            .onFailure { AppErrorManager.reportError("Backup Restore Failed", it) }
+            .onFailure { AppErrorManager.reportError(UiText.Res(R.string.err_json_import_title), it) }
             .getOrDefault(false)
     }
 

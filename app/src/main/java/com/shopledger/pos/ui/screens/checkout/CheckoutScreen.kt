@@ -69,6 +69,7 @@ import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.scanner.BarcodeScannerHelper
 import com.shopledger.pos.data.model.CartLineItem
+import com.shopledger.pos.ui.text.UiText
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.MoneyField
 import com.shopledger.pos.ui.theme.PrimaryActionButton
@@ -316,7 +317,6 @@ private fun CheckoutTopBar(state: CheckoutState, onEvent: (CheckoutEvent) -> Uni
 private fun SearchBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
-    val scannerFailedTitle = stringResource(R.string.error_barcode_scanner_failed)
     Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
         OutlinedTextField(
             value = state.searchQuery,
@@ -341,7 +341,7 @@ private fun SearchBlock(state: CheckoutState, onEvent: (CheckoutEvent) -> Unit) 
                                     onEvent(CheckoutEvent.CommitSearch(scanned))
                                 },
                                 onError = { err ->
-                                    AppErrorManager.reportError(title = scannerFailedTitle, customDetail = err)
+                                    AppErrorManager.reportError(UiText.Res(R.string.error_barcode_scanner_failed), UiText.Res(R.string.err_scanner_detail), err)
                                 },
                             )
                         },

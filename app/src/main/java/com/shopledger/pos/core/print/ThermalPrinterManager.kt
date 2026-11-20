@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.share.SaleReceiptData
 import com.shopledger.pos.core.sync.SyncManager
@@ -21,6 +22,9 @@ import java.util.UUID
  * Pure Kotlin ESC/POS Thermal Receipt Formatter & Bluetooth SPP Socket Client
  * compatible with generic 58mm (32-col) and 80mm (48-col) Bluetooth POS printers.
  */
+/** A printing failure with a plain-language message ([userMessage] is a string resource) for the shopkeeper. */
+class PrinterProblem(@androidx.annotation.StringRes val userMessage: Int, message: String) : Exception(message)
+
 object ThermalPrinterManager {
 
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
@@ -146,21 +150,21 @@ object ThermalPrinterManager {
                 ) == PackageManager.PERMISSION_GRANTED
                 if (!granted) {
                     return@withContext Result.failure(
-                        SecurityException("Allow Nearby Devices (Bluetooth) permission in App Settings to print.")
+                        PrinterProblem(R.string.msg_print_permission, "Bluetooth permission missing")
                     )
                 }
             }
 
             val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter = btManager?.adapter
-                ?: return@withContext Result.failure(IllegalStateException("Bluetooth is not supported on this device."))
+                ?: return@withContext Result.failure(PrinterProblem(R.string.msg_print_no_bluetooth, "Bluetooth not supported"))
             if (!adapter.isEnabled) {
-                return@withContext Result.failure(IllegalStateException("Please turn ON Bluetooth and pair your printer."))
+                return@withContext Result.failure(PrinterProblem(R.string.msg_print_bluetooth_off, "Bluetooth is off"))
             }
 
             val bonded = adapter.bondedDevices.orEmpty()
             if (bonded.isEmpty()) {
-                return@withContext Result.failure(IllegalStateException("No paired Bluetooth thermal printer found."))
+                return@withContext Result.failure(PrinterProblem(R.string.msg_print_no_printer, "No paired printer"))
             }
 
             val printer = bonded.firstOrNull { dev ->

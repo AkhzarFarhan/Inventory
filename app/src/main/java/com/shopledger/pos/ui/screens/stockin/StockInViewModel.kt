@@ -10,6 +10,8 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.shopledger.pos.BuildConfig
+import com.shopledger.pos.R
+import com.shopledger.pos.ui.text.UiText
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.scanner.OnDeviceOrderScannerManager
@@ -90,7 +92,7 @@ data class StockInUiState(
     val paidEdited: Boolean = false,
     val saving: Boolean = false,
     val saved: StockInResult? = null,
-    val error: String? = null,
+    val error: UiText? = null,
     /** True when [error] is a generic "could not save" message rather than a plain explanation. */
     val errorIsGeneric: Boolean = false,
     val role: Role = Role.OWNER,
@@ -243,6 +245,8 @@ class StockInViewModel(
     /** null = no review open. */
     val state: StateFlow<StockInUiState?> = _state.asStateFlow()
 
+    private val photoNotRead = UiText.Res(R.string.err_photo_not_read)
+
     private val _reading = MutableStateFlow(false)
     /** True while a photo is being read (OCR and tidy-up). It lives here so it survives rotation. */
     val reading: StateFlow<Boolean> = _reading.asStateFlow()
@@ -338,7 +342,7 @@ class StockInViewModel(
      * OCR the given photos on this device, tidy the text with the optional model and open the review.
      * Runs in [viewModelScope], so rotating the phone while it works does not lose it.
      */
-    fun readPhotos(context: Context, uris: List<Uri>, failedTitle: String) {
+    fun readPhotos(context: Context, uris: List<Uri>) {
         if (uris.isEmpty() || !_reading.compareAndSet(false, true)) return
         val app = context.applicationContext
         viewModelScope.launch {
@@ -353,7 +357,7 @@ class StockInViewModel(
                 val raw = combined.toString().trim()
                 val error = firstError
                 if (raw.isBlank() && error != null) {
-                    AppErrorManager.reportError(failedTitle, error, failedTitle)
+                    AppErrorManager.reportError(photoNotRead, UiText.Res(R.string.stock_in_scan_failed), error)
                 } else {
                     val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(app, raw) ?: raw
                     withContext(Dispatchers.Default) { open(text, currentInventory(), uris.first(), rawText = raw) }
@@ -365,7 +369,7 @@ class StockInViewModel(
     }
 
     /** Same as [readPhotos] for the single preview bitmap some cameras return. */
-    fun readBitmap(context: Context, bitmap: Bitmap, failedTitle: String) {
+    fun readBitmap(context: Context, bitmap: Bitmap) {
         if (!_reading.compareAndSet(false, true)) return
         val app = context.applicationContext
         viewModelScope.launch {
@@ -375,7 +379,7 @@ class StockInViewModel(
                         val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(app, raw) ?: raw
                         withContext(Dispatchers.Default) { open(text, currentInventory(), null, rawText = raw) }
                     }
-                    .onFailure { AppErrorManager.reportError(failedTitle, it, failedTitle) }
+                    .onFailure { AppErrorManager.reportError(photoNotRead, UiText.Res(R.string.stock_in_scan_failed), it) }
             } finally {
                 _reading.value = false
             }
@@ -536,10 +540,10 @@ class StockInViewModel(
             synchronized(lock) { _state.value?.let { publish(it.copy(saving = false)) } }
             throw e
         } catch (e: CommandException) {
-            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false, error = e.message ?: "", errorIsGeneric = false)) } }
+            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false, error = e.uiText, errorIsGeneric = false)) } }
         } catch (t: Throwable) {
             val detail = if (BuildConfig.DEBUG) t.localizedMessage.orEmpty() else ""
-            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false, error = detail, errorIsGeneric = true)) } }
+            synchronized(lock) { _state.value?.let { publish(it.copy(saving = false, error = UiText.Raw(detail), errorIsGeneric = true)) } }
         }
     }
 

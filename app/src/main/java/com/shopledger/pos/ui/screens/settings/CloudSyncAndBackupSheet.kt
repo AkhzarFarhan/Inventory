@@ -60,6 +60,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import com.shopledger.pos.BuildConfig
+import com.shopledger.pos.data.command.CommandException
+import com.shopledger.pos.ui.text.resolve
 import com.shopledger.pos.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.focus.onFocusChanged
@@ -83,6 +86,7 @@ import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.core.update.AppUpdateManager
 import com.shopledger.pos.core.update.UpdateStatus
+import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.CupertinoCard
 import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
@@ -159,7 +163,7 @@ fun CloudSyncAndBackupSheet(
         val code = deviceCodeInput
         if (code.isEmpty()) {
             deviceCodeInput = storedDeviceCode
-            Toast.makeText(context, "Counter code can't be empty", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, R.string.shop_counter_code_empty, Toast.LENGTH_SHORT).show()
         } else if (code != storedDeviceCode) {
             deviceCodeSave?.cancel()
             deviceCodeSave = coroutineScope.launch {
@@ -172,7 +176,7 @@ fun CloudSyncAndBackupSheet(
                     .onFailure {
                         if (it is CancellationException) throw it
                         deviceCodeInput = storedDeviceCode
-                        Toast.makeText(context, it.message ?: "Could not save the counter code", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, (it as? CommandException)?.uiText?.resolve(context) ?: context.getString(R.string.shop_counter_code_failed), Toast.LENGTH_LONG).show()
                     }
             }
         }
@@ -202,7 +206,7 @@ fun CloudSyncAndBackupSheet(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                "The backup could not be read"
+                context.getString(R.string.msg_backup_unreadable)
             }
             if (error != null) {
                 checkingBackup = false
@@ -278,7 +282,7 @@ fun CloudSyncAndBackupSheet(
                 val user = GoogleAuthManager.handleGoogleEmailSignIn(context, pickedEmail)
                 Toast.makeText(
                     context,
-                    "Signed in as ${user.email} — Syncing all items to this device!",
+                    context.getString(R.string.msg_signed_in, user.email),
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -292,7 +296,7 @@ fun CloudSyncAndBackupSheet(
                         val user = GoogleAuthManager.handleGoogleAccountSignIn(context, account)
                         Toast.makeText(
                             context,
-                            "Signed in as ${user.email} — Syncing all items to this device!",
+                            context.getString(R.string.msg_signed_in, user.email),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -374,7 +378,7 @@ fun CloudSyncAndBackupSheet(
                             } catch (e: Exception) {
                                 Toast.makeText(
                                     context,
-                                    "Could not open Google Account chooser: ${e.localizedMessage}",
+                                    context.getString(R.string.msg_google_chooser_failed),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -446,7 +450,7 @@ fun CloudSyncAndBackupSheet(
                                 )
                                 Toast.makeText(
                                     context,
-                                    "Syncing all items with Cloud...",
+                                    context.getString(R.string.msg_syncing),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             },
@@ -469,7 +473,7 @@ fun CloudSyncAndBackupSheet(
                         OutlinedButton(
                             onClick = {
                                 GoogleAuthManager.signOut(context)
-                                Toast.makeText(context, "Signed out of Google Account", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, R.string.msg_signed_out, Toast.LENGTH_SHORT).show()
                             },
                             shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(1.dp, CupertinoColors.DestructiveRed.copy(alpha = 0.4f)),
@@ -615,7 +619,7 @@ fun CloudSyncAndBackupSheet(
                             ),
                             modifier = Modifier.clickable {
                                 SyncManager.saveShopVertical(context, v)
-                                Toast.makeText(context, "Switched trade pack to ${v.displayName}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.msg_trade_pack_switched, v.displayName), Toast.LENGTH_SHORT).show()
                             }
                         ) {
                             Text(
@@ -764,7 +768,7 @@ fun CloudSyncAndBackupSheet(
                     Button(
                         onClick = {
                             SyncManager.saveOwnerPin(context, newPinInput)
-                            val msg = if (newPinInput.isBlank()) "Owner PIN cleared" else "Owner PIN saved!"
+                            val msg = context.getString(if (newPinInput.isBlank()) R.string.owner_pin_cleared else R.string.owner_pin_saved)
                             newPinInput = ""
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         },
@@ -832,7 +836,7 @@ fun CloudSyncAndBackupSheet(
                                 coroutineScope.launch {
                                     val result = AppUpdateManager.checkForUpdates(context)
                                     if (result is UpdateStatus.UpToDate) {
-                                        Toast.makeText(context, "App is up to date!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, R.string.update_up_to_date, Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             },
@@ -951,7 +955,7 @@ fun CloudSyncAndBackupSheet(
                                 } else {
                                     Toast.makeText(
                                         context,
-                                        "Please allow installing updates from this app in Settings",
+                                        context.getString(R.string.update_permission),
                                         Toast.LENGTH_LONG
                                     ).show()
                                     AppUpdateManager.openInstallPermissionSettings(context)
@@ -972,7 +976,7 @@ fun CloudSyncAndBackupSheet(
                     is UpdateStatus.Error -> {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Update Error: ${status.message}",
+                                text = stringResource(R.string.msg_update_error) + if (BuildConfig.DEBUG) " (${status.message})" else "",
                                 fontSize = 11.sp,
                                 color = CupertinoColors.DestructiveRed
                             )
@@ -1027,12 +1031,19 @@ fun CloudSyncAndBackupSheet(
                     color = CupertinoColors.LabelSecondary
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = if (lastSnapshotLabel != null) "Last automatic backup: $lastSnapshotLabel" else "No automatic backup yet",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = CupertinoColors.LabelPrimary
-                )
+                if (lastSnapshotLabel != null) {
+                    Text(
+                        text = stringResource(R.string.backup_last, lastSnapshotLabel),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = CupertinoColors.LabelPrimary
+                    )
+                } else {
+                    EmptyState(
+                        title = stringResource(R.string.backup_none_title),
+                        message = stringResource(R.string.backup_none_message),
+                    )
+                }
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1042,7 +1053,7 @@ fun CloudSyncAndBackupSheet(
                         onClick = {
                             coroutineScope.launch {
                                 val file = onExportBackupFile()
-                                if (file != null) BackupShare.share(context, file, "Save ShopLedger backup")
+                                if (file != null) BackupShare.share(context, file, context.getString(R.string.share_backup_chooser))
                             }
                         },
                         shape = RoundedCornerShape(10.dp),
@@ -1089,7 +1100,7 @@ fun CloudSyncAndBackupSheet(
                                 val ok = onImportBackupJson(importJsonText)
                                 Toast.makeText(
                                     context,
-                                    if (ok) "Backup merged successfully!" else "Invalid Backup JSON",
+                                    context.getString(if (ok) R.string.msg_backup_merged else R.string.msg_backup_json_invalid),
                                     Toast.LENGTH_SHORT
                                 ).show()
                                 if (ok) {

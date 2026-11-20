@@ -48,6 +48,9 @@ import androidx.compose.ui.window.Dialog
 import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.error.FloatingAppMessageHost
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.R
+import com.shopledger.pos.core.print.PrinterProblem
+import com.shopledger.pos.ui.text.UiText
 import com.shopledger.pos.core.print.ThermalPrinterManager
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.share.SaleReceiptData
@@ -377,7 +380,7 @@ fun ReceiptShareDialog(
                                 rawBuyerPhone = buyerPhoneInput
                             )
                         }.onFailure { err ->
-                            AppErrorManager.reportError("Receipt Share Failed", err)
+                            AppErrorManager.reportError(UiText.Res(R.string.err_receipt_share_title), UiText.Res(R.string.err_receipt_share_detail), err)
                         }
                     },
                     shape = RoundedCornerShape(12.dp),
@@ -415,9 +418,13 @@ fun ReceiptShareDialog(
                             val result = ThermalPrinterManager.printReceiptViaBluetooth(context, updated, 58)
                             isPrinting = false
                             result.onSuccess { printerName ->
-                                AppErrorManager.reportSuccess("Thermal Print Sent", "Printed via $printerName")
+                                AppErrorManager.reportSuccess(UiText.Res(R.string.msg_print_sent_title), UiText.Res(R.string.msg_print_sent, listOf(printerName)))
                             }.onFailure { err ->
-                                AppErrorManager.reportError("Bluetooth Print Failed", err)
+                                AppErrorManager.reportError(
+                                    UiText.Res(R.string.err_print_title),
+                                    (err as? PrinterProblem)?.let { UiText.Res(it.userMessage) } ?: UiText.Res(R.string.err_print_detail),
+                                    err
+                                )
                             }
                         }
                     },

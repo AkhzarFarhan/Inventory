@@ -44,16 +44,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shopledger.pos.R
 import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.ui.theme.CupertinoCard
+import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
 import com.shopledger.pos.ui.theme.SemanticPillBadge
@@ -224,24 +227,10 @@ fun SaleHistoryScreen(
         )
 
         if (filteredSales.isEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "No sales recorded in this period",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Sell an item from the Inventory tab to track ₹ margins, % gains, and share WhatsApp receipts.",
-                    fontSize = 13.sp,
-                    color = CupertinoColors.LabelSecondary
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState(
+                    title = stringResource(R.string.bills_empty_title),
+                    message = stringResource(R.string.bills_empty_message),
                 )
             }
         } else {

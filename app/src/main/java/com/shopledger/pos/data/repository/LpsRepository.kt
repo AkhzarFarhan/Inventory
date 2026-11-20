@@ -1,5 +1,6 @@
 package com.shopledger.pos.data.repository
 
+import com.shopledger.pos.R
 import android.content.Context
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.nlp.SmartItemMatcher
@@ -335,7 +336,7 @@ class LpsRepository(
         if (id.isNullOrBlank()) {
             return khata.createParty(newActionId(), name, phone, partyType, gstin, openingBalancePaise)
         }
-        val current = shopDao.getPartyById(id) ?: throw CommandException.NotFound("Party")
+        val current = shopDao.getPartyById(id) ?: throw CommandException.NotFound(R.string.msg_not_found_party)
         khata.updateParty(newActionId(), id, current.updatedAt, name, phone, partyType, gstin)
         return id
     }

@@ -49,17 +49,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.share.ReceiptShareManager
 import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.ui.theme.CupertinoCard
+import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.CupertinoColors
 import com.shopledger.pos.ui.theme.CupertinoSegmentedControl
 import com.shopledger.pos.ui.theme.CupertinoTextField
@@ -238,25 +241,20 @@ fun PartiesKhataScreen(
         )
 
         if (filteredParties.isEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = if (parties.isEmpty()) "No Khata customers yet" else "No matching parties",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = CupertinoColors.LabelPrimary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Sell on 'Credit (Udhar)' from Quick Sell or Cart, or tap '+ Party' above to record customer balances.",
-                    fontSize = 13.sp,
-                    color = CupertinoColors.LabelSecondary
-                )
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (parties.isEmpty()) {
+                    EmptyState(
+                        title = stringResource(R.string.khata_empty_title),
+                        message = stringResource(R.string.khata_empty_message),
+                        actionText = stringResource(R.string.khata_add_party),
+                        onAction = { showAddPartyDialog = true },
+                    )
+                } else {
+                    EmptyState(
+                        title = stringResource(R.string.khata_no_match_title),
+                        message = stringResource(R.string.khata_no_match_message),
+                    )
+                }
             }
         } else {
             LazyColumn(
@@ -424,7 +422,7 @@ fun PartiesKhataScreen(
                 Button(
                     onClick = {
                         if (partyName.isBlank()) {
-                            Toast.makeText(context, "Enter party name", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, R.string.msg_party_name_needed, Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         val openingPaise = IndianCurrencyFormatter.parseRupeesToPaise(openingBalInput)
@@ -486,13 +484,13 @@ fun PartiesKhataScreen(
                     onClick = {
                         val amtPaise = IndianCurrencyFormatter.parseRupeesToPaise(amountInput)
                         if (amtPaise <= 0L) {
-                            Toast.makeText(context, "Enter valid amount", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, R.string.msg_amount_needed, Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         val mode = if (modeIndex == 1) "UPI" else "CASH"
                         onRecordPaymentReceived(target.id, amtPaise, mode, noteInput)
                         paymentTargetParty = null
-                        Toast.makeText(context, "Payment recorded in Khata!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, R.string.msg_payment_recorded, Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CupertinoColors.EmeraldGreen)
                 ) {

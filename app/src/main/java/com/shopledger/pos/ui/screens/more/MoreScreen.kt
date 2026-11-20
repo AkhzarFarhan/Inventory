@@ -1,5 +1,7 @@
 package com.shopledger.pos.ui.screens.more
 
+import com.shopledger.pos.data.command.CommandException
+import com.shopledger.pos.ui.text.resolve
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -151,7 +153,7 @@ private fun ShopCard(loadDeviceCode: suspend () -> String, onSaveDeviceCode: sus
                     .onFailure {
                         if (it is CancellationException) throw it
                         counterCode = storedCounterCode
-                        Toast.makeText(context, it.message ?: failedMessage, Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, (it as? CommandException)?.uiText?.resolve(context) ?: failedMessage, Toast.LENGTH_LONG).show()
                     }
             }
         }

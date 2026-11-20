@@ -80,6 +80,7 @@ import com.shopledger.pos.R
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.core.scanner.MatchStatus
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
+import com.shopledger.pos.ui.text.asString
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.MoneyField
 import com.shopledger.pos.ui.theme.PrimaryActionButton
@@ -630,9 +631,10 @@ private fun BottomBar(state: StockInUiState, onEvent: (StockInEvent) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
         ) {
             state.error?.let { err ->
+                val errText = err.asString()
                 val text = if (state.errorIsGeneric) {
-                    stringResource(R.string.review_error_generic) + if (err.isNotBlank()) "\n$err" else ""
-                } else err
+                    stringResource(R.string.review_error_generic) + if (errText.isNotBlank()) "\n$errText" else ""
+                } else errText
                 Text(
                     text,
                     style = MaterialTheme.typography.bodyLarge,

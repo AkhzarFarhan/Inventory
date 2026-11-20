@@ -1,5 +1,9 @@
 package com.shopledger.pos.ui.screens.inventory
 
+import androidx.annotation.StringRes
+import com.shopledger.pos.R
+import com.shopledger.pos.ui.text.UiText
+import com.shopledger.pos.ui.text.asString
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -342,7 +346,11 @@ fun AddEditItemSheet(
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDeleteVariantConfirm by remember { mutableStateOf(false) }
-    var validationError by remember { mutableStateOf("") }
+    var validationError by remember { mutableStateOf<UiText?>(null) }
+    fun failValidation(@StringRes title: Int, message: UiText) {
+        validationError = message
+        AppErrorManager.reportWarning(UiText.Res(title), message)
+    }
 
     // Synchronize current inputs into draft when creating brand new item
     fun saveCurrentIntoDraft(draft: VariantDraft) {
@@ -367,7 +375,7 @@ fun AddEditItemSheet(
         sellingPriceInput = draft.sellingPriceInput
         stockQtyInput = draft.stockQtyInput
         lowStockInput = draft.lowStockInput
-        validationError = ""
+        validationError = null
     }
 
     fun persistAddDraft(): Boolean {
@@ -393,7 +401,7 @@ fun AddEditItemSheet(
         itemName = ""
         category = activePack.defaultCategories.firstOrNull() ?: "Uncategorized"
         loadDraft(freshVariant)
-        AppErrorManager.reportInfo("Draft Cleared", "Started a blank item form.")
+        AppErrorManager.reportInfo(UiText.Res(R.string.msg_draft_cleared_title), UiText.Res(R.string.msg_draft_cleared))
     }
 
     LaunchedEffect(
@@ -429,7 +437,7 @@ fun AddEditItemSheet(
         sellingPriceInput = IndianCurrencyFormatter.paiseToEditableString(v.sellingPricePaise)
         stockQtyInput = IndianCurrencyFormatter.formatQuantity(v.stockQuantity)
         lowStockInput = IndianCurrencyFormatter.formatQuantity(v.lowStockThreshold)
-        validationError = ""
+        validationError = null
     }
 
     fun startAddNewVariant() {
@@ -444,7 +452,7 @@ fun AddEditItemSheet(
         sellingPriceInput = ""
         stockQtyInput = "10"
         lowStockInput = "5"
-        validationError = ""
+        validationError = null
     }
 
     // Live Smart Duplicate & Variant Understanding
@@ -466,10 +474,7 @@ fun AddEditItemSheet(
         onDismissRequest = {
             if (mode is ItemEditorMode.AddNewItem && !isDraftClearedOrSaved) {
                 if (persistAddDraft()) {
-                    AppErrorManager.reportInfo(
-                        title = "Draft Saved",
-                        detail = "Your item draft is saved. Tap '+ Add' anytime to continue editing."
-                    )
+                    AppErrorManager.reportInfo(UiText.Res(R.string.msg_draft_saved_title), UiText.Res(R.string.msg_draft_saved))
                 }
             }
             onDismiss()
@@ -553,7 +558,7 @@ fun AddEditItemSheet(
                     value = itemName,
                     onValueChange = {
                         itemName = it
-                        validationError = ""
+                        validationError = null
                     },
                     label = "Product Name",
                     placeholder = "e.g. Product Name, Brand, or Trade Name",
@@ -611,7 +616,7 @@ fun AddEditItemSheet(
                     value = category,
                     onValueChange = {
                         category = it
-                        validationError = ""
+                        validationError = null
                     },
                     label = "Category (Type custom or select below)",
                     placeholder = "e.g. Fittings, Staples, Tablets, Cables...",
@@ -1075,8 +1080,8 @@ fun AddEditItemSheet(
                                             draftVariants[activeDraftIndex].barcode = scanned
                                         }
                                     },
-                                    onError = { err ->
-                                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                    onError = { _ ->
+                                        Toast.makeText(context, R.string.err_scanner_detail, Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }
@@ -1137,7 +1142,7 @@ fun AddEditItemSheet(
                             if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
                                 draftVariants[activeDraftIndex].purchasePriceInput = it
                             }
-                            validationError = ""
+                            validationError = null
                         },
                         label = "Purchase Price (₹)",
                         placeholder = "e.g. 140",
@@ -1152,7 +1157,7 @@ fun AddEditItemSheet(
                             if (mode is ItemEditorMode.AddNewItem && draftVariants.indices.contains(activeDraftIndex)) {
                                 draftVariants[activeDraftIndex].sellingPriceInput = it
                             }
-                            validationError = ""
+                            validationError = null
                         },
                         label = "Selling Price (₹)",
                         placeholder = "e.g. 210",
@@ -1249,9 +1254,9 @@ fun AddEditItemSheet(
                 }
             }
 
-            if (validationError.isNotEmpty()) {
+            validationError?.let { vErr ->
                 Text(
-                    text = validationError,
+                    text = vErr.asString(),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = CupertinoColors.DestructiveRed,
@@ -1272,10 +1277,7 @@ fun AddEditItemSheet(
                         focusManager.clearFocus()
                         if (mode is ItemEditorMode.AddNewItem && !isDraftClearedOrSaved) {
                             if (persistAddDraft()) {
-                                AppErrorManager.reportInfo(
-                                    title = "Draft Saved",
-                                    detail = "Your item draft is stored. Tap '+ Add' anytime to resume."
-                                )
+                                AppErrorManager.reportInfo(UiText.Res(R.string.msg_draft_saved_title), UiText.Res(R.string.msg_draft_saved))
                             }
                         }
                         onDismiss()
@@ -1293,8 +1295,7 @@ fun AddEditItemSheet(
                         focusManager.clearFocus()
 
                         if (itemName.isBlank()) {
-                            validationError = "Please enter an item name."
-                            AppErrorManager.reportWarning("Missing Item Name", validationError)
+                            failValidation(R.string.err_missing_name_title, UiText.Res(R.string.msg_item_name_required))
                             return@Button
                         }
                         val cleanCategory = category.trim().ifEmpty { "Uncategorized" }
@@ -1302,8 +1303,7 @@ fun AddEditItemSheet(
                         when (mode) {
                             is ItemEditorMode.AddNewItem -> {
                                 if (duplicateCheckResult?.decision == DuplicateDecisionType.EXACT_DUPLICATE) {
-                                    validationError = "This exact item already exists! Tap 'Edit Existing' above."
-                                    AppErrorManager.reportWarning("Duplicate Product", validationError)
+                                    failValidation(R.string.err_duplicate_item_title, UiText.Res(R.string.msg_item_exists))
                                     return@Button
                                 }
 
@@ -1314,9 +1314,8 @@ fun AddEditItemSheet(
                                     val finalSelling = IndianCurrencyFormatter.parseRupeesToPaise(draft.sellingPriceInput)
                                     val finalPurchase = IndianCurrencyFormatter.parseRupeesToPaise(draft.purchasePriceInput)
                                     if (finalSelling <= 0L) {
-                                        val hint = if (draft.buildSummary() == "Standard") "Variant #${index + 1}" else draft.buildSummary()
-                                        validationError = "Please enter a valid selling price (₹) for $hint."
-                                        AppErrorManager.reportWarning("Invalid Selling Price", validationError)
+                                        val hint = if (draft.buildSummary() == "Standard") context.getString(R.string.msg_variant_number, index + 1) else draft.buildSummary()
+                                        failValidation(R.string.err_price_missing_title, UiText.Res(R.string.msg_variant_price, listOf(hint)))
                                         activeDraftIndex = index
                                         loadDraft(draft)
                                         return@Button
@@ -1339,7 +1338,7 @@ fun AddEditItemSheet(
                                 isDraftClearedOrSaved = true
                                 ItemDraftManager.clearDraft(context)
                                 onSaveNewItemWithVariants(itemName, cleanCategory, specs)
-                                AppErrorManager.reportSuccess("Item Added", "\"$itemName\" saved to inventory.")
+                                AppErrorManager.reportSuccess(UiText.Res(R.string.msg_item_added_title), UiText.Res(R.string.msg_item_added, listOf(itemName)))
                             }
                             is ItemEditorMode.ManageItem -> {
                                 val finalPurchasePaise = IndianCurrencyFormatter.parseRupeesToPaise(purchasePriceInput)
@@ -1348,8 +1347,7 @@ fun AddEditItemSheet(
                                 val finalLowAlert = lowStockInput.toDoubleOrNull() ?: 5.0
 
                                 if (finalSellingPaise <= 0L) {
-                                    validationError = "Please enter a valid selling price (₹)."
-                                    AppErrorManager.reportWarning("Invalid Selling Price", validationError)
+                                    failValidation(R.string.err_price_missing_title, UiText.Res(R.string.msg_price_required))
                                     return@Button
                                 }
 

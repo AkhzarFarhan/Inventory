@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.Surface
+import com.shopledger.pos.ui.text.UiText
 import com.shopledger.pos.ui.screens.stockin.StockInEntrySheet
 import com.shopledger.pos.ui.screens.stockin.StockInEvent
 import com.shopledger.pos.ui.screens.stockin.StockInReviewScreen
@@ -105,14 +106,14 @@ class MainActivity : ComponentActivity() {
                         reason = current.reason,
                         hasSafetyCopy = current.safetyCopy != null,
                         onShareSafetyCopy = {
-                            current.safetyCopy?.let { BackupShare.share(this, it, "Send ShopLedger data file") }
+                            current.safetyCopy?.let { BackupShare.share(this, it, getString(R.string.share_data_file_chooser)) }
                         },
                         onRetry = { AppRestarter.restart(this) },
                         latestSnapshotTime = remember { (application as ShopLedgerApp).backupManager.latestSnapshot()?.lastModified() },
                         onRestoreSnapshot = {
                             val app = application as ShopLedgerApp
                             stageRestore(app) {
-                                val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet")
+                                val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet", userMessage = R.string.msg_backup_none)
                                 app.backupManager.stageRestoreFromSnapshot(latest)
                             }
                         }
@@ -136,6 +137,10 @@ class MainActivity : ComponentActivity() {
 private suspend fun stageRestore(app: ShopLedgerApp, stage: () -> Int): String? =
     withContext(NonCancellable + Dispatchers.IO) {
         val dbName = LpsDatabase.DB_NAME
+        val text = AppLanguageStore.localizedContext(app)
+        // Plain message for the shopkeeper; the technical reason only rides along in debug builds.
+        fun plain(@androidx.annotation.StringRes id: Int, cause: Throwable?): String =
+            text.getString(id) + if (BuildConfig.DEBUG && cause?.message != null) " (${cause.message})" else ""
         var staged = false
         try {
             stage()
@@ -143,17 +148,17 @@ private suspend fun stageRestore(app: ShopLedgerApp, stage: () -> Int): String? 
             PendingRestore.armStaged(app, dbName)
             if (!AppRestarter.restart(app)) {
                 PendingRestore.discardStaged(app, dbName)
-                "The restore did not start because the app could not restart. Your data is unchanged."
+                text.getString(R.string.msg_restore_no_restart)
             } else {
                 null
             }
         } catch (e: BackupException) {
             runCatching { PendingRestore.discardStaged(app, dbName) }
-            e.message ?: "The backup could not be read"
+            plain(e.userMessage, e)
         } catch (e: Throwable) {
             runCatching { PendingRestore.discardStaged(app, dbName) }
             if (e is CancellationException) throw e
-            if (staged) "The restore could not start. Please open the app again." else "The backup could not be read"
+            plain(if (staged) R.string.msg_restore_not_started else R.string.msg_backup_unreadable, e)
         }
     }
 
@@ -183,7 +188,6 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     var showStockInSheet by rememberSaveable { mutableStateOf(false) }
     var confirmDiscardStockIn by remember { mutableStateOf(false) }
     val stockInReading by stockInViewModel.reading.collectAsState()
-    val stockInFailedTitle = stringResource(R.string.stock_in_scan_failed)
     // Once a review is open the entry sheet has done its job.
     LaunchedEffect(stockInReview != null) { if (stockInReview != null) showStockInSheet = false }
     LaunchedEffect(parties) { stockInViewModel.setSuppliers(parties) }
@@ -195,7 +199,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         val detail = if (saved.supplierDuePaise > 0L) {
             added + " " + context.getString(R.string.stock_in_saved_due, IndianCurrencyFormatter.formatPaise(saved.supplierDuePaise))
         } else added
-        AppErrorManager.reportSuccess(context.getString(R.string.stock_in_saved_title), detail)
+        AppErrorManager.reportSuccess(UiText.Res(R.string.stock_in_saved_title), UiText.Raw(detail))
         stockInViewModel.close()
     }
 
@@ -342,8 +346,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             reading = stockInReading,
             hasUnsavedReview = stockInReview != null,
             onDiscardReview = { stockInViewModel.close() },
-            onPhotos = { uris -> stockInViewModel.readPhotos(context, uris, stockInFailedTitle) },
-            onBitmap = { bitmap -> stockInViewModel.readBitmap(context, bitmap, stockInFailedTitle) },
+            onPhotos = { uris -> stockInViewModel.readPhotos(context, uris) },
+            onBitmap = { bitmap -> stockInViewModel.readBitmap(context, bitmap) },
         )
 
         // A locked seller mode hides the review without losing it: unlock again and it is still there.
@@ -524,20 +528,20 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 onExportBackupFile = {
                     withContext(Dispatchers.IO) {
                         runCatching { app.backupManager.exportShareableBackup() }
-                            .onFailure { AppErrorManager.reportError(context.getString(R.string.error_backup_export_failed), it) }
+                            .onFailure { AppErrorManager.reportError(UiText.Res(R.string.error_backup_export_failed), UiText.Res(R.string.err_backup_export_detail), it) }
                             .getOrNull()
                     }
                 },
                 onRestoreBackupFile = { uri ->
                     stageRestore(app) {
-                        val stream = app.contentResolver.openInputStream(uri) ?: throw BackupException("That file could not be opened")
+                        val stream = app.contentResolver.openInputStream(uri) ?: throw BackupException("That file could not be opened", userMessage = R.string.msg_backup_unreadable)
                         stream.use { app.backupManager.stageRestoreFromShareable(it) }
                     }
                 },
                 latestSnapshotTime = { app.backupManager.latestSnapshot()?.lastModified() },
                 onRestoreLatestSnapshot = {
                     stageRestore(app) {
-                        val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet")
+                        val latest = app.backupManager.latestSnapshot() ?: throw BackupException("There is no automatic backup yet", userMessage = R.string.msg_backup_none)
                         app.backupManager.stageRestoreFromSnapshot(latest)
                     }
                 },

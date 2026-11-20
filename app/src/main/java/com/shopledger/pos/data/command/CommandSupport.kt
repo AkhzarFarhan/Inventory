@@ -1,5 +1,10 @@
 package com.shopledger.pos.data.command
 
+import androidx.annotation.StringRes
+import com.shopledger.pos.R
+import com.shopledger.pos.core.format.IndianCurrencyFormatter
+import com.shopledger.pos.ui.text.UiText
+
 enum class Role { OWNER, STAFF }
 
 data class Actor(val uid: String = "", val role: Role = Role.OWNER)
@@ -15,15 +20,34 @@ interface CommandEnvironment {
     fun afterCommit()
 }
 
-/** Typed, user-presentable failures. Throwing one inside a command rolls the transaction back. */
-sealed class CommandException(message: String) : Exception(message) {
-    class Validation(message: String) : CommandException(message)
-    class StaleEdit(what: String) :
-        CommandException("$what was changed on another screen or phone. Reload and try again.")
-    class PermissionDenied(message: String) : CommandException(message)
-    class ReturnExceedsSold(itemName: String, remainingMilli: Long) :
-        CommandException("Cannot return more $itemName than was sold (still returnable: ${remainingMilli / 1000.0}).")
-    class NotFound(what: String) : CommandException("$what not found")
+/**
+ * Typed, user-presentable failures. Throwing one inside a command rolls the transaction back.
+ * [uiText] is the plain-language message shown to the shopkeeper (a string resource, so it follows the app language);
+ * the exception's own `message` is only a short technical tag for logs.
+ */
+sealed class CommandException(val uiText: UiText) : Exception(uiText.toString()) {
+    class Validation(uiText: UiText) : CommandException(uiText) {
+        constructor(@StringRes id: Int, vararg args: Any) : this(UiText.Res(id, args.toList()))
+    }
+
+    class StaleEdit(uiText: UiText) : CommandException(uiText) {
+        companion object {
+            fun item(name: String) = StaleEdit(UiText.Res(R.string.msg_stale_item, listOf(name)))
+            fun party(name: String) = StaleEdit(UiText.Res(R.string.msg_stale_party, listOf(name)))
+        }
+    }
+
+    class PermissionDenied(uiText: UiText) : CommandException(uiText) {
+        constructor(@StringRes id: Int, vararg args: Any) : this(UiText.Res(id, args.toList()))
+    }
+
+    class ReturnExceedsSold(val itemName: String, val remainingMilli: Long) : CommandException(
+        UiText.Res(R.string.msg_return_exceeds, listOf(IndianCurrencyFormatter.formatMilliUnits(remainingMilli), itemName)),
+    )
+
+    class NotFound(uiText: UiText) : CommandException(uiText) {
+        constructor(@StringRes id: Int) : this(UiText.Res(id))
+    }
 }
 
 /** Test hook: lets tests throw at named points inside a command to prove rollback. */

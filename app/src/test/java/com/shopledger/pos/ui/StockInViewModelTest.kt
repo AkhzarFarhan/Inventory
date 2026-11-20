@@ -305,12 +305,12 @@ class StockInViewModelTest {
     }
 
     @Test fun failureKeepsStateShowsMessageAndRetryReusesActionId() = runBlocking {
-        val saver = FakeSaver(CommandException.Validation("Quantity must be more than 0"))
+        val saver = FakeSaver(CommandException.Validation(com.shopledger.pos.R.string.msg_qty_positive))
         val v = vm(saver)
         v.openMatches(listOf(matched("1", 4800)), inventory, null, null)
         v.save()
         val s = v.state.value!!
-        assertEquals("Quantity must be more than 0", s.error)
+        assertEquals(com.shopledger.pos.ui.text.UiText.Res(com.shopledger.pos.R.string.msg_qty_positive), s.error)
         assertFalse(s.saving)
         assertNull(s.saved)
         assertEquals(1, s.rows.size)

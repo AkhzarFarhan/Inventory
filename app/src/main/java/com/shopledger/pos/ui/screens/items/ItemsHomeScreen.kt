@@ -70,6 +70,7 @@ import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
+import com.shopledger.pos.ui.text.UiText
 import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.ItemRow
@@ -119,7 +120,6 @@ fun ItemsHomeScreen(
     var searchFocused by remember { mutableStateOf(false) }
     val cipherMode by CostCipherEngine.activeModeFlow.collectAsState()
     val digitMap by CostCipherEngine.activeCustomDigitMapFlow.collectAsState()
-    val scannerFailedTitle = stringResource(R.string.error_barcode_scanner_failed)
 
     Column(modifier.fillMaxSize()) {
         TopAppBar(
@@ -167,7 +167,7 @@ fun ItemsHomeScreen(
                                         onCommitSearch(scanned)
                                     },
                                     onError = { err ->
-                                        AppErrorManager.reportError(title = scannerFailedTitle, customDetail = err)
+                                        AppErrorManager.reportError(UiText.Res(R.string.error_barcode_scanner_failed), UiText.Res(R.string.err_scanner_detail), err)
                                     },
                                 )
                             },

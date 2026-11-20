@@ -13,7 +13,8 @@ object BarcodeScannerHelper {
     fun scanBarcode(
         context: Context,
         onScanned: (String) -> Unit,
-        onError: (String) -> Unit
+        /** Called with the failure (null when the scan simply returned nothing). Never show its text to the user. */
+        onError: (Throwable?) -> Unit
     ) {
         try {
             val options = GmsBarcodeScannerOptions.Builder()
@@ -27,14 +28,14 @@ object BarcodeScannerHelper {
                     if (rawValue.isNotEmpty()) {
                         onScanned(rawValue)
                     } else {
-                        onError("Empty barcode scanned")
+                        onError(null)
                     }
                 }
                 .addOnFailureListener { e ->
-                    onError(e.localizedMessage ?: "Barcode scanner unavailable on this device")
+                    onError(e)
                 }
         } catch (e: Exception) {
-            onError(e.localizedMessage ?: "Barcode scanner initialization failed")
+            onError(e)
         }
     }
 }

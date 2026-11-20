@@ -1,5 +1,6 @@
 package com.shopledger.pos.data.command
 
+import com.shopledger.pos.R
 import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.entity.DeviceEntity
@@ -52,8 +53,8 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
         isDemo: Boolean = false
     ): String = writer.runIdempotent(actionId, "CREATE_ITEM", replay = { it }) {
         val name = displayName.trim()
-        if (name.isEmpty()) throw CommandException.Validation("Item name is required")
-        if (variants.isEmpty()) throw CommandException.Validation("Add at least one variant")
+        if (name.isEmpty()) throw CommandException.Validation(R.string.msg_item_name_required)
+        if (variants.isEmpty()) throw CommandException.Validation(R.string.msg_add_variant)
         variants.forEach(::validate)
         val itemId = insertItemWithVariants(name, category, variants, isDemo, writer.localDevice())
         itemId to itemId
@@ -96,7 +97,7 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
         recategorizeTo: String? = null
     ): String = writer.runIdempotent(actionId, "ADD_VARIANT", replay = { it }) {
         val item = inventory.getItemById(itemId)?.takeUnless { it.isDeleted }
-            ?: throw CommandException.NotFound("Item")
+            ?: throw CommandException.NotFound(R.string.msg_not_found_item)
         validate(spec)
         val device = writer.localDevice()
         val newName = renameTo?.trim()?.takeIf { it.isNotEmpty() }
@@ -129,19 +130,19 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
     ) {
         writer.runIdempotent(actionId, "EDIT_ITEM", replay = { }) {
             val item = inventory.getItemById(itemId)?.takeUnless { it.isDeleted }
-                ?: throw CommandException.NotFound("Item")
+                ?: throw CommandException.NotFound(R.string.msg_not_found_item)
             val variant = inventory.getVariantById(variantId)?.takeIf { it.itemId == itemId && !it.isDeleted }
-                ?: throw CommandException.NotFound("Item variant")
-            if (item.updatedAt != expectedItemUpdatedAt) throw CommandException.StaleEdit("Item \"${item.displayName}\"")
+                ?: throw CommandException.NotFound(R.string.msg_not_found_item)
+            if (item.updatedAt != expectedItemUpdatedAt) throw CommandException.StaleEdit.item(item.displayName)
             if (variant.updatedAt != expectedVariantUpdatedAt) {
-                throw CommandException.StaleEdit("Variant of \"${item.displayName}\"")
+                throw CommandException.StaleEdit.item(item.displayName)
             }
             if (env.actor().role == Role.STAFF && edit.purchasePricePaise != variant.purchasePricePaise) {
-                throw CommandException.PermissionDenied("Only the owner can change the cost price")
+                throw CommandException.PermissionDenied(R.string.msg_owner_only_cost)
             }
             validatePrices(edit.purchasePricePaise, edit.sellingPricePaise, edit.lowStockMilli)
             val name = newDisplayName.trim()
-            if (name.isEmpty()) throw CommandException.Validation("Item name is required")
+            if (name.isEmpty()) throw CommandException.Validation(R.string.msg_item_name_required)
             val device = writer.localDevice()
             val now = env.now()
             inventory.updateItem(
@@ -173,7 +174,7 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
             }
             val target = edit.targetStockMilli
             if (target != null) {
-                if (target < 0L) throw CommandException.Validation("Stock count cannot be negative")
+                if (target < 0L) throw CommandException.Validation(R.string.msg_stock_negative)
                 val current = inventory.getVariantById(variantId)!!.stockMilliUnits
                 val delta = target - current
                 if (delta != 0L) {
@@ -190,9 +191,9 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
     /** Deletes one variant, or the whole item when [variantId] is null or it is the last active variant. */
     suspend fun deleteItem(actionId: String, itemId: String, variantId: String?) {
         writer.runIdempotent(actionId, "DELETE_ITEM", replay = { }) {
-            if (env.actor().role == Role.STAFF) throw CommandException.PermissionDenied("Only the owner can delete items")
+            if (env.actor().role == Role.STAFF) throw CommandException.PermissionDenied(R.string.msg_owner_only_delete)
             val item = inventory.getItemById(itemId)?.takeUnless { it.isDeleted }
-                ?: throw CommandException.NotFound("Item")
+                ?: throw CommandException.NotFound(R.string.msg_not_found_item)
             val now = env.now()
             val active = inventory.getVariantsForItem(itemId).filter { !it.isDeleted }
             if (variantId == null || active.size <= 1) {
@@ -203,7 +204,7 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
                     active.forEach { writer.enqueue(OutboxDocType.VARIANT, it.id, OutboxOp.UPSERT) }
                 }
             } else {
-                if (active.none { it.id == variantId }) throw CommandException.NotFound("Item variant")
+                if (active.none { it.id == variantId }) throw CommandException.NotFound(R.string.msg_not_found_item)
                 inventory.softDeleteSingleVariant(variantId, now)
                 if (!item.isDemo) writer.enqueue(OutboxDocType.VARIANT, variantId, OutboxOp.UPSERT)
             }
@@ -223,11 +224,11 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
         replay = { ref -> inventory.getVariantById(ref)?.stockMilliUnits ?: 0L }
     ) {
         if ((deltaMilli == null) == (targetMilli == null)) {
-            throw CommandException.Validation("Give either a stock change or a new count")
+            throw CommandException.Validation(R.string.msg_stock_change_or_count)
         }
         val variant = inventory.getVariantById(variantId)?.takeUnless { it.isDeleted }
-            ?: throw CommandException.NotFound("Item variant")
-        if (targetMilli != null && targetMilli < 0L) throw CommandException.Validation("Stock count cannot be negative")
+            ?: throw CommandException.NotFound(R.string.msg_not_found_item)
+        if (targetMilli != null && targetMilli < 0L) throw CommandException.Validation(R.string.msg_stock_negative)
         val device = writer.localDevice()
         val delta = deltaMilli ?: (targetMilli!! - variant.stockMilliUnits)
         if (delta != 0L) {
@@ -249,19 +250,19 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
         amountPaidPaise: Long = 0L,
         note: String = ""
     ): String = writer.runIdempotent(actionId, "RECEIVE_PURCHASE", replay = { it }) {
-        if (lines.isEmpty()) throw CommandException.Validation("Add at least one item")
+        if (lines.isEmpty()) throw CommandException.Validation(R.string.msg_add_one_item)
         if (lines.map { it.variantId }.toSet().size != lines.size) {
-            throw CommandException.Validation("Each item can appear only once")
+            throw CommandException.Validation(R.string.msg_item_once)
         }
         if (billTotalPaise < 0L || amountPaidPaise < 0L || amountPaidPaise > billTotalPaise) {
-            throw CommandException.Validation("Paid amount must be between 0 and the bill total")
+            throw CommandException.Validation(R.string.msg_paid_range)
         }
         val device = writer.localDevice()
         val purchaseId = env.newId()
         for (line in lines) {
-            if (line.qtyMilli <= 0L) throw CommandException.Validation("Quantity must be more than 0")
+            if (line.qtyMilli <= 0L) throw CommandException.Validation(R.string.msg_qty_positive)
             val variant = inventory.getVariantById(line.variantId)?.takeUnless { it.isDeleted }
-                ?: throw CommandException.NotFound("Item variant")
+                ?: throw CommandException.NotFound(R.string.msg_not_found_item)
             writer.appendMovement(
                 variant.id, line.qtyMilli, MovementType.PURCHASE, purchaseId,
                 note.trim().ifEmpty { "Purchase received" }, device, enqueue = !variant.isDemo
@@ -270,7 +271,7 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
         val due = billTotalPaise - amountPaidPaise
         if (supplierPartyId != null && due > 0L) {
             parties.getPartyById(supplierPartyId)?.takeUnless { it.isDeleted }
-                ?: throw CommandException.NotFound("Supplier")
+                ?: throw CommandException.NotFound(R.string.msg_not_found_supplier)
             writer.appendLedgerEntry(
                 supplierPartyId, -due, LedgerEntryType.CREDIT_BILL, "CREDIT", purchaseId,
                 "Purchase bill", device, enqueue = true
@@ -315,11 +316,11 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
 
     private fun validate(spec: VariantSpec) {
         validatePrices(spec.purchasePricePaise, spec.sellingPricePaise, spec.lowStockMilli)
-        if (spec.openingStockMilli < 0L) throw CommandException.Validation("Opening stock cannot be negative")
+        if (spec.openingStockMilli < 0L) throw CommandException.Validation(R.string.msg_opening_stock_negative)
     }
 
     private fun validatePrices(costPaise: Long, sellPaise: Long, lowStockMilli: Long) {
-        if (costPaise < 0L || sellPaise < 0L) throw CommandException.Validation("Prices cannot be negative")
-        if (lowStockMilli < 0L) throw CommandException.Validation("Low-stock alert cannot be negative")
+        if (costPaise < 0L || sellPaise < 0L) throw CommandException.Validation(R.string.msg_price_negative)
+        if (lowStockMilli < 0L) throw CommandException.Validation(R.string.msg_low_stock_negative)
     }
 }

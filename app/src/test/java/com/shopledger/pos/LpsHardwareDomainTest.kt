@@ -775,17 +775,17 @@ class LpsHardwareDomainTest {
         AppErrorManager.dismiss()
         assertEquals(null, AppErrorManager.activeMessage.value)
 
-        AppErrorManager.reportError(
-            title = "Checkout Failed",
-            throwable = IllegalStateException("Insufficient disk space")
-        )
+        val title = com.shopledger.pos.ui.text.UiText.Raw("Checkout Failed")
+        AppErrorManager.showTechnicalDetails = { true }
+        AppErrorManager.reportError(title, IllegalStateException("Insufficient disk space"))
+        AppErrorManager.showTechnicalDetails = { com.shopledger.pos.BuildConfig.DEBUG }
         val errMsg = AppErrorManager.activeMessage.value
         requireNotNull(errMsg)
         assertEquals(MessageSeverity.ERROR, errMsg.severity)
-        assertEquals("Checkout Failed", errMsg.title)
-        assertEquals("Insufficient disk space", errMsg.detail)
+        assertEquals(title, errMsg.title)
+        assertEquals("Insufficient disk space", errMsg.technical)
 
-        AppErrorManager.reportWarning("Draft Saved", "Your item draft was saved.")
+        AppErrorManager.reportWarning(com.shopledger.pos.ui.text.UiText.Raw("Draft Saved"), com.shopledger.pos.ui.text.UiText.Raw("Your item draft was saved."))
         val warnMsg = AppErrorManager.activeMessage.value
         requireNotNull(warnMsg)
         assertEquals(MessageSeverity.WARNING, warnMsg.severity)

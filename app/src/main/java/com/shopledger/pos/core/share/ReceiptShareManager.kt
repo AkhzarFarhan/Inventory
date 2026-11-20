@@ -1,5 +1,6 @@
 package com.shopledger.pos.core.share
 
+import com.shopledger.pos.R
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -438,7 +439,7 @@ object ReceiptShareManager {
     ) {
         val imageUri = generateReceiptImageUri(context, receipt)
         if (imageUri == null) {
-            Toast.makeText(context, "Could not generate image", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, R.string.err_receipt_image, Toast.LENGTH_SHORT).show()
             return
         }
 

@@ -34,6 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.shopledger.pos.R
+import com.shopledger.pos.ui.text.asString
 import com.shopledger.pos.ui.theme.CupertinoColors
 import kotlinx.coroutines.delay
 
@@ -118,7 +121,7 @@ fun FloatingAppMessageHost(
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = msg.title,
+                            text = msg.title.asString(),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = inkColor,
@@ -126,7 +129,7 @@ fun FloatingAppMessageHost(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = msg.detail,
+                            text = msg.detail.asString() + msg.technical?.let { "\n$it" }.orEmpty(),
                             fontSize = 12.sp,
                             color = CupertinoColors.LabelPrimary,
                             maxLines = 3,
@@ -139,7 +142,7 @@ fun FloatingAppMessageHost(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Dismiss Message",
+                            contentDescription = stringResource(R.string.action_dismiss),
                             tint = Color(0xFF444448),
                             modifier = Modifier.size(16.dp)
                         )

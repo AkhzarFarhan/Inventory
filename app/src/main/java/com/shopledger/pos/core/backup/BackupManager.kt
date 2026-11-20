@@ -19,7 +19,12 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
-class BackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
+/** [userMessage] is the plain-language string resource shown to the shopkeeper; [message] is for logs and debug. */
+class BackupException(
+    message: String,
+    cause: Throwable? = null,
+    @androidx.annotation.StringRes val userMessage: Int = com.shopledger.pos.R.string.msg_backup_unreadable,
+) : Exception(message, cause)
 
 /**
  * Whole-database backups. Works on API 24 (no VACUUM INTO): copies db + WAL while holding the
@@ -105,7 +110,7 @@ class BackupManager(
         val first = buffered.read()
         val second = buffered.read()
         buffered.reset()
-        if (first != GZIP_MAGIC_1 || second != GZIP_MAGIC_2) throw BackupException(NOT_A_BACKUP)
+        if (first != GZIP_MAGIC_1 || second != GZIP_MAGIC_2) throw BackupException(NOT_A_BACKUP, userMessage = com.shopledger.pos.R.string.msg_backup_not_valid)
         gunzipTo(buffered, sink)
     }
 
@@ -132,8 +137,8 @@ class BackupManager(
             val version = validate(tmp)
             // Validation may have created -wal/-shm/-journal next to the tmp file; the staged file must stand alone.
             listOf("-wal", "-shm", "-journal").forEach { File(tmp.path + it).delete() }
-            if (staged.exists() && !staged.delete()) throw BackupException("Could not replace the earlier staged backup")
-            if (!tmp.renameTo(staged)) throw BackupException("Could not stage the backup (storage problem)")
+            if (staged.exists() && !staged.delete()) throw BackupException("Could not replace the earlier staged backup", userMessage = com.shopledger.pos.R.string.msg_backup_storage)
+            if (!tmp.renameTo(staged)) throw BackupException("Could not stage the backup (storage problem)", userMessage = com.shopledger.pos.R.string.msg_backup_storage)
             done = true
             version
         } finally {
@@ -150,7 +155,7 @@ class BackupManager(
                     val n = gz.read(buffer)
                     if (n < 0) break
                     total += n
-                    if (total > MAX_DECOMPRESSED_BYTES) throw BackupException("This backup is too large to restore")
+                    if (total > MAX_DECOMPRESSED_BYTES) throw BackupException("This backup is too large to restore", userMessage = com.shopledger.pos.R.string.msg_backup_too_large)
                     sink.write(buffer, 0, n)
                 }
             }
@@ -163,7 +168,7 @@ class BackupManager(
 
     /** Checks the candidate read-only and returns its schema version, or throws a specific [BackupException]. */
     private fun validate(candidate: File): Int {
-        if (candidate.length() < SQLITE_HEADER_BYTES || !hasSqliteMagic(candidate)) throw BackupException(NOT_A_BACKUP)
+        if (candidate.length() < SQLITE_HEADER_BYTES || !hasSqliteMagic(candidate)) throw BackupException(NOT_A_BACKUP, userMessage = com.shopledger.pos.R.string.msg_backup_not_valid)
         try {
             SQLiteDatabase.openDatabase(candidate.path, null, SQLiteDatabase.OPEN_READONLY, DatabaseErrorHandler { }).use { db ->
                 val integrity = db.rawQuery("PRAGMA integrity_check", null).use { c -> if (c.moveToFirst()) c.getString(0) else "" }
@@ -171,12 +176,12 @@ class BackupManager(
                 fun hasTable(name: String) = db.rawQuery(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf(name)
                 ).use { it.moveToFirst() }
-                if (!hasTable("inventory_items") || !hasTable("room_master_table")) throw BackupException(NOT_A_BACKUP)
+                if (!hasTable("inventory_items") || !hasTable("room_master_table")) throw BackupException(NOT_A_BACKUP, userMessage = com.shopledger.pos.R.string.msg_backup_not_valid)
                 val version = db.version
                 if (version > LpsDatabase.SCHEMA_VERSION) {
-                    throw BackupException("This backup was made by a newer version of ShopLedger. Update the app first.")
+                    throw BackupException("This backup was made by a newer version of ShopLedger. Update the app first.", userMessage = com.shopledger.pos.R.string.msg_backup_newer)
                 }
-                if (version < 1) throw BackupException(NOT_A_BACKUP)
+                if (version < 1) throw BackupException(NOT_A_BACKUP, userMessage = com.shopledger.pos.R.string.msg_backup_not_valid)
                 return version
             }
         } catch (e: BackupException) {
