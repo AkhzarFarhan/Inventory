@@ -24,7 +24,6 @@ import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.ui.screens.inventory.AddEditItemSheet
 import com.shopledger.pos.ui.screens.inventory.ItemEditorMode
 import com.shopledger.pos.ui.screens.inventory.OrderScanSheet
-import com.shopledger.pos.ui.screens.inventory.QuickSellSheet
 import com.shopledger.pos.ui.screens.khata.PartiesKhataScreen
 import com.shopledger.pos.ui.screens.sales.ReceiptShareDialog
 import com.shopledger.pos.ui.screens.sales.SaleHistoryScreen
@@ -181,33 +180,11 @@ class RestyledScreensTest {
         compose.onNodeWithText("Estimate total").assertExists()
     }
 
-    // ---- Quick sell ----
-
     private val sellVariant = ItemVariantEntity(
         id = "v1", itemId = "i1", sizeLabel = "4 inch", purchasePricePaise = 4_000L, sellingPricePaise = 5_000L,
         stockMilliUnits = 20_000L,
     )
     private val sellItem = InventoryItemEntity(id = "i1", displayName = "Hinge", sortKey = "HINGE")
-
-    @Test fun quickSellShowsFormAndSells() {
-        var sold: String? = null
-        compose.setContent {
-            ShopLedgerTheme {
-                QuickSellSheet(
-                    item = sellItem, variant = sellVariant, allVariants = listOf(sellVariant),
-                    isSellerUnlocked = false, knownBuyers = emptyList(),
-                    onConfirmQuickSell = { line, _, _, mode, _, _ -> sold = line.itemName + ":" + mode },
-                    onShareEstimatePhoto = { _, _, _ -> },
-                    onDismiss = {},
-                )
-            }
-        }
-        compose.onNodeWithText("Quick sell").assertIsDisplayed()
-        compose.onNodeWithText("Total bill").assertIsDisplayed()
-        compose.onNodeWithText("Share estimate picture").assertExists()
-        click("Sell (", substring = true)
-        assertEquals("Hinge:CASH", sold)
-    }
 
     // ---- Order scan ----
 

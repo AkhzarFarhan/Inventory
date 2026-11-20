@@ -282,6 +282,7 @@ fun CheckoutScreen(
                     onValueChange = { renameText = it.take(24) },
                     label = { Text(stringResource(R.string.cart_rename_hint)) },
                     singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth(),
                 )
             },
@@ -340,44 +341,46 @@ private fun CheckoutTopBar(
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
                     Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.checkout_cd_more))
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.cart_rename)) },
-                        onClick = {
-                            menuOpen = false
-                            onRename()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.checkout_menu_close_cart)) },
-                        onClick = {
-                            menuOpen = false
-                            onCloseCart()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.checkout_menu_estimate)) },
-                        enabled = state.lines.isNotEmpty(),
-                        onClick = {
-                            menuOpen = false
-                            onEvent(CheckoutEvent.ShareEstimate)
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.checkout_menu_scan)) },
-                        onClick = {
-                            menuOpen = false
-                            onEvent(CheckoutEvent.OpenOrderScanner)
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.checkout_menu_clear)) },
-                        enabled = state.lines.isNotEmpty(),
-                        onClick = {
-                            menuOpen = false
-                            onClear()
-                        },
-                    )
+                if (menuOpen) {
+                    DropdownMenu(expanded = true, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.cart_rename)) },
+                            onClick = {
+                                menuOpen = false
+                                onRename()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.checkout_menu_close_cart)) },
+                            onClick = {
+                                menuOpen = false
+                                onCloseCart()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.checkout_menu_estimate)) },
+                            enabled = state.lines.isNotEmpty(),
+                            onClick = {
+                                menuOpen = false
+                                onEvent(CheckoutEvent.ShareEstimate)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.checkout_menu_scan)) },
+                            onClick = {
+                                menuOpen = false
+                                onEvent(CheckoutEvent.OpenOrderScanner)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.checkout_menu_clear)) },
+                            enabled = state.lines.isNotEmpty(),
+                            onClick = {
+                                menuOpen = false
+                                onClear()
+                            },
+                        )
+                    }
                 }
             }
         },

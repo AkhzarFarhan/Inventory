@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
@@ -18,7 +19,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -305,21 +308,26 @@ class CheckoutScreenTest {
         assertEquals(listOf(CheckoutEvent.CloseCart), events)
     }
 
+    @Config(qualifiers = "mdpi")
     @Test
     fun renameCartSendsNewName() {
         val events = mutableListOf<CheckoutEvent>()
         compose.setContent {
             ShopLedgerTheme {
                 CheckoutScreen(
-                    state = CheckoutState(cartLabel = "", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())),
+                    state = CheckoutState(cartLabel = "Cart 1", carts = twoCarts, activeCartId = "c1", lines = listOf(hinge())),
                     onEvent = { events += it },
                 )
             }
         }
-        compose.onNodeWithContentDescription(str(R.string.checkout_cd_more)).performClick()
-        compose.onNodeWithText(str(R.string.cart_rename)).performClick()
-        compose.onNodeWithText(str(R.string.cart_rename_hint)).performTextInput("Site order")
-        compose.onNodeWithText(str(R.string.cart_rename_save)).performClick()
+        compose.onNodeWithContentDescription(str(R.string.checkout_cd_more))
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText(str(R.string.cart_rename))
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText(str(R.string.cart_rename_hint))
+            .performSemanticsAction(SemanticsActions.SetText) { it(AnnotatedString("Site order")) }
+        compose.onNodeWithText(str(R.string.cart_rename_save))
+            .performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(CheckoutEvent.RenameCart("Site order")), events)
     }
 

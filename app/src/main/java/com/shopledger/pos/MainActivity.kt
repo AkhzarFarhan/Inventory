@@ -61,8 +61,6 @@ import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.DatabaseHealth
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.PendingRestore
-import com.shopledger.pos.data.local.entity.InventoryItemEntity
-import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.ui.InventoryFilterMode
 import com.shopledger.pos.ui.MainViewModel
 import com.shopledger.pos.ui.displayLabel
@@ -74,8 +72,14 @@ import com.shopledger.pos.ui.screens.inventory.AddEditItemSheet
 import com.shopledger.pos.ui.screens.checkout.CheckoutRoute
 import com.shopledger.pos.ui.screens.inventory.ItemEditorMode
 import com.shopledger.pos.ui.screens.inventory.OrderScanSheet
-import com.shopledger.pos.ui.screens.inventory.QuickSellSheet
+import com.shopledger.pos.ui.screens.items.AddToCartEvent
+import com.shopledger.pos.ui.screens.items.AddToCartSheet
+import com.shopledger.pos.ui.screens.items.AddToCartState
+import com.shopledger.pos.ui.screens.items.AddToCartVariantRow
 import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
+import com.shopledger.pos.ui.screens.items.statusOf
+import com.shopledger.pos.ui.screens.items.variantStockText
+import com.shopledger.pos.ui.text.variantLabel
 import com.shopledger.pos.ui.screens.khata.PartiesKhataScreen
 import com.shopledger.pos.ui.screens.more.MoreScreen
 import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
@@ -174,11 +178,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val isSellerUnlocked by viewModel.isSellerUnlocked.collectAsState()
     val recentSearches by viewModel.recentSearchesState.collectAsState()
     val salesHistory by viewModel.salesHistoryState.collectAsState()
-    val knownBuyers by viewModel.knownBuyersState.collectAsState()
     val carts by viewModel.cartsState.collectAsState()
     val activeCartId by viewModel.activeCartIdState.collectAsState()
     val activeCartSession by viewModel.activeCartSessionState.collectAsState()
-    val cartItems by viewModel.cartItems.collectAsState()
     val activeReceipt by viewModel.activeReceiptForSharing.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCountState.collectAsState()
     val activeSellerName by SyncManager.sellerNameFlow.collectAsState()
@@ -208,7 +210,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
 
     var currentTab by rememberSaveable { mutableStateOf(AppTab.ITEMS) }
     var activeEditorMode by remember { mutableStateOf<ItemEditorMode?>(null) }
-    var quickSellTarget by remember { mutableStateOf<Triple<InventoryItemEntity, ItemVariantEntity, List<ItemVariantEntity>>?>(null) }
+    var addSheetItemId by rememberSaveable { mutableStateOf<String?>(null) }
     var showCheckout by rememberSaveable { mutableStateOf(false) }
     var showSetupAgain by rememberSaveable { mutableStateOf(false) }
     var showOrderScanSheet by remember { mutableStateOf(false) }
@@ -261,7 +263,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             )
                         },
                         onSell = { showCheckout = true },
-                        onOpenItem = { item, variant, variants -> quickSellTarget = Triple(item, variant, variants) },
+                        onOpenItem = { item, _, _ -> addSheetItemId = item.id },
                         onEditItem = { group, variant ->
                             if (!isSellerUnlocked) requestToggleSeller()
                             else activeEditorMode = ItemEditorMode.ManageItem(group, variant.id)
@@ -482,38 +484,56 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             )
         }
 
-        // 1-Tap Quick Sell Sheet
-        quickSellTarget?.let { (item, variant, allVariants) ->
-            QuickSellSheet(
-                item = item,
-                variant = variant,
-                allVariants = allVariants,
+        addSheetItemId?.let { itemId ->
+            val group = allInventory.firstOrNull { it.item.id == itemId }
+            if (group == null) {
+                addSheetItemId = null
+                return@let
+            }
+            val session = activeCartSession
+            val state = AddToCartState(
+                itemName = group.item.displayName,
+                cartLabel = session.displayLabel(context),
+                variants = group.variants.map { v ->
+                    AddToCartVariantRow(
+                        variantId = v.id,
+                        label = v.buildVariantSummary().variantLabel(),
+                        pricePaise = v.sellingPricePaise,
+                        purchasePricePaise = v.purchasePricePaise,
+                        stockText = variantStockText(v),
+                        status = statusOf(v),
+                        qtyInCart = session.items.firstOrNull { it.variantId == v.id }?.quantity ?: 0.0,
+                    )
+                },
+                cartLineCount = session.items.size,
+                cartTotalPaise = session.items.sumOf { it.lineRevenuePaise },
                 isSellerUnlocked = isSellerUnlocked,
-                knownBuyers = knownBuyers,
-                onConfirmQuickSell = { lineItem, buyerName, buyerPhone, paymentMode, discountPaise, amountPaidPaise ->
-                    viewModel.completeSaleAndPrepareReceipt(
-                        itemsToSell = listOf(lineItem),
-                        buyerName = buyerName,
-                        buyerPhone = buyerPhone,
-                        paymentMode = paymentMode,
-                        discountPaise = discountPaise,
-                        amountPaidPaise = amountPaidPaise
-                    )
+            )
+            AddToCartSheet(
+                state = state,
+                onDismiss = { addSheetItemId = null },
+                onEvent = { e ->
+                    when (e) {
+                        is AddToCartEvent.Add -> group.variants.firstOrNull { it.id == e.variantId }
+                            ?.let { viewModel.addOrUpdateCartItem(group.item, it, 1.0) }
+                        is AddToCartEvent.SetQty -> {
+                            val line = session.items.firstOrNull { it.variantId == e.variantId }
+                            when {
+                                e.qty <= 0.0 -> viewModel.removeCartLine(e.variantId)
+                                line != null -> viewModel.updateCartLineQuantityAndPrice(
+                                    e.variantId,
+                                    e.qty,
+                                    line.customSellingPricePaise,
+                                )
+                            }
+                        }
+                        AddToCartEvent.GoToCart -> {
+                            addSheetItemId = null
+                            showCheckout = true
+                        }
+                        AddToCartEvent.Done -> addSheetItemId = null
+                    }
                 },
-                onShareEstimatePhoto = { itemsToEstimate, buyerName, buyerPhone ->
-                    viewModel.prepareEstimateImageForSharing(
-                        itemsToEstimate = itemsToEstimate,
-                        buyerName = buyerName,
-                        buyerPhone = buyerPhone
-                    )
-                },
-                onFillCartWithBuyerOrderAndOpenCart = { snapshots, buyerName, buyerPhone ->
-                    viewModel.fillCartFromBuyerHistory(snapshots)
-                    viewModel.updateActiveCartBuyer(buyerName, buyerPhone)
-                    quickSellTarget = null
-                    showCheckout = true
-                },
-                onDismiss = { quickSellTarget = null }
             )
         }
 

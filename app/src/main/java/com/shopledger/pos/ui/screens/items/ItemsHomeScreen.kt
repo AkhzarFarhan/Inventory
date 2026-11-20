@@ -484,14 +484,5 @@ private fun RecentSearches(
     }
 }
 
-private fun statusOf(v: ItemVariantEntity): StockStatus = when {
-    v.isOversold -> StockStatus.OVERSOLD
-    v.isOutOfStock -> StockStatus.OUT
-    v.isLowStock -> StockStatus.LOW
-    else -> StockStatus.OK
-}
-
-private fun qty(v: ItemVariantEntity): String = IndianCurrencyFormatter.formatQuantity(v.stockQuantity)
-
 private fun ItemVariantEntity.hasAttributes(): Boolean =
     sizeLabel.isNotBlank() || materialLabel.isNotBlank() || colorFinishLabel.isNotBlank()

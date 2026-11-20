@@ -207,9 +207,7 @@
     <string name="checkout_total">कुल</string>
     <string name="checkout_profit">मुनाफ़ा</string>
     <string name="checkout_complete">बिक्री पूरी करें %1$s</string>
-    <string name="checkout_menu_new_cart">नया कार्ट</string>
     <string name="checkout_menu_close_cart">यह कार्ट बंद करें</string>
-    <string name="checkout_menu_switch">%1$s पर जाएँ (%2$d)</string>
     <string name="checkout_menu_estimate">एस्टीमेट भेजें</string>
     <string name="checkout_menu_scan">ऑर्डर लिस्ट स्कैन करें</string>
     <string name="checkout_menu_clear">कार्ट खाली करें</string>
@@ -504,35 +502,6 @@
     <string name="bills_return_message">\"%1$s (%2$s)\": अधिकतम %3$s %4$s वापस हो सकता है। स्टॉक वापस जुड़ेगा और क्रेडिट नोट बनेगा।</string>
     <string name="bills_return_qty">वापस की मात्रा (%1$s)</string>
     <string name="bills_return_confirm">वापस करें और स्टॉक जोड़ें</string>
-
-    <!-- Quick sell sheet -->
-    <string name="sell_title">झटपट बिक्री</string>
-    <string name="sell_choose_variant">साइज़ या किस्म चुनें</string>
-    <string name="sell_available">%1$s · उपलब्ध: %2$s %3$s</string>
-    <string name="sell_total_bill">कुल बिल</string>
-    <string name="sell_net_profit">मुनाफ़ा: %1$s</string>
-    <string name="sell_gain">लाभ: %1$s (%2$s मार्जिन)</string>
-    <string name="sell_qty_label">मात्रा (%1$s)</string>
-    <string name="sell_rate_label">बिक्री भाव (₹ प्रति %1$s)</string>
-    <string name="sell_buyer_title">ग्राहक</string>
-    <string name="sell_buyer_hint">पुराने ग्राहक खोजने के लिए नाम या नंबर लिखें</string>
-    <string name="sell_buyer_phone">ग्राहक का WhatsApp नंबर</string>
-    <string name="sell_buyer_phone_hint">10 अंकों का नंबर</string>
-    <string name="sell_buyer_name">ग्राहक का नाम</string>
-    <string name="sell_buyer_name_hint">ग्राहक का नाम</string>
-    <string name="sell_tap_customer">नाम और नंबर भरने के लिए ग्राहक दबाएँ:</string>
-    <string name="sell_customer_fallback">ग्राहक</string>
-    <plurals name="sell_past_visits">
-        <item quantity="one">पुराना ग्राहक · %1$d बार पहले आए</item>
-        <item quantity="other">पुराना ग्राहक · %1$d बार पहले आए</item>
-    </plurals>
-    <string name="sell_tap_fill">भरने के लिए दबाएँ</string>
-    <string name="sell_pay_title">भुगतान और छूट</string>
-    <string name="sell_discount_label">छूट (₹, ज़रूरी नहीं)</string>
-    <string name="sell_paid_now">अभी दिए (₹)</string>
-    <string name="sell_zero_hint">0</string>
-    <string name="sell_button">बेचें (%1$s)</string>
-    <string name="sell_estimate_photo">अनुमान की फ़ोटो भेजें</string>
 
     <!-- Order scan sheet -->
     <string name="scan_title">ऑर्डर लिस्ट या बिल स्कैन करें</string>
