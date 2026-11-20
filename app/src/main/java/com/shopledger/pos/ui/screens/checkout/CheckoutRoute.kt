@@ -35,11 +35,13 @@ fun CheckoutRoute(
 
     val cartId = session.cartId
     var query by rememberSaveable { mutableStateOf("") }
-    var buyerName by remember(cartId) { mutableStateOf(session.buyerName) }
-    var buyerPhone by remember(cartId) { mutableStateOf(session.buyerPhone) }
-    var mode by remember(cartId) { mutableStateOf(PayMode.CASH) }
-    var discountPaise by remember(cartId) { mutableStateOf(0L) }
-    var paidNowPaise by remember(cartId) { mutableStateOf<Long?>(null) }
+    // Re-read whenever the session's stored buyer changes (scanned order, picked buyer, cart switch).
+    var buyerName by remember(cartId, session.buyerName, session.buyerPhone) { mutableStateOf(session.buyerName) }
+    var buyerPhone by remember(cartId, session.buyerName, session.buyerPhone) { mutableStateOf(session.buyerPhone) }
+    // Payment choices survive rotation / process recreation so an Udhar sale cannot silently become Cash.
+    var mode by rememberSaveable(cartId) { mutableStateOf(PayMode.CASH) }
+    var discountPaise by rememberSaveable(cartId) { mutableStateOf(0L) }
+    var paidNowPaise by rememberSaveable(cartId) { mutableStateOf<Long?>(null) }
 
     val inStockFormat = stringResource(R.string.stock_in_stock)
     val hits = remember(query, allInventory, inStockFormat) {
@@ -55,7 +57,7 @@ fun CheckoutRoute(
                 .sortedByDescending { it.second }
                 .flatMap { (group, _) ->
                     group.variants.map { v ->
-                        CheckoutSearchHit(
+                        v.barcode to CheckoutSearchHit(
                             itemId = group.item.id,
                             variantId = v.id,
                             itemName = group.item.displayName,
@@ -70,6 +72,9 @@ fun CheckoutRoute(
                         )
                     }
                 }
+                // An exact barcode hit goes first (stable sort keeps the relevance order for the rest).
+                .sortedBy { (barcode, _) -> if (barcode.isNotBlank() && barcode.equals(q, ignoreCase = true)) 0 else 1 }
+                .map { it.second }
                 .take(MAX_HITS)
         }
     }
@@ -136,18 +141,20 @@ fun CheckoutRoute(
                 is CheckoutEvent.SelectMode -> mode = event.mode
                 is CheckoutEvent.PaidNowChanged -> paidNowPaise = event.paise
                 is CheckoutEvent.Complete -> {
-                    val subtotal = cartItems.sumOf { it.lineRevenuePaise }
-                    val discount = discountPaise.coerceIn(0L, subtotal)
-                    val net = (subtotal - discount).coerceAtLeast(0L)
-                    val paid = if (event.mode == PayMode.CREDIT) (paidNowPaise ?: 0L).coerceIn(0L, net) else null
+                    val args = mapCheckoutSale(
+                        subtotalPaise = cartItems.sumOf { it.lineRevenuePaise },
+                        mode = event.mode,
+                        discountPaise = discountPaise,
+                        paidNowPaise = paidNowPaise,
+                    )
                     viewModel.completeSaleAndPrepareReceipt(
                         itemsToSell = cartItems,
                         buyerName = buyerName,
                         buyerPhone = buyerPhone,
                         clearCounterCart = true,
                         paymentMode = event.mode.wire,
-                        discountPaise = discount,
-                        amountPaidPaise = paid,
+                        discountPaise = args.discountPaise,
+                        amountPaidPaise = args.amountPaidPaise,
                         // Only leave once the sale is saved; a failure keeps the bill open with its error message.
                         onComplete = { onClose() },
                     )
@@ -162,6 +169,21 @@ fun CheckoutRoute(
             }
         },
     )
+}
+
+/** What the checkout command receives: discount clamped to the subtotal, paid-now only for Udhar and clamped to the net. */
+internal data class CheckoutSaleArgs(val paymentMode: String, val discountPaise: Long, val amountPaidPaise: Long?)
+
+internal fun mapCheckoutSale(
+    subtotalPaise: Long,
+    mode: PayMode,
+    discountPaise: Long,
+    paidNowPaise: Long?,
+): CheckoutSaleArgs {
+    val discount = discountPaise.coerceIn(0L, subtotalPaise.coerceAtLeast(0L))
+    val net = (subtotalPaise - discount).coerceAtLeast(0L)
+    val paid = if (mode == PayMode.CREDIT) (paidNowPaise ?: 0L).coerceIn(0L, net) else null
+    return CheckoutSaleArgs(mode.wire, discount, paid)
 }
 
 private const val MAX_HITS = 12

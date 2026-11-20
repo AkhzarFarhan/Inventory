@@ -200,7 +200,7 @@
     <string name="checkout_paid_now">अभी दिया (ज़रूरी नहीं)</string>
     <string name="checkout_due">उधार बाकी: %1$s</string>
     <string name="checkout_upi_hint">बिक्री के बाद UPI QR कोड दिखेगा।</string>
-    <string name="checkout_subtotal">जोड़</string>
+    <string name="checkout_subtotal">कुल जोड़</string>
     <string name="checkout_add_discount">छूट जोड़ें</string>
     <string name="checkout_discount">छूट</string>
     <string name="checkout_gst">GST</string>
