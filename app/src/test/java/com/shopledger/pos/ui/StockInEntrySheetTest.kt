@@ -28,10 +28,10 @@ class StockInEntrySheetTest {
         var unlock = 0
         var manual = 0
         var dismissed = 0
-        var scanned = 0
+        var discarded = 0
     }
 
-    private fun show(unlocked: Boolean, visible: Boolean = true, counts: Counts = Counts()): Counts {
+    private fun show(unlocked: Boolean, visible: Boolean = true, counts: Counts = Counts(), hasReview: Boolean = false): Counts {
         compose.setContent {
             ShopLedgerTheme {
                 StockInEntrySheet(
@@ -40,7 +40,8 @@ class StockInEntrySheetTest {
                     onRequestUnlock = { counts.unlock++ },
                     onAddManually = { counts.manual++ },
                     onDismiss = { counts.dismissed++ },
-                    onScanned = { _, _, _ -> counts.scanned++ },
+                    hasUnsavedReview = hasReview,
+                    onDiscardReview = { counts.discarded++ },
                 )
             }
         }
@@ -60,7 +61,7 @@ class StockInEntrySheetTest {
         assertEquals(1, c.unlock)
         click("Pick a photo")
         assertEquals(2, c.unlock)
-        assertEquals(0, c.scanned)
+        assertEquals(0, c.discarded)
     }
 
     @Test fun addingManuallyDoesNotNeedSellerMode() {
@@ -119,5 +120,39 @@ class StockInEntrySheetTest {
         tab = true
         compose.waitForIdle()
         compose.onNodeWithText("Scan bill or list").assertDoesNotExist()
+    }
+
+    @Test fun startingANewScanWithAnUnsavedReviewAsksFirst() {
+        val c = show(unlocked = true, hasReview = true)
+        compose.onNodeWithText("Pick a photo").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        compose.onNodeWithText("Discard the unsaved review?").assertIsDisplayed()
+        assertEquals(0, c.discarded)
+        // Keeping the review: nothing is discarded.
+        click("Cancel")
+        compose.onNodeWithText("Discard the unsaved review?").assertDoesNotExist()
+        assertEquals(0, c.discarded)
+        compose.onNodeWithText("Pick a photo").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        click("Discard")
+        assertEquals(1, c.discarded)
+    }
+
+    @Test fun lockedItemsScreenShowsAResumeCardForAWaitingReview() {
+        var unlockTaps = 0
+        compose.setContent {
+            ShopLedgerTheme {
+                ItemsHomeScreen(
+                    shopName = "Shop", items = emptyList(), searchQuery = "", onSearchQueryChange = {},
+                    lowStockOnly = false, onLowStockOnlyChange = {}, isSellerUnlocked = false, onToggleSeller = {},
+                    cartLineCount = 0, onSell = {}, onOpenItem = { _, _, _ -> }, onEditItem = { _, _ -> },
+                    onAddToCart = { _, _ -> },
+                    resumeStockInRows = 3, onResumeStockIn = { unlockTaps++ },
+                )
+            }
+        }
+        compose.onNodeWithText("Stock-in review waiting (3 items)").assertIsDisplayed()
+        compose.onNodeWithText("Tap to unlock and continue").performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(1, unlockTaps)
     }
 }

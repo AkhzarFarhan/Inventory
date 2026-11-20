@@ -171,8 +171,12 @@ fun QtyStepper(
 private fun editable(paise: Long?): String =
     paise?.let { IndianCurrencyFormatter.paiseToEditableString(it) } ?: ""
 
-private fun parse(text: String): Long? =
-    if (text.isBlank()) null else IndianCurrencyFormatter.parseRupeesToPaise(text)
+/** Exact (BigDecimal) rupees-to-paise; blank is null, anything unparseable is 0. */
+private fun parse(text: String): Long? {
+    if (text.isBlank()) return null
+    val d = text.replace(",", "").trim().toBigDecimalOrNull() ?: return 0L
+    return d.movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP).toLong()
+}
 
 private const val MAX_INTEGER_DIGITS = 9
 private const val MAX_DECIMAL_DIGITS = 2

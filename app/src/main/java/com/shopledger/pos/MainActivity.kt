@@ -176,6 +176,10 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val stockInReview by stockInViewModel.state.collectAsState()
     var showStockInSheet by rememberSaveable { mutableStateOf(false) }
     var confirmDiscardStockIn by remember { mutableStateOf(false) }
+    val stockInReading by stockInViewModel.reading.collectAsState()
+    val stockInFailedTitle = stringResource(R.string.stock_in_scan_failed)
+    // Once a review is open the entry sheet has done its job.
+    LaunchedEffect(stockInReview != null) { if (stockInReview != null) showStockInSheet = false }
     LaunchedEffect(parties) { stockInViewModel.setSuppliers(parties) }
     LaunchedEffect(allInventory) { stockInViewModel.setInventory(allInventory) }
     LaunchedEffect(stockInReview?.saved) {
@@ -248,6 +252,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onResumeDraft = { activeEditorMode = ItemEditorMode.AddNewItem },
                         onDiscardDraft = { ItemDraftManager.clearDraft(context) },
                         onStockIn = { showStockInSheet = true },
+                        // A review kept while seller mode is locked must stay findable: tap to unlock and continue.
+                        resumeStockInRows = stockInReview?.rows?.size?.takeIf { !isSellerUnlocked },
+                        onResumeStockIn = requestToggleSeller,
                         onShareLowStock = {
                             val orderText = buildString {
                                 append(
@@ -323,10 +330,11 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 activeEditorMode = ItemEditorMode.AddNewItem
             },
             onDismiss = { showStockInSheet = false },
-            onScanned = { text, rawText, uri ->
-                showStockInSheet = false
-                stockInViewModel.openAsync(text, rawText, allInventory, uri)
-            },
+            reading = stockInReading,
+            hasUnsavedReview = stockInReview != null,
+            onDiscardReview = { stockInViewModel.close() },
+            onPhotos = { uris -> stockInViewModel.readPhotos(context, uris, stockInFailedTitle) },
+            onBitmap = { bitmap -> stockInViewModel.readBitmap(context, bitmap, stockInFailedTitle) },
         )
 
         // A locked seller mode hides the review without losing it: unlock again and it is still there.

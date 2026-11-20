@@ -146,6 +146,7 @@
     <string name="review_block_qty">\"%1$s\" की मात्रा डालें।</string>
     <string name="review_block_name">नए सामान का नाम डालें।</string>
     <string name="review_block_cost">\"%1$s\" का खरीद दाम डालें।</string>
+    <string name="review_block_cost_owner">मालिक से \"%1$s\" का खरीद दाम डलवाएँ।</string>
     <string name="review_block_sell">\"%1$s\" का बिक्री दाम डालें।</string>
     <string name="review_block_check">चुनें कि \"%1$s\" कौन सा सामान है।</string>
     <string name="review_block_duplicate">\"%1$s\" लिस्ट में दो बार है। एक हटा दें।</string>
@@ -161,6 +162,13 @@
     <string name="review_discard_title">यह लिस्ट हटाएँ?</string>
     <string name="review_discard_message">अभी तक स्टॉक में कुछ नहीं जोड़ा गया है।</string>
     <string name="review_discard_confirm">हटाएँ</string>
+    <string name="stock_in_replace_title">बिना सेव की लिस्ट हटाएँ?</string>
+    <string name="stock_in_replace_message">एक स्टॉक लिस्ट अभी जुड़ने के लिए बाकी है। नया स्कैन शुरू करने पर वह हट जाएगी।</string>
+    <plurals name="stock_in_resume_title">
+        <item quantity="one">स्टॉक लिस्ट बाकी है (%1$d सामान)</item>
+        <item quantity="other">स्टॉक लिस्ट बाकी है (%1$d सामान)</item>
+    </plurals>
+    <string name="stock_in_resume_hint">अनलॉक करके जारी रखने के लिए दबाएँ</string>
     <plurals name="stock_in_saved">
         <item quantity="one">%1$d सामान स्टॉक में जुड़ गया</item>
         <item quantity="other">%1$d सामान स्टॉक में जुड़ गए</item>

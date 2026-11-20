@@ -1,5 +1,7 @@
 package com.shopledger.pos.ui.screens.stockin
 
+import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -8,7 +10,9 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.shopledger.pos.BuildConfig
+import com.shopledger.pos.core.error.AppErrorManager
 import com.shopledger.pos.core.nlp.ShopVertical
+import com.shopledger.pos.core.scanner.OnDeviceOrderScannerManager
 import com.shopledger.pos.core.scanner.MatchStatus
 import com.shopledger.pos.core.scanner.ParsedStockLine
 import com.shopledger.pos.core.scanner.StockLineMatch
@@ -30,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.UUID
@@ -68,7 +73,7 @@ data class ReviewRow(
     val sellAuto: Boolean = false,
 ) : java.io.Serializable
 
-enum class BlockKind { EMPTY, QTY, NAME, COST, SELL, CHECK, DUPLICATE, SUPPLIER, PAID }
+enum class BlockKind { EMPTY, QTY, NAME, COST, COST_OWNER, SELL, CHECK, DUPLICATE, SUPPLIER, PAID }
 
 data class BlockReason(val kind: BlockKind, val rowLabel: String? = null)
 
@@ -110,7 +115,7 @@ data class StockInUiState(
         return when {
             (row.qtyMilli ?: 0L) <= 0L -> BlockKind.QTY
             row.status == MatchStatus.NEW && row.itemName.isBlank() -> BlockKind.NAME
-            (row.costPaise ?: 0L) <= 0L -> BlockKind.COST
+            (row.costPaise ?: 0L) <= 0L -> if (canEditCost(row)) BlockKind.COST else BlockKind.COST_OWNER
             row.status == MatchStatus.NEW && row.sellPaise == null -> BlockKind.SELL
             row.status == MatchStatus.CHECK -> BlockKind.CHECK
             duplicate -> BlockKind.DUPLICATE
@@ -119,6 +124,10 @@ data class StockInUiState(
     }
 
     val hasSupplier: Boolean get() = supplierId != null || newSupplierName.isNotBlank()
+
+    /** With no supplier the bill is paid in full: until the user edits paid, it follows the total again. */
+    fun withPaidFollowing(next: StockInUiState): StockInUiState =
+        if (!next.hasSupplier && !next.paidEdited) next.copy(amountPaidPaise = next.billTotalPaise ?: 0L) else next
 
     val blockReason: BlockReason?
         get() {
@@ -234,6 +243,10 @@ class StockInViewModel(
     /** null = no review open. */
     val state: StateFlow<StockInUiState?> = _state.asStateFlow()
 
+    private val _reading = MutableStateFlow(false)
+    /** True while a photo is being read (OCR and tidy-up). It lives here so it survives rotation. */
+    val reading: StateFlow<Boolean> = _reading.asStateFlow()
+
     // All three are guarded by [lock].
     private var suppliers: List<SupplierOption> = emptyList()
     private var inventory: List<InventoryItemWithVariants> = emptyList()
@@ -320,6 +333,56 @@ class StockInViewModel(
     fun openAsync(text: String, rawText: String, inventory: List<InventoryItemWithVariants>, imageUri: Uri?) {
         viewModelScope.launch(Dispatchers.Default) { open(text, inventory, imageUri, rawText = rawText) }
     }
+
+    /**
+     * OCR the given photos on this device, tidy the text with the optional model and open the review.
+     * Runs in [viewModelScope], so rotating the phone while it works does not lose it.
+     */
+    fun readPhotos(context: Context, uris: List<Uri>, failedTitle: String) {
+        if (uris.isEmpty() || !_reading.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        viewModelScope.launch {
+            try {
+                val combined = StringBuilder()
+                var firstError: Throwable? = null
+                for (uri in uris) {
+                    OnDeviceOrderScannerManager.extractTextFromUri(app, uri)
+                        .onSuccess { if (it.isNotBlank()) combined.appendLine(it) }
+                        .onFailure { if (firstError == null) firstError = it }
+                }
+                val raw = combined.toString().trim()
+                val error = firstError
+                if (raw.isBlank() && error != null) {
+                    AppErrorManager.reportError(failedTitle, error, failedTitle)
+                } else {
+                    val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(app, raw) ?: raw
+                    withContext(Dispatchers.Default) { open(text, currentInventory(), uris.first(), rawText = raw) }
+                }
+            } finally {
+                _reading.value = false
+            }
+        }
+    }
+
+    /** Same as [readPhotos] for the single preview bitmap some cameras return. */
+    fun readBitmap(context: Context, bitmap: Bitmap, failedTitle: String) {
+        if (!_reading.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        viewModelScope.launch {
+            try {
+                OnDeviceOrderScannerManager.extractTextFromBitmap(bitmap)
+                    .onSuccess { raw ->
+                        val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(app, raw) ?: raw
+                        withContext(Dispatchers.Default) { open(text, currentInventory(), null, rawText = raw) }
+                    }
+                    .onFailure { AppErrorManager.reportError(failedTitle, it, failedTitle) }
+            } finally {
+                _reading.value = false
+            }
+        }
+    }
+
+    private fun currentInventory(): List<InventoryItemWithVariants> = synchronized(lock) { inventory }
 
     fun openMatches(
         matches: List<StockLineMatch>,
@@ -440,8 +503,10 @@ class StockInViewModel(
                     }
                 })
             }
-            is StockInEvent.SetSupplier -> update { it.copy(supplierId = event.id, newSupplierName = if (event.id != null) "" else it.newSupplierName) }
-            is StockInEvent.SetNewSupplier -> update { it.copy(newSupplierName = event.name, supplierId = null) }
+            is StockInEvent.SetSupplier -> update {
+                it.withPaidFollowing(it.copy(supplierId = event.id, newSupplierName = if (event.id != null) "" else it.newSupplierName))
+            }
+            is StockInEvent.SetNewSupplier -> update { it.withPaidFollowing(it.copy(newSupplierName = event.name, supplierId = null)) }
             is StockInEvent.SetBillTotal -> update { s ->
                 // With no supplier the bill is paid in full, so paid follows the total until the user edits it.
                 val follows = !s.hasSupplier && !s.paidEdited

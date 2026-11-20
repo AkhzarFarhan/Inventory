@@ -665,6 +665,7 @@ private fun blockText(reason: BlockReason): String {
         BlockKind.QTY -> stringResource(R.string.review_block_qty, label)
         BlockKind.NAME -> stringResource(R.string.review_block_name)
         BlockKind.COST -> stringResource(R.string.review_block_cost, label)
+        BlockKind.COST_OWNER -> stringResource(R.string.review_block_cost_owner, label)
         BlockKind.SELL -> stringResource(R.string.review_block_sell, label)
         BlockKind.CHECK -> stringResource(R.string.review_block_check, label)
         BlockKind.DUPLICATE -> stringResource(R.string.review_block_duplicate, label)

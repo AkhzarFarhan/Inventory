@@ -3,6 +3,7 @@ package com.shopledger.pos.ui.screens.stockin
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -26,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,12 +36,10 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.shopledger.pos.R
-import com.shopledger.pos.core.error.AppErrorManager
-import com.shopledger.pos.core.scanner.OnDeviceOrderScannerManager
+import com.shopledger.pos.ui.theme.ConfirmDialog
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.SecondaryActionButton
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
-import kotlinx.coroutines.launch
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -54,9 +52,10 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
  *
  * Keep this composable in the tree at all times (the app shell does) and drive the sheet with [visible]: the camera
  * and gallery launchers live here, so their results still arrive after the screen is rotated or the tab changed.
- * Scanning needs seller mode; while it is locked the scan buttons call [onRequestUnlock] instead.
- * The sheet reads the photo on this device and hands the text to [onScanned] as
- * (text tidied for parsing, plain OCR text, photo); the host hides the sheet from there.
+ * Reading the photo happens in the view model (see [StockInViewModel.readPhotos]); this sheet only hands the photos
+ * to [onPhotos] / [onBitmap] and shows [reading]. Scanning needs seller mode; while it is locked the scan buttons call
+ * [onRequestUnlock] instead. When [hasUnsavedReview] is true, starting a new scan first asks before the old review
+ * is thrown away ([onDiscardReview]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,71 +65,53 @@ fun StockInEntrySheet(
     onRequestUnlock: () -> Unit,
     onAddManually: () -> Unit,
     onDismiss: () -> Unit,
-    onScanned: (text: String, rawText: String, imageUri: Uri?) -> Unit = { _, _, _ -> },
+    reading: Boolean = false,
+    hasUnsavedReview: Boolean = false,
+    onDiscardReview: () -> Unit = {},
+    onPhotos: (List<Uri>) -> Unit = {},
+    onBitmap: (Bitmap) -> Unit = {},
 ) {
-    val currentOnScanned by rememberUpdatedState(onScanned)
+    val currentOnPhotos by rememberUpdatedState(onPhotos)
+    val currentOnBitmap by rememberUpdatedState(onBitmap)
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
-    val scope = rememberCoroutineScope()
-    var processing by remember { mutableStateOf(false) }
-    val failedTitle = stringResource(R.string.stock_in_scan_failed)
-
-    /** OCR the given photos, tidy the text with the optional LLM, and hand it over. */
-    fun readPhotos(uris: List<Uri>) {
-        if (uris.isEmpty()) return
-        scope.launch {
-            processing = true
-            try {
-                val combined = StringBuilder()
-                var firstError: Throwable? = null
-                for (uri in uris) {
-                    OnDeviceOrderScannerManager.extractTextFromUri(context, uri)
-                        .onSuccess { if (it.isNotBlank()) combined.appendLine(it) }
-                        .onFailure { if (firstError == null) firstError = it }
-                }
-                val raw = combined.toString().trim()
-                if (raw.isBlank() && firstError != null) {
-                    AppErrorManager.reportError(failedTitle, firstError, failedTitle)
-                } else {
-                    val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(context, raw) ?: raw
-                    currentOnScanned(text, raw, uris.first())
-                }
-            } finally {
-                processing = false
-            }
-        }
-    }
+    var pendingStart by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     val cameraFallbackLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) {
-            scope.launch {
-                processing = true
-                try {
-                    OnDeviceOrderScannerManager.extractTextFromBitmap(bitmap)
-                        .onSuccess { raw ->
-                            val text = if (raw.isBlank()) raw else OnDeviceOrderScannerManager.extractStockLines(context, raw) ?: raw
-                            currentOnScanned(text, raw, null)
-                        }
-                        .onFailure { AppErrorManager.reportError(failedTitle, it, failedTitle) }
-                } finally {
-                    processing = false
-                }
-            }
-        }
+        if (bitmap != null) currentOnBitmap(bitmap)
     }
 
     val docScannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val scan = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-            readPhotos(scan?.pages?.map { it.imageUri }.orEmpty())
+            currentOnPhotos(scan?.pages?.map { it.imageUri }.orEmpty())
         }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) readPhotos(listOf(uri))
+        if (uri != null) currentOnPhotos(listOf(uri))
+    }
+
+    /** Run [start] now, or after the user agrees to throw the unsaved review away. */
+    fun guarded(start: () -> Unit) {
+        if (hasUnsavedReview) pendingStart = start else start()
     }
 
     if (!visible) return
+    pendingStart?.let { start ->
+        ConfirmDialog(
+            title = stringResource(R.string.stock_in_replace_title),
+            message = stringResource(R.string.stock_in_replace_message),
+            confirmText = stringResource(R.string.review_discard_confirm),
+            destructive = true,
+            onConfirm = {
+                pendingStart = null
+                onDiscardReview()
+                start()
+            },
+            onDismiss = { pendingStart = null },
+        )
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -139,7 +120,7 @@ fun StockInEntrySheet(
             verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM),
         ) {
             Text(stringResource(R.string.stock_in_title), style = MaterialTheme.typography.titleLarge)
-            if (processing) {
+            if (reading) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingM),
@@ -160,7 +141,8 @@ fun StockInEntrySheet(
                 onClick = {
                     if (!isSellerUnlocked) {
                         onRequestUnlock()
-                    } else if (activity != null) {
+                    } else guarded {
+                      if (activity != null) {
                         val options = GmsDocumentScannerOptions.Builder()
                             .setGalleryImportAllowed(true)
                             .setPageLimit(3)
@@ -171,24 +153,25 @@ fun StockInEntrySheet(
                             .getStartScanIntent(activity)
                             .addOnSuccessListener { docScannerLauncher.launch(IntentSenderRequest.Builder(it).build()) }
                             .addOnFailureListener { cameraFallbackLauncher.launch(null) }
-                    } else {
+                      } else {
                         cameraFallbackLauncher.launch(null)
+                      }
                     }
                 },
                 icon = Icons.Filled.CameraAlt,
-                enabled = !processing,
+                enabled = !reading,
             )
             SecondaryActionButton(
                 text = stringResource(R.string.stock_in_pick_photo),
-                onClick = { if (isSellerUnlocked) galleryLauncher.launch("image/*") else onRequestUnlock() },
+                onClick = { if (isSellerUnlocked) guarded { galleryLauncher.launch("image/*") } else onRequestUnlock() },
                 icon = Icons.Filled.PhotoLibrary,
-                enabled = !processing,
+                enabled = !reading,
             )
             SecondaryActionButton(
                 text = stringResource(R.string.stock_in_add_manually),
                 onClick = onAddManually,
                 icon = Icons.Filled.Edit,
-                enabled = !processing,
+                enabled = !reading,
             )
         }
     }

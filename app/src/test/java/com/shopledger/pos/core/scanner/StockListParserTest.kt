@@ -76,8 +76,8 @@ class StockListParserTest {
 
     @Test fun totalWithTaxWordIsIgnoredForBillTotal() {
         val text = "Hinge | 1 | pcs | 10 | 10\nTotal GST 18\nTotal 10"
-        assertEquals(1000L, StockListParser.detectBillTotalPaise(text))
-        assertEquals(1000L, StockListParser.detectBillTotalPaise("Hinge | 1 | pcs | 10 | 10\nTotal tax 1\nTotal 10"))
+        assertEquals(1000L, StockListParser.detectPrintedTotalPaise(text))
+        assertEquals(1000L, StockListParser.detectPrintedTotalPaise("Hinge | 1 | pcs | 10 | 10\nTotal tax 1\nTotal 10"))
     }
 
     @Test fun noiseLinesAreSkipped() {
@@ -97,12 +97,11 @@ class StockListParserTest {
             Ph: 9876543210
         """.trimIndent()
         assertEquals(3, StockListParser.parse(text).size)
-        assertEquals(348200L, StockListParser.detectBillTotalPaise(text))
+        assertEquals(348200L, StockListParser.detectPrintedTotalPaise(text))
     }
 
-    @Test fun billTotalFallsBackToSumOfAmounts() {
-        val text = "A | 1 | pcs | 10 | 10\nB | 2 | pcs | 5 | 10"
-        assertEquals(2000L, StockListParser.detectBillTotalPaise(text))
-        assertNull(StockListParser.detectBillTotalPaise("Hinge 12"))
+    @Test fun noPrintedTotalMeansNull() {
+        assertNull(StockListParser.detectPrintedTotalPaise("A | 1 | pcs | 10 | 10\nB | 2 | pcs | 5 | 10"))
+        assertNull(StockListParser.detectPrintedTotalPaise("Hinge 12"))
     }
 }

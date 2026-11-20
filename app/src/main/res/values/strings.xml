@@ -146,6 +146,7 @@
     <string name="review_block_qty">Enter a quantity for \"%1$s\".</string>
     <string name="review_block_name">Give the new item a name.</string>
     <string name="review_block_cost">Add the cost price for \"%1$s\".</string>
+    <string name="review_block_cost_owner">Ask the owner to set the cost price for \"%1$s\".</string>
     <string name="review_block_sell">Add a selling price for \"%1$s\".</string>
     <string name="review_block_check">Choose which item \"%1$s\" is.</string>
     <string name="review_block_duplicate">\"%1$s\" is in the list twice. Remove one.</string>
@@ -161,6 +162,13 @@
     <string name="review_discard_title">Discard this list?</string>
     <string name="review_discard_message">Nothing has been added to your stock yet.</string>
     <string name="review_discard_confirm">Discard</string>
+    <string name="stock_in_replace_title">Discard the unsaved review?</string>
+    <string name="stock_in_replace_message">A stock-in list is still waiting to be added. Starting a new scan throws it away.</string>
+    <plurals name="stock_in_resume_title">
+        <item quantity="one">Stock-in review waiting (%1$d item)</item>
+        <item quantity="other">Stock-in review waiting (%1$d items)</item>
+    </plurals>
+    <string name="stock_in_resume_hint">Tap to unlock and continue</string>
     <plurals name="stock_in_saved">
         <item quantity="one">Added %1$d item to stock</item>
         <item quantity="other">Added %1$d items to stock</item>

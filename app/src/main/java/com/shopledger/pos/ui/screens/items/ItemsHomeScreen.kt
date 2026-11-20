@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -109,6 +110,9 @@ fun ItemsHomeScreen(
     onShareLowStock: (() -> Unit)? = null,
     /** Opens the Stock In sheet. The sheet itself lives in the app shell so it survives tab changes and rotation. */
     onStockIn: () -> Unit = {},
+    /** Rows in a stock-in review that is waiting behind the seller lock (null = none). Tapping the card calls [onResumeStockIn]. */
+    resumeStockInRows: Int? = null,
+    onResumeStockIn: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -204,6 +208,9 @@ fun ItemsHomeScreen(
                         )
                     }
                 }
+            }
+            if (resumeStockInRows != null) {
+                ResumeStockInCard(resumeStockInRows, onResumeStockIn)
             }
             if (draftName != null) {
                 DraftCard(draftName, onResumeDraft, onDiscardDraft)
@@ -394,6 +401,23 @@ private fun DraftCard(name: String, onResume: () -> Unit, onDiscard: () -> Unit)
             IconButton(onClick = onDiscard, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.draft_discard))
             }
+        }
+    }
+}
+
+@Composable
+private fun ResumeStockInCard(rows: Int, onResume: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onResume),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS)) {
+            Text(
+                pluralStringResource(R.plurals.stock_in_resume_title, rows, rows),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(stringResource(R.string.stock_in_resume_hint), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

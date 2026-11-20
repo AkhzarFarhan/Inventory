@@ -375,4 +375,49 @@ class StockInViewModelTest {
         assertEquals(113L, parseMoneyPaise("1.13"))
         assertNull(parseMoneyPaise("."))
     }
+
+    @Test fun clearingTheSupplierSyncsPaidBackToTheTotalWhenNotEdited() {
+        val v = vm()
+        v.openMatches(listOf(matched("1", 4800)), inventory, 9600L, null)
+        v.onEvent(StockInEvent.SetSupplier("s1"))
+        v.onEvent(StockInEvent.SetSupplier(null))
+        assertEquals(9600L, v.state.value!!.amountPaidPaise)
+        assertNull(v.state.value!!.blockReason)
+        // A typed supplier name that is cleared again, with the total changed meanwhile.
+        val w = vm()
+        w.openMatches(listOf(matched("1", 4800)), inventory, 9600L, null)
+        w.onEvent(StockInEvent.SetNewSupplier("Sharma"))
+        w.onEvent(StockInEvent.SetBillTotal(7000L))
+        assertEquals(9600L, w.state.value!!.amountPaidPaise)
+        w.onEvent(StockInEvent.SetNewSupplier(""))
+        assertEquals(7000L, w.state.value!!.amountPaidPaise)
+        assertNull(w.state.value!!.blockReason)
+        // An edited paid amount is left alone.
+        val x = vm()
+        x.openMatches(listOf(matched("1", 4800)), inventory, 9600L, null)
+        x.onEvent(StockInEvent.SetPaid(100L))
+        x.onEvent(StockInEvent.SetSupplier("s1"))
+        x.onEvent(StockInEvent.SetSupplier(null))
+        assertEquals(100L, x.state.value!!.amountPaidPaise)
+    }
+
+    @Test fun clearingTheSellPriceOfANewRowBlocksOnSell() {
+        val v = vm()
+        v.openMatches(listOf(newLine("Door Stopper", 1000, 1300)), inventory, null, null)
+        assertNull(v.state.value!!.blockReason)
+        v.onEvent(StockInEvent.EditSell(v.rows().single().key, null))
+        assertEquals(BlockKind.SELL, v.state.value!!.blockReason!!.kind)
+    }
+
+    @Test fun staffWithAMatchedRowOfZeroCostIsToldToAskTheOwner() {
+        val zeroCost = listOf(inv("1", "Butt Hinge 4 SS", 0, 6000))
+        val staff = vm(role = Role.STAFF)
+        staff.openMatches(listOf(matched("1", 5000)), zeroCost, null, null)
+        assertFalse(staff.state.value!!.canEditCost(staff.rows().single()))
+        assertEquals(BlockKind.COST_OWNER, staff.state.value!!.blockReason!!.kind)
+        // The owner can simply type it.
+        val owner = vm()
+        owner.openMatches(listOf(matched("1", null)), zeroCost, null, null)
+        assertEquals(BlockKind.COST, owner.state.value!!.blockReason!!.kind)
+    }
 }

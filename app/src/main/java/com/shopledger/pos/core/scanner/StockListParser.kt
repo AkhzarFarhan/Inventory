@@ -249,14 +249,6 @@ object StockListParser {
         return ParsedStockLine(name, qtyMilli, unit, finalRate, amount, consistent, raw)
     }
 
-    /** Value of a "grand total"/"total" line if present (preferred), else the sum of all amounts if every line has one. */
-    fun detectBillTotalPaise(text: String): Long? {
-        detectPrintedTotalPaise(text)?.let { return it }
-        val lines = parse(text)
-        if (lines.isEmpty() || lines.any { it.amountPaise == null }) return null
-        return lines.sumOf { it.amountPaise!! }
-    }
-
     /** Value of a "grand total"/"total" line printed on the bill, or null when there is none. */
     fun detectPrintedTotalPaise(text: String): Long? {
         var grand: Long? = null
