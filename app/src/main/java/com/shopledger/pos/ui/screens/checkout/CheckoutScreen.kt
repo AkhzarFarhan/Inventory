@@ -201,7 +201,7 @@ fun CheckoutScreen(
             },
         )
         CartSwitcher(
-            carts = state.carts.map { CartChip(it.cartId, it.label, it.lineCount) },
+            carts = state.carts.map { CartChip(it.cartId, it.label, it.lineCount, it.subtotalPaise) },
             activeCartId = state.activeCartId,
             onSwitch = { onEvent(CheckoutEvent.SwitchCart(it)) },
             onNewCart = { onEvent(CheckoutEvent.NewCart) },

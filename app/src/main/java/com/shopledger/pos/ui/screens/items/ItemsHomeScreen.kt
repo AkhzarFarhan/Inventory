@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,11 +21,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -36,6 +40,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -56,6 +61,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +89,7 @@ import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.ui.screens.cart.CartChip
 import com.shopledger.pos.ui.screens.cart.CartSwitcher
 import com.shopledger.pos.ui.text.UiText
+import com.shopledger.pos.ui.theme.ConfirmDialog
 import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.HapticHelper
 import com.shopledger.pos.ui.theme.ItemRow
@@ -90,6 +97,7 @@ import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
 import com.shopledger.pos.ui.theme.StockStatus
+import kotlinx.coroutines.launch
 
 /**
  * Home tab: shop header, search, the item list and two big fixed buttons (Sell / Stock In).
@@ -132,10 +140,22 @@ fun ItemsHomeScreen(
     activeCartQtyByVariant: Map<String, Double> = emptyMap(),
     onUpdateCartQty: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit = { _, _, _ -> },
     onVoiceSearchResult: ((String) -> Unit)? = null,
+    categories: List<String> = emptyList(),
+    selectedCategory: String? = null,
+    onSelectCategory: (String?) -> Unit = {},
+    topSoldOnly: Boolean = false,
+    onTopSoldOnlyChange: (Boolean) -> Unit = {},
+    hasTopSold: Boolean = false,
+    onRenameCart: ((cartId: String, newLabel: String) -> Unit)? = null,
+    onCloseCart: ((cartId: String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var searchFocused by remember { mutableStateOf(false) }
+    var managingCart by remember { mutableStateOf<CartChip?>(null) }
+    var confirmCloseCart by remember { mutableStateOf<CartChip?>(null) }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     val cipherMode by CostCipherEngine.activeModeFlow.collectAsState()
     val digitMap by CostCipherEngine.activeCustomDigitMapFlow.collectAsState()
     val voiceLauncher = rememberLauncherForActivityResult(
@@ -248,9 +268,10 @@ fun ItemsHomeScreen(
                 ),
                 modifier = Modifier.fillMaxWidth().onFocusChanged { searchFocused = it.isFocused },
             )
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
             ) {
                 FilterChip(
                     selected = lowStockOnly,
@@ -258,6 +279,37 @@ fun ItemsHomeScreen(
                     label = { Text(stringResource(R.string.filter_low_stock), style = MaterialTheme.typography.labelLarge) },
                     modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
                 )
+                if (hasTopSold) {
+                    FilterChip(
+                        selected = topSoldOnly,
+                        onClick = { onTopSoldOnlyChange(!topSoldOnly) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Bolt,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        label = { Text(stringResource(R.string.filter_top_sold), style = MaterialTheme.typography.labelLarge) },
+                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                    )
+                }
+                categories.take(5).forEach { cat ->
+                    val catSelected = selectedCategory.equals(cat, ignoreCase = true)
+                    FilterChip(
+                        selected = catSelected,
+                        onClick = { onSelectCategory(if (catSelected) null else cat) },
+                        label = {
+                            Text(
+                                text = cat,
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                    )
+                }
                 if (lowStockOnly && items.isNotEmpty() && onShareLowStock != null) {
                     TextButton(onClick = onShareLowStock, modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)) {
                         Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -303,7 +355,11 @@ fun ItemsHomeScreen(
                 }
                 EmptyState(title = title, message = message, modifier = Modifier.align(Alignment.Center))
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = ShopLedgerTokens.spacingL)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = ShopLedgerTokens.spacingL),
+                ) {
                     items(items, key = { it.item.id }) { group ->
                         val variants = group.variants
                         if (variants.isNotEmpty()) {
@@ -333,6 +389,47 @@ fun ItemsHomeScreen(
                         }
                     }
                 }
+                val showAlphaJump = items.size >= 25 && searchQuery.isBlank() && !topSoldOnly
+                val letterIndexMap = remember(items, showAlphaJump) {
+                    if (!showAlphaJump) emptyMap()
+                    else buildMap {
+                        items.forEachIndexed { idx, group ->
+                            val ch = group.item.displayName.trim().firstOrNull()?.uppercaseChar()
+                            if (ch != null && ch in 'A'..'Z' && ch !in this) {
+                                put(ch, idx)
+                            }
+                        }
+                    }
+                }
+                if (showAlphaJump && letterIndexMap.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 2.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            letterIndexMap.forEach { (letter, targetIndex) ->
+                                val jumpCd = stringResource(R.string.cd_quick_jump_letter, letter.toString())
+                                Text(
+                                    text = letter.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .clickable {
+                                            coroutineScope.launch { listState.animateScrollToItem(targetIndex) }
+                                        }
+                                        .semantics { contentDescription = jumpCd }
+                                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -345,6 +442,11 @@ fun ItemsHomeScreen(
                     activeCartId = activeCartId,
                     onSwitch = onSwitchCart,
                     onNewCart = onNewCart,
+                    onLongPressCart = if (onRenameCart != null || onCloseCart != null) {
+                        { chip -> managingCart = chip }
+                    } else {
+                        null
+                    },
                 )
             }
         }
@@ -385,6 +487,79 @@ fun ItemsHomeScreen(
                 )
             }
         }
+    }
+
+    managingCart?.let { target ->
+        var renameInput by remember(target.cartId) { mutableStateOf(target.label) }
+        AlertDialog(
+            onDismissRequest = { managingCart = null },
+            title = { Text(stringResource(R.string.cart_quick_actions_title, target.label)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
+                    OutlinedTextField(
+                        value = renameInput,
+                        onValueChange = { renameInput = it.take(24) },
+                        label = { Text(stringResource(R.string.cart_rename_hint)) },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (onCloseCart != null) {
+                        TextButton(
+                            onClick = {
+                                managingCart = null
+                                if (target.lineCount > 0) {
+                                    confirmCloseCart = target
+                                } else {
+                                    onCloseCart(target.cartId)
+                                }
+                            },
+                            modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.checkout_menu_close_cart),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        managingCart = null
+                        onRenameCart?.invoke(target.cartId, renameInput.trim())
+                    },
+                    enabled = onRenameCart != null && renameInput.isNotBlank(),
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.cart_rename_save), style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { managingCart = null },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
+                }
+            },
+        )
+    }
+
+    confirmCloseCart?.let { target ->
+        ConfirmDialog(
+            title = stringResource(R.string.cart_close_title),
+            message = stringResource(R.string.cart_close_message),
+            confirmText = stringResource(R.string.cart_close_confirm),
+            destructive = true,
+            onConfirm = {
+                confirmCloseCart = null
+                onCloseCart?.invoke(target.cartId)
+            },
+            onDismiss = { confirmCloseCart = null },
+        )
     }
 }
 

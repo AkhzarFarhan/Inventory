@@ -10,11 +10,14 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.robolectric.annotation.Config
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
@@ -63,6 +66,14 @@ class ItemsHomeScreenTest {
         onNewCart: () -> Unit = {},
         activeCartQtyByVariant: Map<String, Double> = emptyMap(),
         onUpdateCartQty: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit = { _, _, _ -> },
+        categories: List<String> = emptyList(),
+        selectedCategory: String? = null,
+        onSelectCategory: (String?) -> Unit = {},
+        topSoldOnly: Boolean = false,
+        onTopSoldOnlyChange: (Boolean) -> Unit = {},
+        hasTopSold: Boolean = false,
+        onRenameCart: ((String, String) -> Unit)? = null,
+        onCloseCart: ((String) -> Unit)? = null,
     ) {
         compose.setContent {
             ShopLedgerTheme {
@@ -91,6 +102,14 @@ class ItemsHomeScreenTest {
                     onDeleteRecentSearch = onDeleteRecent,
                     activeCartQtyByVariant = activeCartQtyByVariant,
                     onUpdateCartQty = onUpdateCartQty,
+                    categories = categories,
+                    selectedCategory = selectedCategory,
+                    onSelectCategory = onSelectCategory,
+                    topSoldOnly = topSoldOnly,
+                    onTopSoldOnlyChange = onTopSoldOnlyChange,
+                    hasTopSold = hasTopSold,
+                    onRenameCart = onRenameCart,
+                    onCloseCart = onCloseCart,
                 )
             }
         }
@@ -298,5 +317,40 @@ class ItemsHomeScreenTest {
             activeCartQtyByVariant = mapOf("m1-a" to 1.0),
         )
         compose.onNodeWithText("1 in cart", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun topSoldAndCategoryChipsRenderAndFireCallbacks() {
+        val pickedCats = mutableListOf<String?>()
+        val topToggles = mutableListOf<Boolean>()
+        show(
+            categories = listOf("Fasteners", "Cement"),
+            selectedCategory = "Fasteners",
+            onSelectCategory = { pickedCats += it },
+            topSoldOnly = false,
+            onTopSoldOnlyChange = { topToggles += it },
+            hasTopSold = true,
+        )
+        compose.onNodeWithText("Top sold").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Cement").assertIsDisplayed().performClick()
+        assertEquals(listOf(true), topToggles)
+        assertEquals(listOf("Cement"), pickedCats)
+    }
+
+    @Config(qualifiers = "mdpi")
+    @Test
+    fun longPressCartChipOpensQuickManageDialog() {
+        val renamed = mutableListOf<Pair<String, String>>()
+        show(
+            carts = listOf(CartChip("c1", "Cart 1", 2), CartChip("c2", "Ramesh", 0)),
+            activeCartId = "c1",
+            onRenameCart = { id, name -> renamed += id to name },
+            onCloseCart = {},
+        )
+        compose.onNodeWithText("Ramesh · 0 items").performTouchInput { longClick() }
+        compose.onNodeWithText("Manage Ramesh").assertExists()
+        compose.onNodeWithText("Close this cart").assertExists()
+        compose.onNodeWithText("Save name").performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(listOf("c2" to "Ramesh"), renamed)
     }
 }

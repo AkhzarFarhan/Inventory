@@ -188,6 +188,10 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val parties by viewModel.partiesState.collectAsState()
     val invoiceHeaders by viewModel.invoiceHeadersState.collectAsState()
     val partyLedgerEntries by viewModel.partyLedgerEntriesState.collectAsState()
+    val availableCategories by viewModel.availableCategoriesState.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val topSoldOnly by viewModel.topSoldOnly.collectAsState()
+    val topSoldItemIds by viewModel.topSoldItemIdsState.collectAsState()
     val context = LocalContext.current
     val activeCartLabel = activeCartSession.displayLabel(context)
     val activeCartQtyByVariant = remember(activeCartSession.items) {
@@ -258,7 +262,14 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         },
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSeller = requestToggleSeller,
-                        carts = carts.map { com.shopledger.pos.ui.screens.cart.CartChip(it.cartId, it.displayLabel(context), it.items.size) },
+                        carts = carts.map {
+                            com.shopledger.pos.ui.screens.cart.CartChip(
+                                cartId = it.cartId,
+                                label = it.displayLabel(context),
+                                lineCount = it.items.size,
+                                subtotalPaise = it.items.sumOf { line -> line.lineRevenuePaise },
+                            )
+                        },
                         activeCartId = activeCartId,
                         onSwitchCart = viewModel::switchActiveCart,
                         onNewCart = {
@@ -267,6 +278,14 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                 UiText.Res(R.string.cart_limit_message, listOf(com.shopledger.pos.ui.MAX_OPEN_CARTS)),
                             )
                         },
+                        categories = availableCategories,
+                        selectedCategory = selectedCategory,
+                        onSelectCategory = viewModel::setSelectedCategory,
+                        topSoldOnly = topSoldOnly,
+                        onTopSoldOnlyChange = viewModel::setTopSoldOnly,
+                        hasTopSold = topSoldItemIds.isNotEmpty(),
+                        onRenameCart = viewModel::renameCart,
+                        onCloseCart = viewModel::closeCart,
                         onSell = { showCheckout = true },
                         onOpenItem = { item, _, _ -> addSheetItemId = item.id },
                         onEditItem = { group, variant ->

@@ -8,9 +8,11 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shopledger.pos.ui.screens.cart.CartChip
@@ -143,5 +145,45 @@ class CartSwitcherTest {
         }
         compose.onNodeWithText("Cart 1 · 2 items").assertHeightIsAtLeast(48.dp)
         compose.onNodeWithText("New cart").assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun activeCartShowsSubtotalAndInactiveHidesIt() {
+        val pricedCarts = listOf(
+            CartChip("c1", "Cart 1", 2, subtotalPaise = 15_000L),
+            CartChip("c3", "Cart 3", 1, subtotalPaise = 8_000L),
+        )
+        compose.setContent {
+            ShopLedgerTheme {
+                CartSwitcher(
+                    carts = pricedCarts,
+                    activeCartId = "c1",
+                    onSwitch = {},
+                    onNewCart = {},
+                )
+            }
+        }
+        compose.onNodeWithText("Cart 1 · 2 items · ₹150").assertIsDisplayed()
+        compose.onNodeWithText("Cart 3 · 1 item").assertIsDisplayed()
+    }
+
+    @Test
+    fun longPressCartChipTriggersManageCallback() {
+        var longPressed: CartChip? = null
+        compose.setContent {
+            ShopLedgerTheme {
+                CartSwitcher(
+                    carts = threeCarts,
+                    activeCartId = "c1",
+                    onSwitch = {},
+                    onNewCart = {},
+                    onLongPressCart = { longPressed = it },
+                )
+            }
+        }
+        compose.onNodeWithText("Cart 1 · 2 items").assertIsSelected()
+        compose.onNodeWithText("Ramesh · 0 items").assertIsNotSelected()
+        compose.onNodeWithText("Ramesh · 0 items").performTouchInput { longClick() }
+        assertEquals("c2", longPressed?.cartId)
     }
 }

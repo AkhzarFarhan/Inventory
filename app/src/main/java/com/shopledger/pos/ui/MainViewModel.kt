@@ -85,6 +85,12 @@ class MainViewModel(
     private val _filterMode = MutableStateFlow(InventoryFilterMode.ALL_ALPHABETICAL)
     val filterMode: StateFlow<InventoryFilterMode> = _filterMode.asStateFlow()
 
+    private val _selectedCategory = MutableStateFlow<String?>(null)
+    val selectedCategory: StateFlow<String?> = _selectedCategory.asStateFlow()
+
+    private val _topSoldOnly = MutableStateFlow(false)
+    val topSoldOnly: StateFlow<Boolean> = _topSoldOnly.asStateFlow()
+
     private val _carts = MutableStateFlow(
         listOf(CustomerCartSession(cartId = "cart-1", cartNumber = 1))
     )
@@ -122,20 +128,88 @@ class MainViewModel(
             initialValue = emptyList()
         )
 
+    val salesHistoryState: StateFlow<List<SaleRecordEntity>> =
+        repository.salesHistoryFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val topSoldItemIdsState: StateFlow<List<String>> =
+        salesHistoryState.map { sales ->
+            val cutoff = System.currentTimeMillis() - 30L * 86_400_000L
+            sales
+                .asSequence()
+                .filter { !it.isReturned && it.soldAt >= cutoff }
+                .groupBy { it.itemId }
+                .entries
+                .sortedWith(
+                    compareByDescending<Map.Entry<String, List<SaleRecordEntity>>> { entry ->
+                        entry.value.map { it.receiptNumber }.distinct().size
+                    }.thenByDescending { entry ->
+                        entry.value.sumOf { it.quantitySold }
+                    },
+                )
+                .map { it.key }
+                .take(12)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
+
+    val availableCategoriesState: StateFlow<List<String>> =
+        allInventoryState.map { groups ->
+            groups
+                .asSequence()
+                .map { it.item.category.trim() }
+                .filter { it.isNotEmpty() && !it.equals("Uncategorized", ignoreCase = true) }
+                .groupingBy { it }
+                .eachCount()
+                .entries
+                .sortedByDescending { it.value }
+                .map { it.key }
+                .take(6)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
+
+    private data class HomeFilterCriteria(
+        val query: String,
+        val mode: InventoryFilterMode,
+        val category: String?,
+        val topSoldOnly: Boolean,
+    )
+
     val filteredInventoryState: StateFlow<List<InventoryItemWithVariants>> = combine(
         allInventoryState,
-        _searchQuery,
-        _filterMode
-    ) { allItems, query, mode ->
-        val modeFiltered = when (mode) {
+        combine(_searchQuery, _filterMode, _selectedCategory, _topSoldOnly) { q, mode, cat, top ->
+            HomeFilterCriteria(q, mode, cat, top)
+        },
+        topSoldItemIdsState,
+    ) { allItems, criteria, topIds ->
+        val modeFiltered = when (criteria.mode) {
             InventoryFilterMode.ALL_ALPHABETICAL -> allItems
             InventoryFilterMode.LOW_STOCK_ONLY -> allItems.filter { it.hasLowStockVariant }
         }
-        val trimmed = query.trim()
-        if (trimmed.isBlank()) {
-            modeFiltered
+        val categoryFiltered = criteria.category?.takeIf { it.isNotBlank() }?.let { selected ->
+            modeFiltered.filter { it.item.category.trim().equals(selected.trim(), ignoreCase = true) }
+        } ?: modeFiltered
+        val topFiltered = if (criteria.topSoldOnly) {
+            val rank = topIds.withIndex().associate { it.value to it.index }
+            categoryFiltered
+                .filter { it.item.id in rank }
+                .sortedBy { rank[it.item.id] ?: Int.MAX_VALUE }
         } else {
-            modeFiltered
+            categoryFiltered
+        }
+        val trimmed = criteria.query.trim()
+        if (trimmed.isBlank()) {
+            topFiltered
+        } else {
+            topFiltered
                 .mapNotNull { item ->
                     val score = SmartItemMatcher.calculateSearchRelevanceScore(trimmed, item)
                     if (score > 0.0) item to score else null
@@ -151,13 +225,6 @@ class MainViewModel(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
-
-    val salesHistoryState: StateFlow<List<SaleRecordEntity>> =
-        repository.salesHistoryFlow.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
 
     /**
      * Reactive list of known buyers with their phone numbers and past order histories
@@ -314,6 +381,14 @@ class MainViewModel(
 
     fun setFilterMode(mode: InventoryFilterMode) {
         _filterMode.value = mode
+    }
+
+    fun setSelectedCategory(category: String?) {
+        _selectedCategory.value = category
+    }
+
+    fun setTopSoldOnly(enabled: Boolean) {
+        _topSoldOnly.value = enabled
     }
 
     /**
