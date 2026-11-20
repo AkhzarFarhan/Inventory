@@ -168,7 +168,7 @@ object SyncManager {
             appContext.getDatabasePath(LpsDatabase.DB_NAME).exists()
         // Persist BOTH outcomes: once the database file exists (created later in this very launch) the "fresh" signal is
         // gone, so a fresh install must be stored as "not completed" now or the next cold start would skip the wizard.
-        p.edit().putBoolean(KEY_SETUP_COMPLETED, existing).apply()
+        p.edit().putBoolean(KEY_SETUP_COMPLETED, existing).commit() // synchronous: must be on disk before the DB file appears
         return existing
     }
 
