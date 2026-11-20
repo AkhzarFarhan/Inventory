@@ -188,6 +188,9 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val parties by viewModel.partiesState.collectAsState()
     val context = LocalContext.current
     val activeCartLabel = activeCartSession.displayLabel(context)
+    val activeCartQtyByVariant = remember(activeCartSession.items) {
+        activeCartSession.items.associate { it.variantId to it.quantity }
+    }
     val stockInViewModel: StockInViewModel = viewModel(factory = StockInViewModel.Factory(app.repository))
     val stockInReview by stockInViewModel.state.collectAsState()
     var showStockInSheet by rememberSaveable { mutableStateOf(false) }
@@ -274,6 +277,19 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                 UiText.Res(R.string.cart_added_title),
                                 UiText.Res(R.string.cart_added_message, listOf(item.displayName, activeCartLabel)),
                             )
+                        },
+                        activeCartQtyByVariant = activeCartQtyByVariant,
+                        onUpdateCartQty = { item, variant, newQty ->
+                            val existing = activeCartSession.items.firstOrNull { it.variantId == variant.id }
+                            when {
+                                newQty <= 0.0 -> viewModel.removeCartLine(variant.id)
+                                existing != null -> viewModel.updateCartLineQuantityAndPrice(
+                                    variant.id,
+                                    newQty,
+                                    existing.customSellingPricePaise,
+                                )
+                                else -> viewModel.addOrUpdateCartItem(item, variant, newQty)
+                            }
                         },
                         onCommitSearch = viewModel::commitSearchToHistory,
                         recentSearches = recentSearches,
@@ -503,6 +519,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         stockText = variantStockText(v),
                         status = statusOf(v),
                         qtyInCart = session.items.firstOrNull { it.variantId == v.id }?.quantity ?: 0.0,
+                        unit = v.unit,
                     )
                 },
                 cartLineCount = session.items.size,
@@ -525,6 +542,8 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                     e.qty,
                                     line.customSellingPricePaise,
                                 )
+                                else -> group.variants.firstOrNull { it.id == e.variantId }
+                                    ?.let { viewModel.addOrUpdateCartItem(group.item, it, e.qty) }
                             }
                         }
                         AddToCartEvent.GoToCart -> {

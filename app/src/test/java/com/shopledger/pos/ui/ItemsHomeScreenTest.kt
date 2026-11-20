@@ -61,6 +61,8 @@ class ItemsHomeScreenTest {
         activeCartId: String = "",
         onSwitchCart: (String) -> Unit = {},
         onNewCart: () -> Unit = {},
+        activeCartQtyByVariant: Map<String, Double> = emptyMap(),
+        onUpdateCartQty: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit = { _, _, _ -> },
     ) {
         compose.setContent {
             ShopLedgerTheme {
@@ -87,6 +89,8 @@ class ItemsHomeScreenTest {
                     onAddToCart = { _, v -> onCart(v.id) },
                     recentSearches = recent,
                     onDeleteRecentSearch = onDeleteRecent,
+                    activeCartQtyByVariant = activeCartQtyByVariant,
+                    onUpdateCartQty = onUpdateCartQty,
                 )
             }
         }
@@ -271,5 +275,28 @@ class ItemsHomeScreenTest {
         compose.onNodeWithText("Sell · Cart 2").assertIsDisplayed()
         compose.onNodeWithContentDescription("1 items in cart").assertIsDisplayed()
         compose.onNodeWithContentDescription("4 items in cart").assertDoesNotExist()
+    }
+
+    @Test
+    fun singleVariantInCartShowsInlineStepperAndFiresUpdate() {
+        val updates = mutableListOf<Pair<String, Double>>()
+        show(
+            items = listOf(item("i1", "Hinge", 20_000L)),
+            activeCartQtyByVariant = mapOf("i1-v" to 2.0),
+            onUpdateCartQty = { _, v, q -> updates += v.id to q },
+        )
+        compose.onNodeWithText("2").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Increase quantity").performClick()
+        compose.onNodeWithContentDescription("Decrease quantity").performClick()
+        assertEquals(listOf("i1-v" to 3.0, "i1-v" to 1.0), updates)
+    }
+
+    @Test
+    fun multiVariantInCartShowsInCartBadge() {
+        show(
+            items = listOf(multiVariantItem()),
+            activeCartQtyByVariant = mapOf("m1-a" to 1.0),
+        )
+        compose.onNodeWithText("1 in cart", substring = true).assertIsDisplayed()
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shopledger.pos.ui.screens.items.AddToCartContent
 import com.shopledger.pos.ui.screens.items.AddToCartEvent
@@ -224,5 +225,58 @@ class AddToCartSheetTest {
         )
         compose.onNodeWithText("Out of stock").assertIsDisplayed()
         compose.onNodeWithText("Add").assertIsEnabled()
+    }
+
+    @Test
+    fun presetChipsShownWhenQtyInCartPositiveAndTapEmitsSetQty() {
+        val events = mutableListOf<AddToCartEvent>()
+        show(
+            AddToCartState(
+                itemName = "Screw",
+                cartLabel = "Cart 1",
+                variants = listOf(row(id = "v1", qtyInCart = 2.0)),
+                cartLineCount = 1,
+                cartTotalPaise = 10_000L,
+                isSellerUnlocked = false,
+            ),
+            onEvent = { events += it },
+        )
+        compose.onNodeWithText("+12").assertIsDisplayed().performClick()
+        assertEquals(listOf(AddToCartEvent.SetQty("v1", 14.0)), events)
+    }
+
+    @Test
+    fun kgUnitShowsGramAndKgPresetChips() {
+        show(
+            AddToCartState(
+                itemName = "Sugar",
+                cartLabel = "Cart 1",
+                variants = listOf(row(id = "v1", qtyInCart = 1.0).copy(unit = "kg")),
+                cartLineCount = 1,
+                cartTotalPaise = 4_500L,
+                isSellerUnlocked = false,
+            ),
+        )
+        compose.onNodeWithText("+250 g").assertIsDisplayed()
+        compose.onNodeWithText("+500 g").assertIsDisplayed()
+        compose.onNodeWithText("+1 kg").assertIsDisplayed()
+    }
+
+    @Test
+    fun variantFilterFieldAppearsAboveSixVariantsAndFiltersRows() {
+        val variants = (1..7).map { i -> row(id = "v$i", label = "Size $i inch") }
+        show(
+            AddToCartState(
+                itemName = "Bolt",
+                cartLabel = "Cart 1",
+                variants = variants,
+                cartLineCount = 0,
+                cartTotalPaise = 0L,
+                isSellerUnlocked = false,
+            ),
+        )
+        compose.onNodeWithText("Filter sizes or types").assertIsDisplayed().performTextInput("7")
+        compose.onNodeWithText("Size 7 inch").assertIsDisplayed()
+        compose.onNodeWithText("Size 1 inch").assertDoesNotExist()
     }
 }

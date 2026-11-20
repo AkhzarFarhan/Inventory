@@ -1,6 +1,11 @@
 package com.shopledger.pos.ui.screens.items
 
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -24,7 +30,9 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -36,6 +44,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -51,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
@@ -73,12 +83,12 @@ import com.shopledger.pos.data.model.InventoryItemWithVariants
 import com.shopledger.pos.ui.screens.cart.CartChip
 import com.shopledger.pos.ui.screens.cart.CartSwitcher
 import com.shopledger.pos.ui.text.UiText
-import com.shopledger.pos.ui.theme.ChipTone
 import com.shopledger.pos.ui.theme.EmptyState
+import com.shopledger.pos.ui.theme.HapticHelper
 import com.shopledger.pos.ui.theme.ItemRow
 import com.shopledger.pos.ui.theme.PrimaryActionButton
+import com.shopledger.pos.ui.theme.ShopLedgerTheme
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
-import com.shopledger.pos.ui.theme.StatusChip
 import com.shopledger.pos.ui.theme.StockStatus
 
 /**
@@ -119,16 +129,44 @@ fun ItemsHomeScreen(
     /** Rows in a stock-in review that is waiting behind the seller lock (null = none). Tapping the card calls [onResumeStockIn]. */
     resumeStockInRows: Int? = null,
     onResumeStockIn: () -> Unit = {},
+    activeCartQtyByVariant: Map<String, Double> = emptyMap(),
+    onUpdateCartQty: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit = { _, _, _ -> },
+    onVoiceSearchResult: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var searchFocused by remember { mutableStateOf(false) }
     val cipherMode by CostCipherEngine.activeModeFlow.collectAsState()
     val digitMap by CostCipherEngine.activeCustomDigitMapFlow.collectAsState()
+    val voiceLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val spoken = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+        if (spoken.isNotEmpty()) {
+            onSearchQueryChange(spoken)
+            onCommitSearch(spoken)
+            onVoiceSearchResult?.invoke(spoken)
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(shopName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = {
+                Column {
+                    Text(shopName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        text = stringResource(R.string.status_saved_on_phone),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = ShopLedgerTheme.extra.success,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
             actions = {
                 IconButton(onClick = onToggleSeller, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
                     Icon(
@@ -140,12 +178,6 @@ fun ItemsHomeScreen(
                 }
             },
         )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingL),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            StatusChip(text = stringResource(R.string.status_saved_on_phone), tone = ChipTone.SUCCESS)
-        }
 
         Column(
             Modifier.fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
@@ -162,6 +194,30 @@ fun ItemsHomeScreen(
                             IconButton(onClick = { onSearchQueryChange("") }) {
                                 Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.cd_clear_search))
                             }
+                        }
+                        IconButton(
+                            onClick = {
+                                runCatching {
+                                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        putExtra(
+                                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                                        )
+                                        putExtra(
+                                            RecognizerIntent.EXTRA_PROMPT,
+                                            context.getString(R.string.items_search_hint),
+                                        )
+                                    }
+                                    voiceLauncher.launch(intent)
+                                }.onFailure {
+                                    AppErrorManager.reportInfo(
+                                        UiText.Res(R.string.voice_unavailable_title),
+                                        UiText.Res(R.string.voice_unavailable_msg),
+                                    )
+                                }
+                            },
+                        ) {
+                            Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.cd_voice_search))
                         }
                         IconButton(
                             onClick = {
@@ -257,6 +313,7 @@ fun ItemsHomeScreen(
                                 isSellerUnlocked = isSellerUnlocked,
                                 cipherMode = cipherMode,
                                 digitMap = digitMap,
+                                activeCartQtyByVariant = activeCartQtyByVariant,
                                 onOpen = {
                                     if (searchQuery.isNotBlank()) onCommitSearch(searchQuery)
                                     onOpenItem(group.item, variants.first(), variants)
@@ -270,6 +327,7 @@ fun ItemsHomeScreen(
                                         onAddToCart(group.item, variants.first())
                                     }
                                 },
+                                onUpdateCartQty = onUpdateCartQty,
                             )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
@@ -337,10 +395,13 @@ private fun GroupRow(
     isSellerUnlocked: Boolean,
     cipherMode: CipherMode,
     digitMap: Map<Char, String>,
+    activeCartQtyByVariant: Map<String, Double>,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onAddToCart: () -> Unit,
+    onUpdateCartQty: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit,
 ) {
+    val context = LocalContext.current
     val worst = variants.maxBy { statusOf(it).ordinal }
     val status = statusOf(worst)
     val stockText = when (status) {
@@ -360,7 +421,19 @@ private fun GroupRow(
     } else {
         null
     }
-    val subtitle = listOfNotNull(variantText, stockText).joinToString(" · ")
+    val inCartQty = if (variants.size == 1) activeCartQtyByVariant[variants.first().id] ?: 0.0 else 0.0
+    val singleInCart = variants.size == 1 && inCartQty > 0.0
+    val inCartVariantCount = if (variants.size > 1) {
+        variants.count { (activeCartQtyByVariant[it.id] ?: 0.0) > 0.0 }
+    } else {
+        0
+    }
+    val inCartBadge = if (inCartVariantCount > 0) {
+        pluralStringResource(R.plurals.items_in_cart_badge, inCartVariantCount, inCartVariantCount)
+    } else {
+        null
+    }
+    val subtitle = listOfNotNull(variantText, stockText, inCartBadge).joinToString(" · ")
 
     val minPrice = variants.minOf { it.sellingPricePaise }
     val formattedMin = IndianCurrencyFormatter.formatPaise(minPrice)
@@ -379,8 +452,16 @@ private fun GroupRow(
         isSellerUnlocked -> IndianCurrencyFormatter.formatPaise(cost)
         else -> null
     }
+    val rowBg = if (singleInCart || inCartVariantCount > 0) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.20f)
+    } else {
+        Color.Transparent
+    }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.fillMaxWidth().background(rowBg),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         ItemRow(
             title = group.item.displayName,
             subtitle = subtitle,
@@ -391,8 +472,40 @@ private fun GroupRow(
             onClick = onOpen,
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onAddToCart, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
-            Icon(Icons.Filled.AddShoppingCart, contentDescription = stringResource(R.string.cd_add_to_cart))
+        if (singleInCart) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = {
+                        HapticHelper.tick(context)
+                        onUpdateCartQty(group.item, variants.first(), (inCartQty - 1.0).coerceAtLeast(0.0))
+                    },
+                    modifier = Modifier.size(ShopLedgerTokens.minTouch),
+                ) {
+                    Icon(Icons.Filled.Remove, contentDescription = stringResource(R.string.cd_decrease_quantity))
+                }
+                Text(
+                    text = IndianCurrencyFormatter.formatQuantity(inCartQty),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                )
+                IconButton(
+                    onClick = {
+                        HapticHelper.tick(context)
+                        onUpdateCartQty(group.item, variants.first(), inCartQty + 1.0)
+                    },
+                    modifier = Modifier.size(ShopLedgerTokens.minTouch),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.cd_increase_quantity))
+                }
+            }
+        } else {
+            IconButton(onClick = onAddToCart, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
+                Icon(
+                    Icons.Filled.AddShoppingCart,
+                    contentDescription = stringResource(R.string.cd_add_to_cart),
+                    tint = if (inCartVariantCount > 0) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                )
+            }
         }
         IconButton(onClick = onEdit, modifier = Modifier.size(ShopLedgerTokens.minTouch)) {
             Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.cd_edit_item))
