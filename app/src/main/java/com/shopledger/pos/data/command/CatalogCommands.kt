@@ -55,7 +55,18 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
         if (name.isEmpty()) throw CommandException.Validation("Item name is required")
         if (variants.isEmpty()) throw CommandException.Validation("Add at least one variant")
         variants.forEach(::validate)
-        val device = writer.localDevice()
+        val itemId = insertItemWithVariants(name, category, variants, isDemo, writer.localDevice())
+        itemId to itemId
+    }
+
+    /** Shared by [createItem] and the stock-in command: inserts the item, its variants and their outbox rows. */
+    internal suspend fun insertItemWithVariants(
+        name: String,
+        category: String,
+        variants: List<VariantSpec>,
+        isDemo: Boolean,
+        device: DeviceEntity
+    ): String {
         val now = env.now()
         val itemId = env.newId()
         inventory.insertItem(
@@ -74,7 +85,7 @@ class CatalogCommands(private val db: LpsDatabase, private val env: CommandEnvir
         )
         if (!isDemo) writer.enqueue(OutboxDocType.ITEM, itemId, OutboxOp.UPSERT)
         variants.forEach { insertVariant(itemId, it, device, isDemo) }
-        itemId to itemId
+        return itemId
     }
 
     suspend fun addVariant(

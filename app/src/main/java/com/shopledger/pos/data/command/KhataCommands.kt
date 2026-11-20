@@ -1,6 +1,7 @@
 package com.shopledger.pos.data.command
 
 import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.entity.DeviceEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
 import java.util.Locale
 
@@ -22,6 +23,15 @@ class KhataCommands(private val db: LpsDatabase, private val env: CommandEnviron
         if (cleanName.isEmpty()) throw CommandException.Validation("Name is required")
         val type = normalizeType(partyType)
         val device = writer.localDevice()
+        val partyId = insertParty(type, cleanName, phone, gstin, device)
+        if (openingBalancePaise != 0L) {
+            writer.appendLedgerEntry(partyId, openingBalancePaise, LedgerEntryType.OPENING, "CASH", partyId, "Opening balance", device, enqueue = true)
+        }
+        partyId to partyId
+    }
+
+    /** Shared by [createParty] and the stock-in command: inserts the party row and its outbox entry. */
+    internal suspend fun insertParty(type: String, cleanName: String, phone: String, gstin: String, device: DeviceEntity): String {
         val now = env.now()
         val partyId = env.newId()
         parties.insertParty(
@@ -40,10 +50,7 @@ class KhataCommands(private val db: LpsDatabase, private val env: CommandEnviron
             )
         )
         writer.enqueue(OutboxDocType.PARTY, partyId, OutboxOp.UPSERT)
-        if (openingBalancePaise != 0L) {
-            writer.appendLedgerEntry(partyId, openingBalancePaise, LedgerEntryType.OPENING, "CASH", partyId, "Opening balance", device, enqueue = true)
-        }
-        partyId to partyId
+        return partyId
     }
 
     suspend fun updateParty(

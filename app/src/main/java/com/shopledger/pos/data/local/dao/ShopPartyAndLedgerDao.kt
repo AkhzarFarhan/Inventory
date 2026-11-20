@@ -119,6 +119,12 @@ interface ShopPartyAndLedgerDao {
     @Query("SELECT * FROM stock_movements")
     suspend fun getAllMovements(): List<StockMovementEntity>
 
+    @Query("SELECT COALESCE(SUM(deltaMilliUnits), 0) FROM stock_movements WHERE refDocId = :refDocId")
+    suspend fun sumMovementMilliForRef(refDocId: String): Long
+
+    @Query("SELECT COALESCE(SUM(amountDeltaPaise), 0) FROM party_ledger_entries WHERE refDocId = :refDocId")
+    suspend fun sumLedgerPaiseForRef(refDocId: String): Long
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertStockMovement(movement: StockMovementEntity)
 }

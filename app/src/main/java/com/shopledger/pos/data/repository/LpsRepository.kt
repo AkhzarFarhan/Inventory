@@ -19,6 +19,9 @@ import com.shopledger.pos.data.command.LegacyJsonImporter
 import com.shopledger.pos.data.command.PaymentDirection
 import com.shopledger.pos.data.command.ReturnLine
 import com.shopledger.pos.data.command.SalesCommands
+import com.shopledger.pos.data.command.StockInCommands
+import com.shopledger.pos.data.command.StockInRequest
+import com.shopledger.pos.data.command.StockInResult
 import com.shopledger.pos.data.command.VariantEdit
 import com.shopledger.pos.data.command.VariantSpec
 import com.shopledger.pos.data.local.LpsDatabase
@@ -50,6 +53,7 @@ class LpsRepository(
     private val catalog = CatalogCommands(database, env)
     private val khata = KhataCommands(database, env)
     private val sales = SalesCommands(database, env)
+    private val stockIn = StockInCommands(database, env)
     private val deviceCommands = DeviceCommands(database, env)
 
 
@@ -110,6 +114,9 @@ class LpsRepository(
     private fun newActionId(): String = UUID.randomUUID().toString()
 
     suspend fun localDeviceCode(): String = deviceCommands.localDeviceCode()
+
+    /** Saves a whole scanned stock list (items, costs, movements, supplier bill) atomically. */
+    suspend fun receiveScannedStock(request: StockInRequest): StockInResult = stockIn.receiveScannedStock(request)
 
     suspend fun setDeviceCode(code: String): String = deviceCommands.setDeviceCode(newActionId(), code)
 
