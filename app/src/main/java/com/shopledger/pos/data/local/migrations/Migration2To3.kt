@@ -74,7 +74,7 @@ class Migration2To3(
             "SELECT COUNT(*) FROM sale_records_v2_archive s WHERE NOT EXISTS (SELECT 1 FROM invoice_lines l WHERE l.id = s.id)"
         ).use { it.moveToFirst(); it.getLong(0) }
         check(missingSaleLines == 0L) { "$missingSaleLines v2 sale line(s) have no invoice line after upgrade" }
-        val violations = IntegrityChecker.findViolations(db)
+        val violations = IntegrityChecker.findViolations(db, includePurchases = false)
         check(violations.isEmpty()) { "v3 upgrade check failed: ${violations.take(5)}" }
         dropTempIndexes(db)
     }

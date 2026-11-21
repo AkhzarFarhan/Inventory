@@ -187,3 +187,66 @@ data class PartyTransactionEntity(
     val createdByUid: String = "",
     val deviceId: String = ""
 )
+
+/** Immutable. One row per stock-in save; id = the stock-in purchaseId (= refDocId of its PURCHASE movements). */
+@Immutable
+@Entity(
+    tableName = "purchase_bills",
+    indices = [
+        Index(value = ["shopId", "supplierPartyId"]),
+        Index(value = ["shopId", "createdAt"]),
+        Index(value = ["shopId", "yearInt", "monthInt"])
+    ]
+)
+data class PurchaseBillEntity(
+    @PrimaryKey val id: String,
+    val shopId: String = DEFAULT_SHOP_ID,
+    /** null = stock-in without a distributor. */
+    val supplierPartyId: String? = null,
+    val supplierNameSnapshot: String = "",
+    val billNumber: String = "",
+    /** Amount on the distributor's bill (may include tax/rounding). */
+    val totalPaise: Long,
+    /** Σ line totals (qty × cost). */
+    val linesTotalPaise: Long,
+    val paidPaise: Long,
+    val duePaise: Long,
+    /** "CASH" or "UPI" for the paid part; "CREDIT" when nothing was paid now. */
+    val paymentMode: String = "CASH",
+    val lineCount: Int,
+    val createdAt: Long,
+    val yearInt: Int,
+    val monthInt: Int,
+    val dayInt: Int,
+    /** 1 = rebuilt by the v4 migration from an older stock-in (costs unknown). */
+    val isLegacy: Boolean = false,
+    val deviceId: String = "",
+    val createdByUid: String = ""
+)
+
+@Immutable
+@Entity(
+    tableName = "purchase_bill_lines",
+    foreignKeys = [
+        ForeignKey(
+            entity = PurchaseBillEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["purchaseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["purchaseId"]), Index(value = ["shopId", "skuId"])]
+)
+data class PurchaseBillLineEntity(
+    @PrimaryKey val id: String,
+    val shopId: String = DEFAULT_SHOP_ID,
+    val purchaseId: String,
+    val skuId: String,
+    val productId: String,
+    val itemNameSnapshot: String,
+    val variantSummarySnapshot: String = "",
+    val unitSnapshot: String = "pcs",
+    val qtyMilliUnits: Long,
+    val unitCostPaise: Long,
+    val lineTotalPaise: Long
+)

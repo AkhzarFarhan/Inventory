@@ -94,4 +94,30 @@ class IntegrityCheckerTest {
         tamper("INSERT INTO invoice_headers (id, $cols) SELECT 'dup-header', $cols FROM invoice_headers WHERE docType = 'SALE'")
         assertFlagged("I5")
     }
+
+    @Test
+    fun purchaseLineMismatchIsReported() {
+        tamper(
+            "INSERT INTO stock_movements (movementId, shopId, skuId, deviceId, deviceShortCode, deltaMilliUnits, movementType, refDocId, note, createdAt, createdByUid) " +
+                "VALUES ('m-pur-1', 'default_shop', 'v-none', 'd1', 'D1', 2000, 'PURCHASE', 'pur-1', '', 1000, '')"
+        )
+        tamper(
+            "INSERT INTO purchase_bills (id, shopId, supplierPartyId, supplierNameSnapshot, billNumber, totalPaise, linesTotalPaise, paidPaise, duePaise, paymentMode, lineCount, createdAt, yearInt, monthInt, dayInt, isLegacy, deviceId, createdByUid) " +
+                "VALUES ('pur-1', 'default_shop', NULL, '', '', 300, 300, 300, 0, 'CASH', 1, 1000, 2026, 11, 22, 0, 'd1', '')"
+        )
+        tamper(
+            "INSERT INTO purchase_bill_lines (id, shopId, purchaseId, skuId, productId, itemNameSnapshot, variantSummarySnapshot, unitSnapshot, qtyMilliUnits, unitCostPaise, lineTotalPaise) " +
+                "VALUES ('pl-1', 'default_shop', 'pur-1', 'v-none', 'i-none', 'Hinge', '', 'pcs', 3000, 100, 300)"
+        )
+        assertFlagged("I6")
+    }
+
+    @Test
+    fun purchaseAmountsMustAddUp() {
+        tamper(
+            "INSERT INTO purchase_bills (id, shopId, supplierPartyId, supplierNameSnapshot, billNumber, totalPaise, linesTotalPaise, paidPaise, duePaise, paymentMode, lineCount, createdAt, yearInt, monthInt, dayInt, isLegacy, deviceId, createdByUid) " +
+                "VALUES ('pur-2', 'default_shop', NULL, '', '', 300, 300, 100, 100, 'CASH', 0, 1000, 2026, 11, 22, 0, 'd1', '')"
+        )
+        assertFlagged("I7")
+    }
 }

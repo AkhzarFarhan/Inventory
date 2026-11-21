@@ -5,7 +5,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 /** The spec's invariants as SQL. Returns human-readable violations; empty means healthy. */
 object IntegrityChecker {
 
-    fun findViolations(db: SupportSQLiteDatabase): List<String> {
+    fun findViolations(db: SupportSQLiteDatabase, includePurchases: Boolean = true): List<String> {
         val violations = mutableListOf<String>()
         fun collect(label: String, sql: String) {
             db.query(sql).use { c -> while (c.moveToNext()) violations += "$label: ${c.getString(0)}" }
@@ -40,6 +40,21 @@ object IntegrityChecker {
             "I5 duplicate invoice number",
             "SELECT h.invoiceNumber FROM invoice_headers h GROUP BY h.shopId, h.invoiceNumber HAVING COUNT(*) > 1"
         )
+        if (includePurchases && hasPurchaseTables(db)) {
+            collect(
+                "I6 purchase lines differ from movements",
+                "SELECT b.id FROM purchase_bills b WHERE " +
+                    "(SELECT COALESCE(SUM(l.qtyMilliUnits), 0) FROM purchase_bill_lines l WHERE l.purchaseId = b.id) != " +
+                    "(SELECT COALESCE(SUM(m.deltaMilliUnits), 0) FROM stock_movements m WHERE m.refDocId = b.id AND m.movementType = 'PURCHASE')"
+            )
+            collect(
+                "I7 purchase bill amounts inconsistent",
+                "SELECT b.id FROM purchase_bills b WHERE b.paidPaise + b.duePaise != b.totalPaise OR b.duePaise < 0 OR b.paidPaise < 0"
+            )
+        }
         return violations
     }
+
+    private fun hasPurchaseTables(db: SupportSQLiteDatabase): Boolean =
+        db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='purchase_bills'").use { it.moveToFirst() }
 }

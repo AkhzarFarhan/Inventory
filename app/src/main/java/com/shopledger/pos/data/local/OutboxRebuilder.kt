@@ -26,4 +26,13 @@ object OutboxRebuilder {
         )
         db.execSQL(insert + "SELECT 'INVOICE', id, 'APPEND', ?, 0, '' FROM invoice_headers", args)
     }
+
+    /** Queues rebuilt or restored purchase bills; never called from Migration2To3 because v3 has no purchase_bills table. */
+    fun enqueuePurchases(db: SupportSQLiteDatabase, now: Long) {
+        db.execSQL(
+            "INSERT INTO sync_outbox (docType, docId, op, createdAt, attempts, lastError) " +
+                "SELECT 'PURCHASE', id, 'APPEND', ?, 0, '' FROM purchase_bills",
+            arrayOf<Any>(now)
+        )
+    }
 }

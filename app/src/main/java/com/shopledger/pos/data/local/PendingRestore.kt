@@ -1,6 +1,7 @@
 package com.shopledger.pos.data.local
 
 import android.content.Context
+import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -255,6 +256,7 @@ object PendingRestore {
             failIfUnhealthy()
             val sqlite = database.openHelper.writableDatabase
             failIfUnhealthy()
+            val hasPurchases = hasPurchaseTables(sqlite)
             sqlite.beginTransaction()
             try {
                 sqlite.execSQL(
@@ -267,11 +269,12 @@ object PendingRestore {
                 )
                 sqlite.execSQL("DELETE FROM sync_outbox")
                 OutboxRebuilder.enqueueEverything(sqlite, now())
+                if (hasPurchases) OutboxRebuilder.enqueuePurchases(sqlite, now())
                 sqlite.setTransactionSuccessful()
             } finally {
                 sqlite.endTransaction()
             }
-            val violations = IntegrityChecker.findViolations(sqlite)
+            val violations = IntegrityChecker.findViolations(sqlite, includePurchases = hasPurchases)
             failIfUnhealthy()
             marker.delete()
             Outcome.Restored(violations)
@@ -285,6 +288,9 @@ object PendingRestore {
             )
         }
     }
+
+    private fun hasPurchaseTables(db: SupportSQLiteDatabase): Boolean =
+        db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='purchase_bills'").use { it.moveToFirst() }
 
     private fun failIfUnhealthy() {
         (DatabaseHealth.state.value as? DatabaseHealth.State.Failed)?.let { throw IllegalStateException(it.reason) }

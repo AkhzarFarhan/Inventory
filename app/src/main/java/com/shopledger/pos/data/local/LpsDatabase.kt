@@ -10,6 +10,7 @@ import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.dao.AppliedActionDao
 import com.shopledger.pos.data.local.dao.DeviceDao
 import com.shopledger.pos.data.local.dao.InventoryDao
+import com.shopledger.pos.data.local.dao.PurchaseDao
 import com.shopledger.pos.data.local.dao.SaleDao
 import com.shopledger.pos.data.local.dao.SearchHistoryDao
 import com.shopledger.pos.data.local.dao.ShopPartyAndLedgerDao
@@ -22,12 +23,15 @@ import com.shopledger.pos.data.local.entity.InvoiceLineEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.data.local.entity.PartyTransactionEntity
+import com.shopledger.pos.data.local.entity.PurchaseBillEntity
+import com.shopledger.pos.data.local.entity.PurchaseBillLineEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.local.entity.ShopProfileEntity
 import com.shopledger.pos.data.local.entity.StockMovementEntity
 import com.shopledger.pos.data.local.entity.SyncOutboxEntity
 import com.shopledger.pos.data.local.migrations.Migration2To3
+import com.shopledger.pos.data.local.migrations.Migration3To4
 import com.shopledger.pos.data.local.migrations.MigrationContext
 
 typealias ShopDatabase = LpsDatabase
@@ -45,7 +49,9 @@ typealias ShopDatabase = LpsDatabase
         PartyTransactionEntity::class,
         DeviceEntity::class,
         SyncOutboxEntity::class,
-        AppliedActionEntity::class
+        AppliedActionEntity::class,
+        PurchaseBillEntity::class,
+        PurchaseBillLineEntity::class
     ],
     views = [SaleRecordEntity::class],
     version = LpsDatabase.SCHEMA_VERSION,
@@ -60,13 +66,14 @@ abstract class LpsDatabase : RoomDatabase() {
     abstract fun deviceDao(): DeviceDao
     abstract fun syncOutboxDao(): SyncOutboxDao
     abstract fun appliedActionDao(): AppliedActionDao
+    abstract fun purchaseDao(): PurchaseDao
 
     companion object {
         private const val LEGACY_DB_NAME = "lps_hardware_inventory.db"
         const val DB_NAME = "shop_ledger.db"
 
         /** Keep in sync with the newest migration. */
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
 
         @Volatile
         private var INSTANCE: LpsDatabase? = null
@@ -398,7 +405,7 @@ abstract class LpsDatabase : RoomDatabase() {
 fun RoomDatabase.Builder<LpsDatabase>.withShopLedgerDefaults(
     migrationContext: MigrationContext = MigrationContext()
 ): RoomDatabase.Builder<LpsDatabase> =
-    addMigrations(LpsDatabase.MIGRATION_1_2, Migration2To3(migrationContext))
+    addMigrations(LpsDatabase.MIGRATION_1_2, Migration2To3(migrationContext), Migration3To4())
         .addCallback(object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 DatabaseSeed.seedFreshDatabase(db, System.currentTimeMillis())

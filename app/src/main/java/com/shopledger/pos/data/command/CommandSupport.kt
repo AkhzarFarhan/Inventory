@@ -61,6 +61,7 @@ fun interface FaultInjector {
 
 object OutboxDocType {
     const val INVOICE = "INVOICE"
+    const val PURCHASE = "PURCHASE"
     const val MOVEMENT = "MOVEMENT"
     const val LEDGER = "LEDGER"
     const val ITEM = "ITEM"
