@@ -16,11 +16,15 @@ import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.core.nlp.SmartItemMatcher
 import com.shopledger.pos.core.share.ReceiptLineItem
 import com.shopledger.pos.core.share.SaleReceiptData
+import com.shopledger.pos.data.local.dao.LastPurchaseInfo
+import com.shopledger.pos.data.local.dao.SupplierItemSummary
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.data.local.entity.PartyTransactionEntity
+import com.shopledger.pos.data.local.entity.PurchaseBillEntity
+import com.shopledger.pos.data.local.entity.PurchaseBillLineEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.CartLineItem
@@ -29,6 +33,7 @@ import com.shopledger.pos.data.repository.LpsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -276,6 +281,13 @@ class MainViewModel(
 
     val partyLedgerEntriesState: StateFlow<List<PartyTransactionEntity>> =
         repository.allLedgerEntriesFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val purchaseBillsState: StateFlow<List<PurchaseBillEntity>> =
+        repository.purchaseBillsFlow.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -864,6 +876,54 @@ class MainViewModel(
             )
         }
     }
+
+    fun recordPaymentToDistributor(
+        partyId: String,
+        amountPaise: Long,
+        mode: String = "CASH",
+        note: String = ""
+    ) {
+        launchSafe(R.string.err_payment_not_saved_title) {
+            repository.recordPaymentToDistributor(
+                partyId = partyId,
+                amountPaise = amountPaise,
+                paymentMode = mode,
+                note = note
+            )
+        }
+    }
+
+    fun addDistributor(
+        name: String,
+        phone: String,
+        gstin: String,
+        alreadyOwePaise: Long
+    ) {
+        launchSafe(R.string.err_party_not_saved_title) {
+            repository.addOrUpdateParty(
+                name = name,
+                phone = phone,
+                partyType = "SUPPLIER",
+                gstin = gstin,
+                openingBalancePaise = -alreadyOwePaise
+            )
+        }
+    }
+
+    fun billsForSupplier(partyId: String): Flow<List<PurchaseBillEntity>> =
+        repository.billsForSupplier(partyId)
+
+    fun itemsForSupplier(partyId: String): Flow<List<SupplierItemSummary>> =
+        repository.itemsForSupplier(partyId)
+
+    fun ledgerForParty(partyId: String): Flow<List<PartyTransactionEntity>> =
+        repository.ledgerForParty(partyId)
+
+    suspend fun purchaseLines(purchaseId: String): List<PurchaseBillLineEntity> =
+        repository.purchaseLines(purchaseId)
+
+    suspend fun lastPurchaseForSku(skuId: String): LastPurchaseInfo? =
+        repository.lastPurchaseForSku(skuId)
 
     /**
      * Opens the Sale Receipt Image & WhatsApp Share modal for any historical sale record(s) sharing

@@ -72,4 +72,14 @@ class KhataCommandsTest {
         }
         assertEquals("Ramesh", db.shopPartyAndLedgerDao().getPartyById(id)!!.name)
     }
+
+    @Test
+    fun paymentToDistributorRaisesBalanceTowardZero() = runBlocking {
+        val id = khata.createParty("sup-1", "Gupta Traders", "", partyType = "SUPPLIER", openingBalancePaise = -10_000L)
+        khata.recordPayment("pay-sup-1", id, 4_000L, "CASH", direction = PaymentDirection.OUT)
+        assertEquals(-6_000L, balance(id))
+        val entry = db.shopPartyAndLedgerDao().getAllLedgerEntries().single { it.entryType == LedgerEntryType.PAYMENT_OUT }
+        assertEquals(4_000L, entry.amountDeltaPaise)
+        assertEquals("CASH", entry.paymentMode)
+    }
 }

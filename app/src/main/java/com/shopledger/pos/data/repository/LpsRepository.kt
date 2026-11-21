@@ -26,11 +26,15 @@ import com.shopledger.pos.data.command.StockInResult
 import com.shopledger.pos.data.command.VariantEdit
 import com.shopledger.pos.data.command.VariantSpec
 import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.dao.LastPurchaseInfo
+import com.shopledger.pos.data.local.dao.SupplierItemSummary
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.InvoiceHeaderEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.local.entity.PartyEntity
 import com.shopledger.pos.data.local.entity.PartyTransactionEntity
+import com.shopledger.pos.data.local.entity.PurchaseBillEntity
+import com.shopledger.pos.data.local.entity.PurchaseBillLineEntity
 import com.shopledger.pos.data.local.entity.SaleRecordEntity
 import com.shopledger.pos.data.local.entity.SearchHistoryEntity
 import com.shopledger.pos.data.model.CartLineItem
@@ -53,6 +57,7 @@ class LpsRepository(
     private val saleDao = database.saleDao()
     private val searchHistoryDao = database.searchHistoryDao()
     private val shopDao = database.shopPartyAndLedgerDao()
+    private val purchaseDao = database.purchaseDao()
     private val catalog = CatalogCommands(database, env)
     private val khata = KhataCommands(database, env)
     private val sales = SalesCommands(database, env)
@@ -80,6 +85,24 @@ class LpsRepository(
 
     val allLedgerEntriesFlow: Flow<List<PartyTransactionEntity>> =
         shopDao.observeAllLedgerEntries()
+
+    val purchaseBillsFlow: Flow<List<PurchaseBillEntity>> =
+        purchaseDao.observeAllBills()
+
+    fun billsForSupplier(partyId: String): Flow<List<PurchaseBillEntity>> =
+        purchaseDao.observeBillsForSupplier(partyId)
+
+    fun itemsForSupplier(partyId: String): Flow<List<SupplierItemSummary>> =
+        purchaseDao.observeItemsForSupplier(partyId)
+
+    fun ledgerForParty(partyId: String): Flow<List<PartyTransactionEntity>> =
+        shopDao.observePartyLedger(partyId)
+
+    suspend fun purchaseLines(purchaseId: String): List<PurchaseBillLineEntity> =
+        withContext(Dispatchers.IO) { purchaseDao.getLines(purchaseId) }
+
+    suspend fun lastPurchaseForSku(skuId: String): LastPurchaseInfo? =
+        withContext(Dispatchers.IO) { purchaseDao.lastPurchaseForSku(skuId) }
 
     val totalPendingSyncCountFlow: Flow<Int> = database.syncOutboxDao().observePendingCount()
 
@@ -356,6 +379,16 @@ class LpsRepository(
         note: String = ""
     ) {
         khata.recordPayment(newActionId(), partyId, amountPaise, paymentMode, PaymentDirection.IN, note)
+    }
+
+    /** Money paid to a distributor (balance goes up toward 0). */
+    suspend fun recordPaymentToDistributor(
+        partyId: String,
+        amountPaise: Long,
+        paymentMode: String = "CASH",
+        note: String = ""
+    ) {
+        khata.recordPayment(newActionId(), partyId, amountPaise, paymentMode, PaymentDirection.OUT, note)
     }
 
     /**
