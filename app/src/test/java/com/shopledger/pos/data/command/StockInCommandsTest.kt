@@ -51,6 +51,8 @@ class StockInCommandsTest {
         "SELECT COUNT(*) FROM stock_movements",
         "SELECT COUNT(*) FROM party_ledger_entries",
         "SELECT COUNT(*) FROM parties",
+        "SELECT COUNT(*) FROM purchase_bills",
+        "SELECT COUNT(*) FROM purchase_bill_lines",
         "SELECT COUNT(*) FROM sync_outbox",
         "SELECT COUNT(*) FROM applied_actions",
         "SELECT COALESCE(SUM(stockMilliUnits), 0) FROM item_variants",
@@ -82,6 +84,24 @@ class StockInCommandsTest {
         assertEquals(-15_000L, supplier.currentBalancePaise)
         assertEquals(2L, db.scalar("SELECT COUNT(*) FROM stock_movements WHERE movementType = 'PURCHASE' AND refDocId = '${result.purchaseId}'"))
         assertEquals(1L, db.scalar("SELECT COUNT(*) FROM party_ledger_entries WHERE entryType = 'CREDIT_BILL'"))
+        assertEquals(1L, db.scalar("SELECT COUNT(*) FROM party_ledger_entries WHERE entryType = 'PAYMENT_OUT' AND amountDeltaPaise = 5000"))
+
+        val bill = db.purchaseDao().getBill(result.purchaseId)!!
+        assertEquals(supplier.id, bill.supplierPartyId)
+        assertEquals(20_000L, bill.totalPaise)
+        assertEquals(5_000L, bill.paidPaise)
+        assertEquals(15_000L, bill.duePaise)
+        assertEquals(2, bill.lineCount)
+        val lines = db.purchaseDao().getLines(result.purchaseId)
+        assertEquals(2, lines.size)
+        val hingeLine = lines.single { it.skuId == hingeId }
+        assertEquals(5_000L, hingeLine.qtyMilliUnits)
+        assertEquals(5_000L, hingeLine.unitCostPaise)
+        assertEquals(25_000L, hingeLine.lineTotalPaise)
+        val stopperLine = lines.single { it.skuId == stopper.id }
+        assertEquals(12_000L, stopperLine.qtyMilliUnits)
+        assertEquals(1_500L, stopperLine.unitCostPaise)
+        assertEquals(18_000L, stopperLine.lineTotalPaise)
         assertEquals(emptyList<String>(), IntegrityChecker.findViolations(db.openHelper.writableDatabase))
     }
 
@@ -225,13 +245,104 @@ class StockInCommandsTest {
     }
 
     @Test
-    fun fullyPaid_postsNoLedgerEntry() = runBlocking<Unit> {
+    fun fullyPaid_postsBillAndPaymentBalancingToZero() = runBlocking<Unit> {
         val hingeId = seedHinge(db, env)
         val result = stockIn.receiveScannedStock(
             StockInRequest("f1", listOf(hingeRow(hingeId, 4_800L)), newSupplierName = "Sharma", billTotalPaise = 4_000L, amountPaidPaise = 4_000L)
         )
         assertEquals(0L, result.supplierDuePaise)
+        val supplier = db.shopPartyAndLedgerDao().getAllRawParties().single()
+        assertEquals(0L, supplier.currentBalancePaise)
+        assertEquals(1L, db.scalar("SELECT COUNT(*) FROM party_ledger_entries WHERE entryType = 'CREDIT_BILL' AND amountDeltaPaise = -4000"))
+        assertEquals(1L, db.scalar("SELECT COUNT(*) FROM party_ledger_entries WHERE entryType = 'PAYMENT_OUT' AND amountDeltaPaise = 4000"))
+        assertEquals(emptyList<String>(), IntegrityChecker.findViolations(db.openHelper.writableDatabase))
+    }
+
+    @Test
+    fun paidPartNowShowsAsSeparatePaymentOnTheAccount() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val supplierId = KhataCommands(db, env).createParty("sup1", "Gupta Traders", "", "SUPPLIER")
+        val result = stockIn.receiveScannedStock(
+            StockInRequest(
+                actionId = "sep-1",
+                rows = listOf(hingeRow(hingeId, 5_000L)),
+                supplierPartyId = supplierId,
+                billTotalPaise = 10_000L,
+                amountPaidPaise = 4_000L,
+                paidMode = "UPI",
+                billNumber = "GT-42"
+            )
+        )
+        assertEquals(6_000L, result.supplierDuePaise)
+        assertEquals(-6_000L, db.shopPartyAndLedgerDao().getPartyById(supplierId)!!.currentBalancePaise)
+        val entries = db.shopPartyAndLedgerDao().getAllLedgerEntries().filter { it.refDocId == result.purchaseId }
+        val creditBill = entries.single { it.entryType == LedgerEntryType.CREDIT_BILL }
+        val paymentOut = entries.single { it.entryType == LedgerEntryType.PAYMENT_OUT }
+        assertEquals(-10_000L, creditBill.amountDeltaPaise)
+        assertEquals(4_000L, paymentOut.amountDeltaPaise)
+        assertEquals("UPI", paymentOut.paymentMode)
+        val bill = db.purchaseDao().getBill(result.purchaseId)!!
+        assertEquals("UPI", bill.paymentMode)
+        assertEquals("GT-42", bill.billNumber)
+        assertEquals(emptyList<String>(), IntegrityChecker.findViolations(db.openHelper.writableDatabase))
+    }
+
+    @Test
+    fun noSupplierStillRecordsBillWithoutLedger() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val result = stockIn.receiveScannedStock(
+            StockInRequest(
+                actionId = "ns-1",
+                rows = listOf(hingeRow(hingeId, 4_000L)),
+                billTotalPaise = 4_000L,
+                amountPaidPaise = 4_000L
+            )
+        )
+        assertEquals(0L, result.supplierDuePaise)
         assertEquals(0L, db.scalar("SELECT COUNT(*) FROM party_ledger_entries"))
+        val bill = db.purchaseDao().getBill(result.purchaseId)!!
+        assertEquals(null, bill.supplierPartyId)
+        assertEquals(4_000L, bill.totalPaise)
+        assertEquals(4_000L, bill.paidPaise)
+        assertEquals(emptyList<String>(), IntegrityChecker.findViolations(db.openHelper.writableDatabase))
+    }
+
+    @Test
+    fun billTotalZeroUsesLinesTotal() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val result = stockIn.receiveScannedStock(
+            StockInRequest(
+                actionId = "lt-1",
+                rows = listOf(StockInRow(hingeId, qtyMilli = 2_500L, costPaise = 4_000L, sellPaise = null)),
+                newSupplierName = "Gupta Traders",
+                billTotalPaise = 0L,
+                amountPaidPaise = 0L
+            )
+        )
+        val bill = db.purchaseDao().getBill(result.purchaseId)!!
+        assertEquals(10_000L, bill.totalPaise)
+        assertEquals(10_000L, bill.linesTotalPaise)
+        assertEquals(10_000L, bill.duePaise)
+        assertEquals(emptyList<String>(), IntegrityChecker.findViolations(db.openHelper.writableDatabase))
+    }
+
+    @Test
+    fun unknownPaidModeIsRejected() = runBlocking<Unit> {
+        val hingeId = seedHinge(db, env)
+        val before = snapshot(db)
+        expectFailure<CommandException.Validation> {
+            stockIn.receiveScannedStock(
+                StockInRequest(
+                    actionId = "pm-1",
+                    rows = listOf(hingeRow(hingeId, 4_000L)),
+                    newSupplierName = "Sharma",
+                    billTotalPaise = 4_000L,
+                    amountPaidPaise = 1_000L,
+                    paidMode = "CHEQUE"
+                )
+            )
+        }
+        assertEquals(before, snapshot(db))
     }
 
     @Test

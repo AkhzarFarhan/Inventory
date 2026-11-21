@@ -316,6 +316,8 @@
     <string name="msg_choose_supplier">इस बिल के लिए सप्लायर चुनें।</string>
     <string name="msg_sell_price_required">हर नए सामान का बिक्री भाव लिखें।</string>
     <string name="msg_supplier_name_for_due">बकाया रकम दर्ज करने के लिए सप्लायर का नाम जोड़ें।</string>
+    <string name="msg_paid_mode_unknown">दी गई रकम के लिए नकद या UPI चुनें।</string>
+    <string name="msg_bill_number_too_long">बिल नंबर बहुत लंबा है। 40 अक्षरों से कम रखें।</string>
     <string name="msg_owner_only_cost">खरीद भाव सिर्फ़ मालिक बदल सकता है।</string>
     <string name="msg_owner_only_delete">सामान सिर्फ़ मालिक हटा सकता है।</string>
     <string name="msg_discount_needs_pin">%1$d%% से ज़्यादा छूट के लिए मालिक का PIN चाहिए।</string>

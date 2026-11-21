@@ -1,7 +1,11 @@
 package com.shopledger.pos.data.command
 
 import com.shopledger.pos.R
+import com.shopledger.pos.core.ledger.CalendarParts
 import com.shopledger.pos.data.local.LpsDatabase
+import com.shopledger.pos.data.local.entity.PurchaseBillEntity
+import com.shopledger.pos.data.local.entity.PurchaseBillLineEntity
+import java.util.Locale
 
 data class StockInRow(
     /** null = create a new item. */
@@ -24,7 +28,11 @@ data class StockInRequest(
     /** Creates a SUPPLIER party when set and no id is given. If both an id and a name are given, the id wins and the name is ignored. */
     val newSupplierName: String? = null,
     val billTotalPaise: Long = 0L,
-    val amountPaidPaise: Long = 0L
+    val amountPaidPaise: Long = 0L,
+    /** "CASH" or "UPI": how the paid-now part was paid. Ignored when amountPaidPaise == 0. */
+    val paidMode: String = "CASH",
+    /** Distributor's bill/invoice number, optional. */
+    val billNumber: String = ""
 )
 
 data class StockInResult(
@@ -41,8 +49,9 @@ object StockInStep {
     const val ITEMS = "ITEMS"
     const val COSTS = "COSTS"
     const val MOVEMENTS = "MOVEMENTS"
+    const val PURCHASE_BILL = "PURCHASE_BILL"
     const val LEDGER = "LEDGER"
-    val ALL = listOf(SUPPLIER, ITEMS, COSTS, MOVEMENTS, LEDGER)
+    val ALL = listOf(SUPPLIER, ITEMS, COSTS, MOVEMENTS, PURCHASE_BILL, LEDGER)
 }
 
 /** Saves a whole scanned stock list (new items, restocks, cost updates, supplier bill) in one transaction. */
@@ -54,6 +63,7 @@ class StockInCommands(
     private val writer = LedgerWriter(db, env)
     private val inventory = db.inventoryDao()
     private val parties = db.shopPartyAndLedgerDao()
+    private val purchases = db.purchaseDao()
     private val catalog = CatalogCommands(db, env)
     private val khata = KhataCommands(db, env)
 
@@ -129,14 +139,70 @@ class StockInCommands(
             }
             faults.at(StockInStep.MOVEMENTS)
 
-            val due = request.billTotalPaise - request.amountPaidPaise
-            var recordedDue = 0L
-            if (supplierId != null && due > 0L) {
-                writer.appendLedgerEntry(
-                    supplierId, -due, LedgerEntryType.CREDIT_BILL, "CREDIT", purchaseId,
-                    "Purchase bill", device, enqueue = true
+            val parts = CalendarParts.of(env.now())
+            val lines = request.rows.mapIndexed { index, row ->
+                val variant = inventory.getVariantById(targets[index])!!
+                val itemName = inventory.getItemById(variant.itemId)?.displayName.orEmpty()
+                PurchaseBillLineEntity(
+                    id = env.newId(),
+                    shopId = env.shopId(),
+                    purchaseId = purchaseId,
+                    skuId = variant.id,
+                    productId = variant.itemId,
+                    itemNameSnapshot = itemName,
+                    variantSummarySnapshot = variant.buildVariantSummary(),
+                    unitSnapshot = variant.unit,
+                    qtyMilliUnits = row.qtyMilli,
+                    unitCostPaise = row.costPaise,
+                    lineTotalPaise = (row.qtyMilli * row.costPaise + 500) / 1000
                 )
-                recordedDue = due
+            }
+            val linesTotal = lines.sumOf { it.lineTotalPaise }
+            val total = if (request.billTotalPaise > 0L) request.billTotalPaise else linesTotal
+            val paid = request.amountPaidPaise.coerceAtMost(total)
+            val paidModeUpper = request.paidMode.trim().uppercase(Locale.ROOT)
+            val supplierName = supplierId?.let { parties.getPartyById(it)?.name }.orEmpty()
+            purchases.insertBill(
+                PurchaseBillEntity(
+                    id = purchaseId,
+                    shopId = env.shopId(),
+                    supplierPartyId = supplierId,
+                    supplierNameSnapshot = supplierName,
+                    billNumber = request.billNumber.trim(),
+                    totalPaise = total,
+                    linesTotalPaise = linesTotal,
+                    paidPaise = paid,
+                    duePaise = total - paid,
+                    paymentMode = if (paid > 0L) paidModeUpper else "CREDIT",
+                    lineCount = lines.size,
+                    createdAt = env.now(),
+                    yearInt = parts.year,
+                    monthInt = parts.month,
+                    dayInt = parts.day,
+                    isLegacy = false,
+                    deviceId = device.deviceId,
+                    createdByUid = env.actor().uid
+                )
+            )
+            purchases.insertLines(lines)
+            writer.enqueue(OutboxDocType.PURCHASE, purchaseId, OutboxOp.APPEND)
+            faults.at(StockInStep.PURCHASE_BILL)
+
+            var recordedDue = 0L
+            if (supplierId != null) {
+                if (total > 0L) {
+                    writer.appendLedgerEntry(
+                        supplierId, -total, LedgerEntryType.CREDIT_BILL, "CREDIT", purchaseId,
+                        "Purchase bill", device, enqueue = true
+                    )
+                }
+                if (paid > 0L) {
+                    writer.appendLedgerEntry(
+                        supplierId, paid, LedgerEntryType.PAYMENT_OUT, paidModeUpper, purchaseId,
+                        "Paid with bill", device, enqueue = true
+                    )
+                }
+                recordedDue = total - paid
             }
             faults.at(StockInStep.LEDGER)
 
@@ -178,6 +244,13 @@ class StockInCommands(
         val hasSupplier = request.supplierPartyId != null || !request.newSupplierName.isNullOrBlank()
         if (request.billTotalPaise > request.amountPaidPaise && !hasSupplier) {
             throw CommandException.Validation(R.string.msg_supplier_name_for_due)
+        }
+        val paidMode = request.paidMode.trim().uppercase(Locale.ROOT)
+        if (paidMode != "CASH" && paidMode != "UPI") {
+            throw CommandException.Validation(R.string.msg_paid_mode_unknown)
+        }
+        if (request.billNumber.trim().length > 40) {
+            throw CommandException.Validation(R.string.msg_bill_number_too_long)
         }
     }
 }

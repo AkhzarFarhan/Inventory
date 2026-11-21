@@ -316,6 +316,8 @@
     <string name="msg_choose_supplier">Choose a supplier for this bill.</string>
     <string name="msg_sell_price_required">Enter a selling price for each new item.</string>
     <string name="msg_supplier_name_for_due">Add the supplier name to record the unpaid amount.</string>
+    <string name="msg_paid_mode_unknown">Choose Nagad or UPI for the amount paid.</string>
+    <string name="msg_bill_number_too_long">Bill number is too long. Keep it under 40 letters.</string>
     <string name="msg_owner_only_cost">Only the owner can change the cost price.</string>
     <string name="msg_owner_only_delete">Only the owner can delete items.</string>
     <string name="msg_discount_needs_pin">A discount above %1$d%% needs the owner PIN.</string>
