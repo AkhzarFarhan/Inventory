@@ -77,6 +77,7 @@ import com.shopledger.pos.core.nlp.ShopVertical
 import com.shopledger.pos.core.nlp.TradeTaxonomyRegistry
 import com.shopledger.pos.core.scanner.BarcodeScannerHelper
 import com.shopledger.pos.core.sync.SyncManager
+import com.shopledger.pos.data.local.dao.LastPurchaseInfo
 import com.shopledger.pos.data.local.entity.InventoryItemEntity
 import com.shopledger.pos.data.local.entity.ItemVariantEntity
 import com.shopledger.pos.data.model.InventoryItemWithVariants
@@ -87,6 +88,9 @@ import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.SecondaryActionButton
 import com.shopledger.pos.ui.theme.SectionCard
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -178,7 +182,8 @@ fun AddEditItemSheet(
         prefillMaterial: String,
         prefillColor: String
     ) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    lastPurchase: LastPurchaseInfo? = null,
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1032,6 +1037,30 @@ fun AddEditItemSheet(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                             shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (mode is ItemEditorMode.ManageItem && !isAddingNewVariant && lastPurchase != null) {
+                        val lastBuyDate = remember(lastPurchase.createdAt) {
+                            SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(lastPurchase.createdAt))
+                        }
+                        val supplierLabel = lastPurchase.supplierNameSnapshot.ifBlank {
+                            stringResource(R.string.distributor_unknown)
+                        }
+                        val lastBuyText = if (lastPurchase.isLegacy || lastPurchase.unitCostPaise <= 0L) {
+                            stringResource(R.string.item_last_bought_from_no_cost, supplierLabel, lastBuyDate)
+                        } else {
+                            stringResource(
+                                R.string.item_last_bought_from,
+                                supplierLabel,
+                                lastBuyDate,
+                                IndianCurrencyFormatter.formatPaise(lastPurchase.unitCostPaise),
+                            )
+                        }
+                        Text(
+                            text = lastBuyText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 

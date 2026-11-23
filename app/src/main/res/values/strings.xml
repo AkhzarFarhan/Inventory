@@ -506,6 +506,8 @@
     <string name="purchase_bill_total">Bill total</string>
     <string name="purchase_bill_paid_now">Paid now (%1$s)</string>
     <string name="purchase_bill_due">On udhaar</string>
+    <string name="item_last_bought_from">Last bought from %1$s on %2$s at %3$s</string>
+    <string name="item_last_bought_from_no_cost">Last bought from %1$s on %2$s</string>
 
     <!-- Receipt dialog -->
     <string name="receipt_banner_estimate">Estimate / Quotation</string>

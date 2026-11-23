@@ -506,6 +506,8 @@
     <string name="purchase_bill_total">बिल कुल</string>
     <string name="purchase_bill_paid_now">अभी दिया (%1$s)</string>
     <string name="purchase_bill_due">उधार पर</string>
+    <string name="item_last_bought_from">आखिरी बार %1$s से %2$s को %3$s में खरीदा</string>
+    <string name="item_last_bought_from_no_cost">आखिरी बार %1$s से %2$s को खरीदा</string>
 
     <!-- Receipt dialog -->
     <string name="receipt_banner_estimate">अनुमान / कोटेशन</string>

@@ -37,6 +37,7 @@ import com.shopledger.pos.ui.theme.ConfirmDialog
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -82,6 +83,7 @@ import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
 import com.shopledger.pos.ui.screens.items.statusOf
 import com.shopledger.pos.ui.screens.items.variantStockText
 import com.shopledger.pos.ui.text.variantLabel
+import com.shopledger.pos.data.local.dao.LastPurchaseInfo
 import com.shopledger.pos.data.local.entity.PurchaseBillLineEntity
 import com.shopledger.pos.ui.screens.khata.DistributorDetailScreen
 import com.shopledger.pos.ui.screens.khata.DistributorDetailState
@@ -595,10 +597,17 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     run {
         // Add / Edit Item & Variant Sheet
         activeEditorMode?.let { mode ->
+            val managedVariantId = (mode as? ItemEditorMode.ManageItem)?.let { m ->
+                if (m.startInAddVariantMode) null else m.initialVariantId ?: m.itemWithVariants.variants.firstOrNull()?.id
+            }
+            val lastPurchase by produceState<LastPurchaseInfo?>(initialValue = null, key1 = managedVariantId) {
+                value = managedVariantId?.let { viewModel.lastPurchaseForSku(it) }
+            }
             AddEditItemSheet(
                 mode = mode,
                 existingCategories = allExistingCategories,
                 isSellerUnlocked = isSellerUnlocked,
+                lastPurchase = lastPurchase,
                 onCheckDuplicate = viewModel::checkCandidateDuplicate,
                 onSaveNewItemWithVariants = viewModel::addNewItemWithVariants,
                 onSaveVariantToParent = viewModel::addVariantToExistingItem,
