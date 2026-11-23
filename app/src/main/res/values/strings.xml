@@ -474,6 +474,38 @@
     <string name="distributor_pay_note">Note (optional)</string>
     <string name="distributor_pay_more_than_owed">This is more than you owe. The extra is kept as advance.</string>
     <string name="distributor_pay_save">Save payment</string>
+    <string name="distributor_tab_account">Account</string>
+    <string name="distributor_tab_bills">Bills</string>
+    <string name="distributor_tab_items">Items</string>
+    <string name="distributor_entry_bill">Purchase bill</string>
+    <string name="distributor_entry_paid">Paid</string>
+    <string name="distributor_entry_refund">Money back</string>
+    <string name="distributor_udhaar_amount">Udhaar %1$s</string>
+    <string name="distributor_paid_amount">Paid %1$s</string>
+    <string name="distributor_balance_owe">Owe %1$s</string>
+    <string name="distributor_balance_advance">Advance %1$s</string>
+    <string name="distributor_bill_no_number">No bill number</string>
+    <plurals name="distributor_bill_items">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <string name="distributor_bill_due">Due %1$s</string>
+    <string name="distributor_bill_paid">Paid</string>
+    <string name="distributor_bill_legacy">Older entry — cost not recorded</string>
+    <string name="distributor_cost_unknown">Cost not recorded</string>
+    <string name="distributor_unknown">No distributor</string>
+    <string name="distributor_items_empty_title">No items yet</string>
+    <string name="distributor_items_empty_message">Items appear here after a Stock In with this distributor.</string>
+    <string name="distributor_items_bought">Bought %1$s %2$s in %3$d bills</string>
+    <string name="distributor_last_cost">Last cost %1$s on %2$s</string>
+    <string name="distributor_whatsapp_text">Namaste %1$s, %2$s will pay the pending %3$s soon.</string>
+    <string name="distributor_cd_call">Call distributor</string>
+    <string name="distributor_cd_share">Send on WhatsApp</string>
+    <string name="purchase_bill_title">Purchase bill</string>
+    <string name="purchase_bill_lines_total">Items total</string>
+    <string name="purchase_bill_total">Bill total</string>
+    <string name="purchase_bill_paid_now">Paid now (%1$s)</string>
+    <string name="purchase_bill_due">On udhaar</string>
 
     <!-- Receipt dialog -->
     <string name="receipt_banner_estimate">Estimate / Quotation</string>

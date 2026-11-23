@@ -2,6 +2,8 @@ package com.shopledger.pos
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -80,7 +82,13 @@ import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
 import com.shopledger.pos.ui.screens.items.statusOf
 import com.shopledger.pos.ui.screens.items.variantStockText
 import com.shopledger.pos.ui.text.variantLabel
+import com.shopledger.pos.data.local.entity.PurchaseBillLineEntity
+import com.shopledger.pos.ui.screens.khata.DistributorDetailScreen
+import com.shopledger.pos.ui.screens.khata.DistributorDetailState
+import com.shopledger.pos.ui.screens.khata.DistributorEvent
 import com.shopledger.pos.ui.screens.khata.KhataTab
+import com.shopledger.pos.ui.screens.khata.PayDistributorDialog
+import com.shopledger.pos.ui.screens.khata.PurchaseBillSheet
 import com.shopledger.pos.ui.screens.more.MoreScreen
 import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
 import com.shopledger.pos.ui.screens.setup.SetupEvent
@@ -225,6 +233,16 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     var showSetupAgain by rememberSaveable { mutableStateOf(false) }
     var showOrderScanSheet by remember { mutableStateOf(false) }
     var showCloudSyncSheet by remember { mutableStateOf(false) }
+    var openDistributorId by rememberSaveable { mutableStateOf<String?>(null) }
+    var payDistributorId by rememberSaveable { mutableStateOf<String?>(null) }
+    var openPurchaseBillId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(isSellerUnlocked) {
+        if (!isSellerUnlocked) {
+            openDistributorId = null
+            payDistributorId = null
+            openPurchaseBillId = null
+        }
+    }
     var showOwnerPinDialog by remember { mutableStateOf(false) }
     var pinEntryInput by remember { mutableStateOf("") }
     val wrongPinTitle = stringResource(R.string.pin_wrong)
@@ -376,7 +394,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         onRecordPaymentReceived = viewModel::recordPartyPaymentReceived,
                         onAddDistributor = viewModel::addDistributor,
                         onPayDistributor = viewModel::recordPaymentToDistributor,
-                        onOpenDistributor = {},
+                        onOpenDistributor = { openDistributorId = it },
                     )
                     AppTab.MORE -> MoreScreen(
                         isSellerUnlocked = isSellerUnlocked,
@@ -422,6 +440,71 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             onPhotos = { uris -> stockInViewModel.readPhotos(context, uris) },
             onBitmap = { bitmap -> stockInViewModel.readBitmap(context, bitmap) },
         )
+
+        openDistributorId?.takeIf { isSellerUnlocked }?.let { distId ->
+            val party = parties.firstOrNull { it.id == distId }
+            if (party != null) {
+                val distLedger by remember(distId) { viewModel.ledgerForParty(distId) }.collectAsState(initial = emptyList())
+                val distBills by remember(distId) { viewModel.billsForSupplier(distId) }.collectAsState(initial = emptyList())
+                val distItems by remember(distId) { viewModel.itemsForSupplier(distId) }.collectAsState(initial = emptyList())
+                BackHandler { openDistributorId = null }
+                Surface(modifier = Modifier.fillMaxSize().zIndex(9f)) {
+                    DistributorDetailScreen(
+                        state = DistributorDetailState(
+                            party = party,
+                            ledger = distLedger,
+                            bills = distBills,
+                            items = distItems,
+                        ),
+                        onEvent = { event ->
+                            when (event) {
+                                DistributorEvent.Close -> openDistributorId = null
+                                DistributorEvent.Pay -> payDistributorId = party.id
+                                is DistributorEvent.OpenBill -> openPurchaseBillId = event.purchaseId
+                                DistributorEvent.Call -> {
+                                    if (party.phone.isNotBlank()) {
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${party.phone}")))
+                                        }
+                                    }
+                                }
+                                DistributorEvent.WhatsApp -> {
+                                    val shopName = activeSellerName.ifBlank { context.getString(R.string.app_name) }
+                                    val owed = IndianCurrencyFormatter.formatPaise((-party.currentBalancePaise).coerceAtLeast(0L))
+                                    val msg = context.getString(R.string.distributor_whatsapp_text, party.name, shopName, owed)
+                                    ReceiptShareManager.shareTextToWhatsApp(context, msg, party.phone)
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+        }
+
+        payDistributorId?.takeIf { isSellerUnlocked }?.let { id ->
+            parties.firstOrNull { it.id == id }?.let { target ->
+                PayDistributorDialog(
+                    party = target,
+                    onConfirm = { amount, mode, note ->
+                        viewModel.recordPaymentToDistributor(target.id, amount, mode, note)
+                        payDistributorId = null
+                    },
+                    onDismiss = { payDistributorId = null },
+                )
+            }
+        }
+
+        openPurchaseBillId?.takeIf { isSellerUnlocked }?.let { billId ->
+            purchaseBills.firstOrNull { it.id == billId }?.let { bill ->
+                var lines by remember(billId) { mutableStateOf<List<PurchaseBillLineEntity>>(emptyList()) }
+                LaunchedEffect(billId) { lines = viewModel.purchaseLines(billId) }
+                PurchaseBillSheet(
+                    bill = bill,
+                    lines = lines,
+                    onDismiss = { openPurchaseBillId = null },
+                )
+            }
+        }
 
         // A locked seller mode hides the review without losing it: unlock again and it is still there.
         stockInReview?.takeIf { isSellerUnlocked }?.let { review ->
