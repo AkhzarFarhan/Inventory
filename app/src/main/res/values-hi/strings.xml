@@ -105,13 +105,14 @@
     <string name="reorder_list_line">%1$d. *%2$s* (%3$s) — अभी स्टॉक: %4$s %5$s</string>
     <string name="stock_in_scan">बिल या लिस्ट स्कैन करें</string>
     <string name="stock_in_pick_photo">फ़ोटो चुनें</string>
+    <string name="stock_in_manual_bill">बिल हाथ से भरें</string>
     <string name="stock_in_reading">फ़ोटो पढ़ रहे हैं…</string>
     <string name="stock_in_scan_failed">यह फ़ोटो पढ़ नहीं पाए। बेहतर रोशनी में दोबारा लें।</string>
     <string name="stock_in_unlock_hint">बिल या लिस्ट स्कैन करने के लिए पहले सेलर मोड खोलें।</string>
     <string name="review_summary">%1$s · कुल %2$s · दिया %3$s</string>
     <string name="review_summary_total_unset">डाला नहीं</string>
-    <string name="review_cd_summary_expand">सप्लायर और रकम दिखाएँ</string>
-    <string name="review_cd_summary_collapse">सप्लायर और रकम छिपाएँ</string>
+    <string name="review_cd_summary_expand">डिस्ट्रीब्यूटर और रकम दिखाएँ</string>
+    <string name="review_cd_summary_collapse">डिस्ट्रीब्यूटर और रकम छिपाएँ</string>
     <string name="review_hint_remove">किसी सामान को हटाने के लिए उसे दबाकर रखें।</string>
     <string name="review_cell_cd">%2$s का %1$s: %3$s</string>
     <string name="review_title">जोड़ने से पहले जाँचें</string>
@@ -131,12 +132,17 @@
     <string name="review_add_price">दाम डालें</string>
     <string name="review_add_name">नाम डालें</string>
     <string name="review_cd_remove">%1$s हटाएँ</string>
-    <string name="review_supplier">सप्लायर</string>
-    <string name="review_supplier_none">कोई सप्लायर नहीं</string>
-    <string name="review_supplier_new">नया सप्लायर…</string>
-    <string name="review_supplier_new_hint">नए सप्लायर का नाम</string>
+    <string name="review_supplier">डिस्ट्रीब्यूटर</string>
+    <string name="review_supplier_none">कोई डिस्ट्रीब्यूटर नहीं</string>
+    <string name="review_supplier_new">नया डिस्ट्रीब्यूटर…</string>
+    <string name="review_supplier_new_hint">नए डिस्ट्रीब्यूटर का नाम</string>
     <string name="review_bill_total">बिल का कुल</string>
     <string name="review_paid">दी गई रकम</string>
+    <string name="pay_nagad">नकद</string>
+    <string name="pay_upi">UPI</string>
+    <string name="review_paid_mode">भुगतान का तरीका</string>
+    <string name="review_bill_number">बिल नंबर (ज़रूरी नहीं)</string>
+    <string name="review_add_item">सामान जोड़ें</string>
     <plurals name="review_save">
         <item quantity="one">%1$d सामान स्टॉक में जोड़ें</item>
         <item quantity="other">%1$d सामान स्टॉक में जोड़ें</item>
@@ -150,11 +156,11 @@
     <string name="review_block_sell">\"%1$s\" का बिक्री दाम डालें।</string>
     <string name="review_block_check">चुनें कि \"%1$s\" कौन सा सामान है।</string>
     <string name="review_block_duplicate">\"%1$s\" लिस्ट में दो बार है। एक हटा दें।</string>
-    <string name="review_block_supplier">सप्लायर चुनें या जोड़ें, या दी गई रकम बिल के कुल के बराबर करें।</string>
+    <string name="review_block_supplier">डिस्ट्रीब्यूटर चुनें या जोड़ें, या दी गई रकम बिल के कुल के बराबर करें।</string>
     <string name="review_block_paid">दी गई रकम बिल के कुल से ज़्यादा नहीं हो सकती।</string>
     <string name="review_error_generic">सेव नहीं हो पाया। कुछ भी बदला नहीं है। कृपया दोबारा कोशिश करें।</string>
-    <string name="review_empty_title">कोई सामान नहीं मिला</string>
-    <string name="review_empty_message">इस फ़ोटो में हमें कोई सामान नहीं मिला।</string>
+    <string name="review_empty_title">इस बिल में अभी कोई सामान नहीं</string>
+    <string name="review_empty_message">जो सामान आया है उसे सामान जोड़ें दबाकर डालें।</string>
     <string name="review_pick_title">यह कौन सा सामान है?</string>
     <string name="review_pick_search">सामान खोजें</string>
     <string name="review_pick_on_bill">बिल में: %1$s</string>
@@ -174,7 +180,7 @@
         <item quantity="other">%1$d सामान स्टॉक में जुड़ गए</item>
     </plurals>
     <string name="stock_in_saved_title">स्टॉक जुड़ गया</string>
-    <string name="stock_in_saved_due">आपको सप्लायर को %1$s देने हैं।</string>
+    <string name="stock_in_saved_due">आपको डिस्ट्रीब्यूटर को %1$s देने हैं।</string>
     <string name="checkout_title">बिल बनाएँ</string>
     <string name="checkout_cd_close">बिल बनाना बंद करें</string>
     <string name="checkout_cd_more">और विकल्प</string>
@@ -313,9 +319,9 @@
     <string name="msg_cart_empty">कार्ट खाली है। पहले कोई सामान जोड़ें।</string>
     <string name="msg_discount_range">छूट 0 से बिल की कुल रकम के बीच होनी चाहिए।</string>
     <string name="msg_return_pick">वापस करने के लिए कम से कम एक सामान चुनें।</string>
-    <string name="msg_choose_supplier">इस बिल के लिए सप्लायर चुनें।</string>
+    <string name="msg_choose_supplier">इस बिल के लिए डिस्ट्रीब्यूटर चुनें।</string>
     <string name="msg_sell_price_required">हर नए सामान का बिक्री भाव लिखें।</string>
-    <string name="msg_supplier_name_for_due">बकाया रकम दर्ज करने के लिए सप्लायर का नाम जोड़ें।</string>
+    <string name="msg_supplier_name_for_due">बकाया रकम दर्ज करने के लिए डिस्ट्रीब्यूटर का नाम जोड़ें।</string>
     <string name="msg_paid_mode_unknown">दी गई रकम के लिए नकद या UPI चुनें।</string>
     <string name="msg_bill_number_too_long">बिल नंबर बहुत लंबा है। 40 अक्षरों से कम रखें।</string>
     <string name="msg_owner_only_cost">खरीद भाव सिर्फ़ मालिक बदल सकता है।</string>
@@ -325,7 +331,7 @@
     <string name="msg_stale_party">\"%1$s\" किसी और स्क्रीन पर बदला गया है। इसे दोबारा खोलकर फिर कोशिश करें।</string>
     <string name="msg_return_exceeds">%2$s में से आप ज़्यादा से ज़्यादा %1$s वापस ले सकते हैं।</string>
     <string name="msg_not_found_item">यह सामान अब नहीं मिल रहा। लिस्ट रीफ़्रेश करके फिर कोशिश करें।</string>
-    <string name="msg_not_found_supplier">यह सप्लायर अब नहीं मिल रहा। दोबारा चुनें।</string>
+    <string name="msg_not_found_supplier">यह डिस्ट्रीब्यूटर अब नहीं मिल रहा। दोबारा चुनें।</string>
     <string name="msg_not_found_party">यह पार्टी अब नहीं मिल रही। लिस्ट रीफ़्रेश करके फिर कोशिश करें।</string>
     <string name="msg_not_found_bill">यह बिल नहीं मिला। रीफ़्रेश करके फिर कोशिश करें।</string>
 

@@ -105,13 +105,14 @@
     <string name="reorder_list_line">%1$d. *%2$s* (%3$s) — Current Stock: %4$s %5$s</string>
     <string name="stock_in_scan">Scan bill or list</string>
     <string name="stock_in_pick_photo">Pick a photo</string>
+    <string name="stock_in_manual_bill">Enter bill by hand</string>
     <string name="stock_in_reading">Reading the photo…</string>
     <string name="stock_in_scan_failed">Could not read that photo. Try again with better light.</string>
     <string name="stock_in_unlock_hint">Unlock seller mode to scan a bill or list.</string>
     <string name="review_summary">%1$s · Total %2$s · Paid %3$s</string>
     <string name="review_summary_total_unset">not set</string>
-    <string name="review_cd_summary_expand">Show supplier and amounts</string>
-    <string name="review_cd_summary_collapse">Hide supplier and amounts</string>
+    <string name="review_cd_summary_expand">Show distributor and amounts</string>
+    <string name="review_cd_summary_collapse">Hide distributor and amounts</string>
     <string name="review_hint_remove">Press and hold an item to remove it.</string>
     <string name="review_cell_cd">%1$s for %2$s: %3$s</string>
     <string name="review_title">Check before adding</string>
@@ -131,12 +132,17 @@
     <string name="review_add_price">Add price</string>
     <string name="review_add_name">Add name</string>
     <string name="review_cd_remove">Remove %1$s</string>
-    <string name="review_supplier">Supplier</string>
-    <string name="review_supplier_none">No supplier</string>
-    <string name="review_supplier_new">New supplier…</string>
-    <string name="review_supplier_new_hint">New supplier name</string>
+    <string name="review_supplier">Distributor</string>
+    <string name="review_supplier_none">No distributor</string>
+    <string name="review_supplier_new">New distributor…</string>
+    <string name="review_supplier_new_hint">New distributor name</string>
     <string name="review_bill_total">Bill total</string>
     <string name="review_paid">Amount paid</string>
+    <string name="pay_nagad">Nagad</string>
+    <string name="pay_upi">UPI</string>
+    <string name="review_paid_mode">Paid by</string>
+    <string name="review_bill_number">Bill number (optional)</string>
+    <string name="review_add_item">Add item</string>
     <plurals name="review_save">
         <item quantity="one">Add %1$d item to stock</item>
         <item quantity="other">Add %1$d items to stock</item>
@@ -150,11 +156,11 @@
     <string name="review_block_sell">Add a selling price for \"%1$s\".</string>
     <string name="review_block_check">Choose which item \"%1$s\" is.</string>
     <string name="review_block_duplicate">\"%1$s\" is in the list twice. Remove one.</string>
-    <string name="review_block_supplier">Choose or add a supplier, or set the amount paid equal to the bill total.</string>
+    <string name="review_block_supplier">Choose or add a distributor, or set the amount paid equal to the bill total.</string>
     <string name="review_block_paid">The amount paid cannot be more than the bill total.</string>
     <string name="review_error_generic">Could not save. Nothing was changed. Please try again.</string>
-    <string name="review_empty_title">No items found</string>
-    <string name="review_empty_message">We could not find any items in that photo.</string>
+    <string name="review_empty_title">No items on this bill yet</string>
+    <string name="review_empty_message">Tap Add item to add what you received.</string>
     <string name="review_pick_title">Which item is this?</string>
     <string name="review_pick_search">Search items</string>
     <string name="review_pick_on_bill">On the bill: %1$s</string>
@@ -174,7 +180,7 @@
         <item quantity="other">Added %1$d items to stock</item>
     </plurals>
     <string name="stock_in_saved_title">Stock added</string>
-    <string name="stock_in_saved_due">You owe the supplier %1$s.</string>
+    <string name="stock_in_saved_due">You owe the distributor %1$s.</string>
     <string name="checkout_title">Checkout</string>
     <string name="checkout_cd_close">Close checkout</string>
     <string name="checkout_cd_more">More options</string>
@@ -313,9 +319,9 @@
     <string name="msg_cart_empty">The cart is empty. Add an item first.</string>
     <string name="msg_discount_range">Discount must be between 0 and the bill total.</string>
     <string name="msg_return_pick">Choose at least one item to return.</string>
-    <string name="msg_choose_supplier">Choose a supplier for this bill.</string>
+    <string name="msg_choose_supplier">Choose a distributor for this bill.</string>
     <string name="msg_sell_price_required">Enter a selling price for each new item.</string>
-    <string name="msg_supplier_name_for_due">Add the supplier name to record the unpaid amount.</string>
+    <string name="msg_supplier_name_for_due">Add the distributor name to record the unpaid amount.</string>
     <string name="msg_paid_mode_unknown">Choose Nagad or UPI for the amount paid.</string>
     <string name="msg_bill_number_too_long">Bill number is too long. Keep it under 40 letters.</string>
     <string name="msg_owner_only_cost">Only the owner can change the cost price.</string>
@@ -325,7 +331,7 @@
     <string name="msg_stale_party">\"%1$s\" was changed on another screen. Open it again and retry.</string>
     <string name="msg_return_exceeds">You can return at most %1$s of %2$s.</string>
     <string name="msg_not_found_item">This item is no longer there. Refresh the list and try again.</string>
-    <string name="msg_not_found_supplier">This supplier is no longer there. Pick one again.</string>
+    <string name="msg_not_found_supplier">This distributor is no longer there. Pick one again.</string>
     <string name="msg_not_found_party">This party is no longer there. Refresh the list and try again.</string>
     <string name="msg_not_found_bill">This bill could not be found. Refresh and try again.</string>
 

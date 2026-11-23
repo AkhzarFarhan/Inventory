@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -24,6 +26,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FiberNew
@@ -85,6 +88,7 @@ import com.shopledger.pos.ui.theme.EmptyState
 import com.shopledger.pos.ui.theme.MoneyField
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.SecondaryActionButton
+import com.shopledger.pos.ui.theme.SegmentedChoice
 import com.shopledger.pos.ui.theme.ShopLedgerTokens
 import com.shopledger.pos.ui.theme.sanitiseMoneyInput
 import kotlinx.coroutines.Dispatchers
@@ -107,7 +111,8 @@ fun StockInReviewScreen(
 ) {
     var showPhoto by remember { mutableStateOf(false) }
     var pickerKey by remember { mutableStateOf<Long?>(null) }
-    // Whether the user chose "New supplier…" (it must survive the header being collapsed).
+    var addingItem by remember { mutableStateOf(false) }
+    // Whether the user chose "New distributor…" (it must survive the header being collapsed).
     var newSupplierMode by rememberSaveable { mutableStateOf(state.newSupplierName.isNotBlank()) }
     // Open at first only when the supplier or the amounts are what stops the save.
     var headerExpanded by rememberSaveable {
@@ -132,21 +137,42 @@ fun StockInReviewScreen(
         )
 
         if (state.rows.isEmpty()) {
-            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
+            SummaryHeader(
+                state = state,
+                expanded = headerExpanded,
+                onToggle = { headerExpanded = !headerExpanded },
+                newMode = newSupplierMode,
+                onNewModeChange = { newSupplierMode = it },
+                onEvent = onEvent,
+            )
+            Column(
+                Modifier.weight(1f).fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingL),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 EmptyState(
                     title = stringResource(R.string.review_empty_title),
                     message = stringResource(R.string.review_empty_message),
-                    actionText = stringResource(R.string.action_retry),
-                    onAction = { onEvent(StockInEvent.Rescan) },
+                    actionText = if (state.isManual) null else stringResource(R.string.action_retry),
+                    onAction = if (state.isManual) null else { { onEvent(StockInEvent.Rescan) } },
                 )
                 SecondaryActionButton(
-                    text = stringResource(R.string.stock_in_add_manually),
-                    onClick = { onEvent(StockInEvent.AddManually) },
-                    modifier = Modifier.padding(horizontal = ShopLedgerTokens.spacingXl),
+                    text = stringResource(R.string.review_add_item),
+                    onClick = { addingItem = true },
+                    icon = Icons.Filled.Add,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingL),
                 )
+                if (!state.isManual) {
+                    Spacer(Modifier.height(ShopLedgerTokens.spacingS))
+                    SecondaryActionButton(
+                        text = stringResource(R.string.stock_in_add_manually),
+                        onClick = { onEvent(StockInEvent.AddManually) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = ShopLedgerTokens.spacingL),
+                    )
+                }
             }
+            BottomBar(state, onEvent)
         } else {
-            // Supplier and amounts, the filter and the column titles stay above the scrolling rows.
+            // Distributor and amounts, the filter and the column titles stay above the scrolling rows.
             SummaryHeader(
                 state = state,
                 expanded = headerExpanded,
@@ -167,6 +193,16 @@ fun StockInReviewScreen(
                     )
                     HorizontalDivider()
                 }
+                item(key = "add_item") {
+                    SecondaryActionButton(
+                        text = stringResource(R.string.review_add_item),
+                        onClick = { addingItem = true },
+                        icon = Icons.Filled.Add,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = ShopLedgerTokens.spacingL, vertical = ShopLedgerTokens.spacingS),
+                    )
+                }
                 item(key = "hint") {
                     Text(
                         stringResource(R.string.review_hint_remove),
@@ -186,6 +222,18 @@ fun StockInReviewScreen(
     LaunchedEffect(pickerKey, state.rows) {
         val key = pickerKey
         if (key != null && state.rows.none { it.key == key }) pickerKey = null
+    }
+    if (addingItem) {
+        ItemPickerDialog(
+            state = state,
+            row = null,
+            onPick = { itemId, variantId ->
+                onEvent(StockInEvent.AddRow(itemId, variantId))
+                addingItem = false
+            },
+            onMakeNew = {},
+            onDismiss = { addingItem = false },
+        )
     }
     pickerKey?.let { key ->
         state.rows.firstOrNull { it.key == key }?.let { row ->
@@ -222,7 +270,8 @@ private fun SummaryHeader(
     val total = state.billTotalPaise?.let { IndianCurrencyFormatter.formatPaise(it) }
         ?: stringResource(R.string.review_summary_total_unset)
     val paid = IndianCurrencyFormatter.formatPaise(state.amountPaidPaise ?: 0L)
-    val summary = stringResource(R.string.review_summary, supplierName, total, paid)
+    val billNoSuffix = state.billNumber.trim().takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
+    val summary = stringResource(R.string.review_summary, supplierName, total, paid) + billNoSuffix
     val problem = state.blockReason?.kind.let { it == BlockKind.SUPPLIER || it == BlockKind.PAID }
     val toggleDesc = stringResource(if (expanded) R.string.review_cd_summary_collapse else R.string.review_cd_summary_expand)
 
@@ -328,6 +377,28 @@ private fun HeaderSection(
                 modifier = Modifier.weight(1f),
             )
         }
+        if ((state.amountPaidPaise ?: 0L) > 0L) {
+            Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs)) {
+                Text(
+                    stringResource(R.string.review_paid_mode),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SegmentedChoice(
+                    options = listOf(stringResource(R.string.pay_nagad), stringResource(R.string.pay_upi)),
+                    selectedIndex = if (state.paidMode == "UPI") 1 else 0,
+                    onSelect = { onEvent(StockInEvent.SetPaidMode(if (it == 1) "UPI" else "CASH")) },
+                )
+            }
+        }
+        OutlinedTextField(
+            value = state.billNumber,
+            onValueChange = { onEvent(StockInEvent.SetBillNumber(it)) },
+            label = { Text(stringResource(R.string.review_bill_number)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+        )
     }
 }
 
@@ -706,7 +777,7 @@ private fun PhotoDialog(uri: android.net.Uri, onDismiss: () -> Unit) {
 @Composable
 private fun ItemPickerDialog(
     state: StockInUiState,
-    row: ReviewRow,
+    row: ReviewRow?,
     onPick: (itemId: String, variantId: String) -> Unit,
     onMakeNew: () -> Unit,
     onDismiss: () -> Unit,
@@ -720,13 +791,17 @@ private fun ItemPickerDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.review_pick_title)) },
+        title = {
+            Text(stringResource(if (row == null) R.string.review_add_item else R.string.review_pick_title))
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS)) {
-                Text(
-                    stringResource(R.string.review_pick_on_bill, row.scannedName),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (row != null) {
+                    Text(
+                        stringResource(R.string.review_pick_on_bill, row.scannedName),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
                     label = { Text(stringResource(R.string.review_pick_search)) },
@@ -750,8 +825,10 @@ private fun ItemPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onMakeNew, modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)) {
-                Text(stringResource(R.string.review_make_new))
+            if (row != null) {
+                TextButton(onClick = onMakeNew, modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)) {
+                    Text(stringResource(R.string.review_make_new))
+                }
             }
         },
         dismissButton = {

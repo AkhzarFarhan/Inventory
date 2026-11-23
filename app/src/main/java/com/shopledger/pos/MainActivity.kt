@@ -397,6 +397,10 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
             visible = showStockInSheet,
             isSellerUnlocked = isSellerUnlocked,
             onRequestUnlock = requestToggleSeller,
+            onManualBill = {
+                stockInViewModel.openManual()
+                showStockInSheet = false
+            },
             onAddManually = {
                 if (!isSellerUnlocked) requestToggleSeller()
                 else {

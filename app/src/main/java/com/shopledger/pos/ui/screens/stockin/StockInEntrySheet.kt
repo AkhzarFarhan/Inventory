@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +66,7 @@ fun StockInEntrySheet(
     onRequestUnlock: () -> Unit,
     onAddManually: () -> Unit,
     onDismiss: () -> Unit,
+    onManualBill: () -> Unit = {},
     reading: Boolean = false,
     hasUnsavedReview: Boolean = false,
     onDiscardReview: () -> Unit = {},
@@ -165,6 +167,12 @@ fun StockInEntrySheet(
                 text = stringResource(R.string.stock_in_pick_photo),
                 onClick = { if (isSellerUnlocked) guarded { galleryLauncher.launch("image/*") } else onRequestUnlock() },
                 icon = Icons.Filled.PhotoLibrary,
+                enabled = !reading,
+            )
+            SecondaryActionButton(
+                text = stringResource(R.string.stock_in_manual_bill),
+                onClick = { if (isSellerUnlocked) guarded { onManualBill() } else onRequestUnlock() },
+                icon = Icons.Filled.Receipt,
                 enabled = !reading,
             )
             SecondaryActionButton(

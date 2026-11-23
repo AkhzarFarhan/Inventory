@@ -88,6 +88,9 @@ data class StockInUiState(
     val newSupplierName: String = "",
     val billTotalPaise: Long? = null,
     val amountPaidPaise: Long? = null,
+    val paidMode: String = "CASH",
+    val billNumber: String = "",
+    val isManual: Boolean = false,
     /** True once the user typed the paid amount; until then it follows the bill total (when there is no supplier). */
     val paidEdited: Boolean = false,
     val saving: Boolean = false,
@@ -163,6 +166,8 @@ data class StockInUiState(
         newSupplierName = if (supplierId == null) newSupplierName.trim().ifBlank { null } else null,
         billTotalPaise = billTotalPaise ?: 0L,
         amountPaidPaise = amountPaidPaise ?: 0L,
+        paidMode = paidMode,
+        billNumber = billNumber.trim(),
     )
 }
 
@@ -174,11 +179,14 @@ sealed interface StockInEvent {
     data class EditName(val key: Long, val name: String) : StockInEvent
     data class DeleteRow(val key: Long) : StockInEvent
     data class PickVariant(val key: Long, val itemId: String, val variantId: String) : StockInEvent
+    data class AddRow(val itemId: String, val variantId: String) : StockInEvent
     data class MakeNew(val key: Long) : StockInEvent
     data class SetSupplier(val id: String?) : StockInEvent
     data class SetNewSupplier(val name: String) : StockInEvent
     data class SetBillTotal(val paise: Long?) : StockInEvent
     data class SetPaid(val paise: Long?) : StockInEvent
+    data class SetPaidMode(val mode: String) : StockInEvent
+    data class SetBillNumber(val text: String) : StockInEvent
     data object Save : StockInEvent
     data object DismissError : StockInEvent
     data object Close : StockInEvent
@@ -233,6 +241,9 @@ internal data class StockInSnapshot(
     val amountPaidPaise: Long?,
     val paidEdited: Boolean,
     val imageUri: String?,
+    val paidMode: String = "CASH",
+    val billNumber: String = "",
+    val isManual: Boolean = false,
 ) : java.io.Serializable
 
 class StockInViewModel(
@@ -269,6 +280,9 @@ class StockInViewModel(
                 newSupplierName = snap.newSupplierName,
                 billTotalPaise = snap.billTotalPaise,
                 amountPaidPaise = snap.amountPaidPaise,
+                paidMode = snap.paidMode,
+                billNumber = snap.billNumber,
+                isManual = snap.isManual,
                 paidEdited = snap.paidEdited,
                 role = role(),
                 imageUri = snap.imageUri?.let { Uri.parse(it) },
@@ -293,6 +307,9 @@ class StockInViewModel(
                 amountPaidPaise = next.amountPaidPaise,
                 paidEdited = next.paidEdited,
                 imageUri = next.imageUri?.toString(),
+                paidMode = next.paidMode,
+                billNumber = next.billNumber,
+                isManual = next.isManual,
             )
         }
     }
@@ -416,6 +433,25 @@ class StockInViewModel(
         }
     }
 
+    fun openManual() {
+        val currentRole = role()
+        synchronized(lock) {
+            publish(
+                StockInUiState(
+                    actionId = newId(),
+                    rows = emptyList(),
+                    suppliers = suppliers,
+                    billTotalPaise = null,
+                    amountPaidPaise = 0L,
+                    role = currentRole,
+                    inventory = inventory,
+                    imageUri = null,
+                    isManual = true,
+                )
+            )
+        }
+    }
+
     fun close() {
         synchronized(lock) { publish(null) }
     }
@@ -496,6 +532,37 @@ class StockInViewModel(
                     )
                 })
             }
+            is StockInEvent.AddRow -> update { s ->
+                val item = s.inventory.firstOrNull { it.item.id == event.itemId }
+                val variant = item?.allVariants?.firstOrNull { it.id == event.variantId }
+                if (item == null || variant == null) s else {
+                    val existing = s.rows.firstOrNull { it.variantId == variant.id }
+                    if (existing != null) {
+                        s.copy(
+                            rows = s.rows.map { r ->
+                                if (r.key != existing.key) r else r.copy(qtyMilli = (r.qtyMilli ?: 0L) + 1_000L)
+                            }
+                        )
+                    } else {
+                        val row = ReviewRow(
+                            key = nextKey++,
+                            status = MatchStatus.MATCHED,
+                            itemId = item.item.id,
+                            variantId = variant.id,
+                            itemName = item.item.displayName,
+                            variantSummary = variantSummary(variant),
+                            scannedName = item.item.displayName,
+                            unit = variant.unit,
+                            qtyMilli = 1_000L,
+                            costPaise = variant.purchasePricePaise,
+                            sellPaise = variant.sellingPricePaise,
+                            currentCostPaise = variant.purchasePricePaise,
+                            scannedRatePaise = null,
+                        )
+                        s.copy(rows = s.rows + row)
+                    }
+                }
+            }
             is StockInEvent.MakeNew -> update { s ->
                 s.copy(rows = s.rows.map { r ->
                     if (r.key != event.key) r else {
@@ -519,6 +586,10 @@ class StockInViewModel(
                 s.copy(billTotalPaise = event.paise, amountPaidPaise = if (follows) event.paise ?: 0L else s.amountPaidPaise)
             }
             is StockInEvent.SetPaid -> update { it.copy(amountPaidPaise = event.paise, paidEdited = true) }
+            is StockInEvent.SetPaidMode -> update {
+                it.copy(paidMode = if (event.mode.equals("UPI", ignoreCase = true)) "UPI" else "CASH")
+            }
+            is StockInEvent.SetBillNumber -> update { it.copy(billNumber = event.text.take(40)) }
             StockInEvent.Save -> viewModelScope.launch { save() }
             StockInEvent.DismissError -> synchronized(lock) {
                 _state.value?.let { publish(it.copy(error = null, errorIsGeneric = false)) }

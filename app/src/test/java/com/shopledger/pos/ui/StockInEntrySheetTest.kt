@@ -27,6 +27,7 @@ class StockInEntrySheetTest {
     private class Counts {
         var unlock = 0
         var manual = 0
+        var manualBill = 0
         var dismissed = 0
         var discarded = 0
     }
@@ -39,6 +40,7 @@ class StockInEntrySheetTest {
                     isSellerUnlocked = unlocked,
                     onRequestUnlock = { counts.unlock++ },
                     onAddManually = { counts.manual++ },
+                    onManualBill = { counts.manualBill++ },
                     onDismiss = { counts.dismissed++ },
                     hasUnsavedReview = hasReview,
                     onDiscardReview = { counts.discarded++ },
@@ -160,5 +162,19 @@ class StockInEntrySheetTest {
         compose.onNodeWithText("Stock-in review waiting (3 items)").assertIsDisplayed()
         compose.onNodeWithText("Tap to unlock and continue").performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(1, unlockTaps)
+    }
+
+    @Test fun manualBillNeedsSellerUnlock() {
+        val c = show(unlocked = false)
+        click("Enter bill by hand")
+        assertEquals(0, c.manualBill)
+        assertEquals(1, c.unlock)
+    }
+
+    @Test fun manualBillCallsCallbackWhenUnlocked() {
+        val c = show(unlocked = true)
+        click("Enter bill by hand")
+        assertEquals(1, c.manualBill)
+        assertEquals(0, c.unlock)
     }
 }

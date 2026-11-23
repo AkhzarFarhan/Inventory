@@ -428,4 +428,71 @@ class StockInViewModelTest {
         owner.openMatches(listOf(matched("1", null)), zeroCost, null, null)
         assertEquals(BlockKind.COST, owner.state.value!!.blockReason!!.kind)
     }
+
+    @Test fun paidModeReachesTheRequest() = runBlocking {
+        val saver = FakeSaver()
+        val v = vm(saver)
+        v.openMatches(listOf(matched("1", 4800)), inventory, 10000L, null)
+        v.onEvent(StockInEvent.SetSupplier("s1"))
+        v.onEvent(StockInEvent.SetPaid(4000L))
+        v.onEvent(StockInEvent.SetPaidMode("UPI"))
+        v.save()
+        assertEquals("UPI", saver.requests.single().paidMode)
+    }
+
+    @Test fun billNumberReachesTheRequest() = runBlocking {
+        val saver = FakeSaver()
+        val v = vm(saver)
+        v.openMatches(listOf(matched("1", 4800)), inventory, 9600L, null)
+        v.onEvent(StockInEvent.SetBillNumber("  GT-17  "))
+        v.save()
+        assertEquals("GT-17", saver.requests.single().billNumber)
+    }
+
+    @Test fun addRowAddsMatchedRowWithVariantCost() {
+        val v = vm()
+        v.setInventory(inventory)
+        v.openManual()
+        v.onEvent(StockInEvent.AddRow("1", "v-1"))
+        val r = v.rows().single()
+        assertEquals(MatchStatus.MATCHED, r.status)
+        assertEquals("v-1", r.variantId)
+        assertEquals(1000L, r.qtyMilli)
+        assertEquals(4800L, r.costPaise)
+        assertEquals(6000L, r.sellPaise)
+    }
+
+    @Test fun addRowTwiceIncreasesQty() {
+        val v = vm()
+        v.setInventory(inventory)
+        v.openManual()
+        v.onEvent(StockInEvent.AddRow("1", "v-1"))
+        v.onEvent(StockInEvent.AddRow("1", "v-1"))
+        val r = v.rows().single()
+        assertEquals(2000L, r.qtyMilli)
+    }
+
+    @Test fun manualReviewStartsEmptyAndCannotSave() {
+        val v = vm()
+        v.openManual()
+        val s = v.state.value!!
+        assertTrue(s.rows.isEmpty())
+        assertNull(s.billTotalPaise)
+        assertEquals(BlockKind.EMPTY, s.blockReason?.kind)
+    }
+
+    @Test fun snapshotRestoresPaidModeAndBillNumber() {
+        val handle = SavedStateHandle()
+        val first = StockInViewModel(FakeSaver(), { Role.OWNER }, { "act-snap" }, handle)
+        first.openMatches(listOf(matched("1", 4800)), inventory, 10000L, null)
+        first.onEvent(StockInEvent.SetSupplier("s1"))
+        first.onEvent(StockInEvent.SetPaid(4000L))
+        first.onEvent(StockInEvent.SetPaidMode("UPI"))
+        first.onEvent(StockInEvent.SetBillNumber("GT-99"))
+
+        val restored = StockInViewModel(FakeSaver(), { Role.OWNER }, { "other" }, handle)
+        val s = restored.state.value!!
+        assertEquals("UPI", s.paidMode)
+        assertEquals("GT-99", s.billNumber)
+    }
 }

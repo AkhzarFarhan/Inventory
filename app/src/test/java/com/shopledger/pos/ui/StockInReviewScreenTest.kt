@@ -2,7 +2,9 @@ package com.shopledger.pos.ui
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
@@ -225,5 +227,48 @@ class StockInReviewScreenTest {
         compose.onNodeWithText("Try again").performClick()
         compose.onNodeWithText("Add item manually").performClick()
         assertEquals(listOf(StockInEvent.Rescan, StockInEvent.AddManually), events)
+    }
+
+    @Test fun nagadUpiChoiceAppearsWhenPaidIsAboveZero() {
+        val vm = show()
+        compose.onNodeWithTag("header_summary").performClick()
+        compose.onNodeWithText("Nagad").assertDoesNotExist()
+        compose.runOnIdle { vm.onEvent(StockInEvent.SetPaid(5000L)) }
+        compose.waitForIdle()
+        compose.onNodeWithText("Nagad").assertIsDisplayed()
+        compose.onNodeWithText("UPI").performClick()
+        assertEquals("UPI", vm.state.value!!.paidMode)
+    }
+
+    @Config(qualifiers = "mdpi")
+    @Test fun addItemButtonOpensPicker() {
+        val vm = StockInViewModel(StockInSaver { StockInResult("p", 0, 0, 0, 0, false) })
+        vm.setInventory(inventory)
+        vm.openManual()
+        compose.setContent {
+            ShopLedgerTheme {
+                val s by vm.state.collectAsState()
+                s?.let { st -> StockInReviewScreen(st, onEvent = vm::onEvent) }
+            }
+        }
+        compose.onNodeWithText("Add item").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        compose.onNodeWithText("Butt Hinge").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        assertEquals("v-1", vm.state.value!!.rows.single().variantId)
+    }
+
+    @Test fun emptyReviewShowsEmptyState() {
+        val vm = StockInViewModel(StockInSaver { StockInResult("p", 0, 0, 0, 0, false) })
+        vm.openManual()
+        compose.setContent {
+            ShopLedgerTheme {
+                val s by vm.state.collectAsState()
+                s?.let { st -> StockInReviewScreen(st, onEvent = vm::onEvent) }
+            }
+        }
+        compose.onNodeWithText("No items on this bill yet").assertIsDisplayed()
+        compose.onNodeWithText("Tap Add item to add what you received.").assertIsDisplayed()
+        compose.onNodeWithText("Add item").assertIsDisplayed()
     }
 }
