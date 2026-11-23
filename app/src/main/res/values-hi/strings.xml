@@ -312,7 +312,7 @@
     <string name="msg_counter_taken">इस दुकान का दूसरा फ़ोन %1$s पहले से इस्तेमाल कर रहा है। दूसरा कोड चुनें।</string>
     <string name="msg_name_required">नाम लिखें।</string>
     <string name="msg_amount_positive">रकम 0 से ज़्यादा होनी चाहिए।</string>
-    <string name="msg_party_type_unknown">ग्राहक, सप्लायर या दोनों में से चुनें।</string>
+    <string name="msg_party_type_unknown">ग्राहक, डिस्ट्रीब्यूटर या दोनों में से चुनें।</string>
     <string name="msg_action_invalid">यह सेव नहीं हो सका। कृपया फिर कोशिश करें।</string>
     <string name="msg_stock_change_zero">स्टॉक में बदलाव 0 नहीं हो सकता।</string>
     <string name="msg_amount_zero">रकम 0 नहीं हो सकती।</string>
@@ -431,7 +431,7 @@
     <string name="khata_reminder_body">नमस्ते %1$s,\n*%2$s* की ओर से याद दिलाना: आपका बाकी खाता *%3$s* है।\n</string>
     <string name="khata_reminder_upi">UPI से भुगतान करें: `%1$s`\n</string>
     <string name="khata_reminder_thanks">धन्यवाद!</string>
-    <string name="khata_add_title">ग्राहक या सप्लायर जोड़ें</string>
+    <string name="khata_add_title">ग्राहक या डिस्ट्रीब्यूटर जोड़ें</string>
     <string name="khata_field_name">पार्टी का नाम</string>
     <string name="khata_field_name_hint">जैसे रमेश ट्रेडर्स</string>
     <string name="khata_field_phone">WhatsApp या मोबाइल नंबर</string>

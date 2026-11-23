@@ -312,7 +312,7 @@
     <string name="msg_counter_taken">Another phone in this shop already uses %1$s. Pick a different code.</string>
     <string name="msg_name_required">Enter a name.</string>
     <string name="msg_amount_positive">Amount must be more than 0.</string>
-    <string name="msg_party_type_unknown">Choose Customer, Supplier or Both.</string>
+    <string name="msg_party_type_unknown">Choose Customer, Distributor or Both.</string>
     <string name="msg_action_invalid">That could not be saved. Please try again.</string>
     <string name="msg_stock_change_zero">Stock change cannot be 0.</string>
     <string name="msg_amount_zero">Amount cannot be 0.</string>
@@ -431,7 +431,7 @@
     <string name="khata_reminder_body">Namaste %1$s,\nA gentle reminder from *%2$s*: your pending Khata balance is *%3$s*.\n</string>
     <string name="khata_reminder_upi">Pay by UPI: `%1$s`\n</string>
     <string name="khata_reminder_thanks">Thank you!</string>
-    <string name="khata_add_title">Add customer or supplier</string>
+    <string name="khata_add_title">Add customer or distributor</string>
     <string name="khata_field_name">Party name</string>
     <string name="khata_field_name_hint">For example Ramesh Traders</string>
     <string name="khata_field_phone">WhatsApp or mobile number</string>

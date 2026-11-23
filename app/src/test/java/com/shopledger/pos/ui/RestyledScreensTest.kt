@@ -61,7 +61,7 @@ class RestyledScreensTest {
         compose.onNodeWithText("No Khata parties yet").assertIsDisplayed()
         compose.onNodeWithContentDescription("Add party").assertIsDisplayed()
         click("Add party")
-        compose.onNodeWithText("Add customer or supplier").assertIsDisplayed()
+        compose.onNodeWithText("Add customer or distributor").assertIsDisplayed()
         compose.onNodeWithText("Save party").assertIsDisplayed()
     }
 
