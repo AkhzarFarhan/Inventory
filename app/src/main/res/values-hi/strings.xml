@@ -509,6 +509,36 @@
     <string name="item_last_bought_from">आखिरी बार %1$s से %2$s को %3$s में खरीदा</string>
     <string name="item_last_bought_from_no_cost">आखिरी बार %1$s से %2$s को खरीदा</string>
 
+    <!-- Bills view switch & Business Calendar -->
+    <string name="bills_view_list">सूची</string>
+    <string name="bills_view_calendar">कैलेंडर</string>
+    <string name="calendar_prev_month">पिछला महीना</string>
+    <string name="calendar_next_month">अगला महीना</string>
+    <string name="calendar_today">आज</string>
+    <string name="calendar_month_total">इस महीने</string>
+    <string name="calendar_sale">बिक्री</string>
+    <string name="calendar_nagad">नकद</string>
+    <string name="calendar_upi">UPI</string>
+    <string name="calendar_udhaar_given">उधार दिया</string>
+    <string name="calendar_udhaar_collected">उधार वसूला</string>
+    <string name="calendar_stock_in">स्टॉक इन</string>
+    <string name="calendar_stock_in_udhaar">डिस्ट्रीब्यूटर का उधार</string>
+    <string name="calendar_paid_distributors">डिस्ट्रीब्यूटर को दिया</string>
+    <string name="calendar_locked_hint">स्टॉक इन और डिस्ट्रीब्यूटर भुगतान देखने के लिए सेलर मोड खोलें।</string>
+    <string name="calendar_legend_udhaar">उधार दिया</string>
+    <string name="calendar_legend_jama">उधार वसूला</string>
+    <string name="calendar_legend_stock">स्टॉक इन</string>
+    <string name="calendar_day_cd">तारीख %1$d, बिक्री %2$s, उधार %3$s</string>
+    <string name="calendar_day_empty_title">इस दिन कुछ नहीं</string>
+    <string name="calendar_day_empty_message">कोई बिक्री, भुगतान या स्टॉक इन दर्ज नहीं हुआ।</string>
+    <plurals name="calendar_bills_count">
+        <item quantity="one">%1$d बिल</item>
+        <item quantity="other">%1$d बिल</item>
+    </plurals>
+    <string name="calendar_section_sales">बिक्री</string>
+    <string name="calendar_section_collected">उधार वसूली</string>
+    <string name="calendar_section_stock">स्टॉक इन</string>
+
     <!-- Receipt dialog -->
     <string name="receipt_banner_estimate">अनुमान / कोटेशन</string>
     <string name="receipt_banner_tax">टैक्स बिल / बिक्री रसीद</string>

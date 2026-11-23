@@ -509,6 +509,36 @@
     <string name="item_last_bought_from">Last bought from %1$s on %2$s at %3$s</string>
     <string name="item_last_bought_from_no_cost">Last bought from %1$s on %2$s</string>
 
+    <!-- Bills view switch & Business Calendar -->
+    <string name="bills_view_list">List</string>
+    <string name="bills_view_calendar">Calendar</string>
+    <string name="calendar_prev_month">Previous month</string>
+    <string name="calendar_next_month">Next month</string>
+    <string name="calendar_today">Today</string>
+    <string name="calendar_month_total">This month</string>
+    <string name="calendar_sale">Sale</string>
+    <string name="calendar_nagad">Nagad</string>
+    <string name="calendar_upi">UPI</string>
+    <string name="calendar_udhaar_given">Udhaar given</string>
+    <string name="calendar_udhaar_collected">Udhaar collected</string>
+    <string name="calendar_stock_in">Stock-in</string>
+    <string name="calendar_stock_in_udhaar">Stock-in on distributor udhaar</string>
+    <string name="calendar_paid_distributors">Paid to distributors</string>
+    <string name="calendar_locked_hint">Unlock seller mode to see stock-in and distributor payments.</string>
+    <string name="calendar_legend_udhaar">Udhaar given</string>
+    <string name="calendar_legend_jama">Udhaar collected</string>
+    <string name="calendar_legend_stock">Stock-in</string>
+    <string name="calendar_day_cd">Day %1$d, sale %2$s, udhaar %3$s</string>
+    <string name="calendar_day_empty_title">Nothing on this day</string>
+    <string name="calendar_day_empty_message">No sales, payments or stock-in were recorded.</string>
+    <plurals name="calendar_bills_count">
+        <item quantity="one">%1$d bill</item>
+        <item quantity="other">%1$d bills</item>
+    </plurals>
+    <string name="calendar_section_sales">Sales</string>
+    <string name="calendar_section_collected">Udhaar collected</string>
+    <string name="calendar_section_stock">Stock-in</string>
+
     <!-- Receipt dialog -->
     <string name="receipt_banner_estimate">Estimate / Quotation</string>
     <string name="receipt_banner_tax">Tax invoice / Sale receipt</string>

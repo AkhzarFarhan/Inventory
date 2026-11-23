@@ -95,8 +95,8 @@ import com.shopledger.pos.ui.screens.more.MoreScreen
 import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
 import com.shopledger.pos.ui.screens.setup.SetupEvent
 import com.shopledger.pos.ui.screens.setup.SetupWizardHost
+import com.shopledger.pos.ui.screens.sales.BillsTab
 import com.shopledger.pos.ui.screens.sales.ReceiptShareDialog
-import com.shopledger.pos.ui.screens.sales.SaleHistoryScreen
 import com.shopledger.pos.ui.screens.settings.CloudSyncAndBackupSheet
 import com.shopledger.pos.ui.theme.ShopLedgerTheme
 
@@ -377,12 +377,14 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             ReceiptShareManager.shareTextToWhatsApp(context, orderText)
                         },
                     )
-                    AppTab.BILLS -> SaleHistoryScreen(
+                    AppTab.BILLS -> BillsTab(
                         sales = salesHistory,
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSellerUnlocked = requestToggleSeller,
                         onOpenReceiptShare = viewModel::openReceiptForHistoricalSale,
                         onReturnSale = viewModel::returnSaleLine,
+                        purchaseBills = purchaseBills,
+                        onOpenPurchaseBill = { openPurchaseBillId = it },
                         invoiceHeaders = invoiceHeaders,
                         ledgerEntries = partyLedgerEntries,
                     )
