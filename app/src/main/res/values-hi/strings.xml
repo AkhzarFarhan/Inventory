@@ -444,6 +444,37 @@
     <string name="khata_pay_note_hint">जैसे आधा भुगतान</string>
     <string name="khata_pay_confirm">भुगतान सेव करें</string>
 
+    <!-- Distributors & Khata split -->
+    <string name="khata_side_customers">ग्राहक</string>
+    <string name="khata_side_distributors">डिस्ट्रीब्यूटर</string>
+    <string name="distributors_locked_title">डिस्ट्रीब्यूटर खाते लॉक हैं</string>
+    <string name="distributors_locked_message">इनमें खरीद दाम दिखते हैं। देखने के लिए सेलर मोड खोलें।</string>
+    <string name="distributors_unlock">अनलॉक करें</string>
+    <string name="distributors_empty_title">अभी कोई डिस्ट्रीब्यूटर नहीं</string>
+    <string name="distributors_empty_message">यहाँ जोड़ें, या स्टॉक इन करते समय डिस्ट्रीब्यूटर चुनें।</string>
+    <string name="distributors_total_owe">कुल देना बाकी</string>
+    <plurals name="distributors_count">
+        <item quantity="one">%1$d डिस्ट्रीब्यूटर</item>
+        <item quantity="other">%1$d डिस्ट्रीब्यूटर</item>
+    </plurals>
+    <string name="distributor_add">डिस्ट्रीब्यूटर जोड़ें</string>
+    <string name="distributor_name">डिस्ट्रीब्यूटर का नाम</string>
+    <string name="distributor_phone">फ़ोन (ज़रूरी नहीं)</string>
+    <string name="distributor_gstin">GSTIN (ज़रूरी नहीं)</string>
+    <string name="distributor_already_owe">पहले से देना बाकी (₹)</string>
+    <string name="distributor_you_owe">देना है %1$s</string>
+    <string name="distributor_they_owe">एडवांस %1$s</string>
+    <string name="distributor_badge_owe">देना है</string>
+    <string name="distributor_last_bill">पिछला बिल %1$s · %2$s</string>
+    <string name="distributor_no_bills">अभी कोई बिल नहीं</string>
+    <string name="distributor_no_phone">फ़ोन नंबर नहीं</string>
+    <string name="distributor_pay">भुगतान करें</string>
+    <string name="distributor_pay_title">%1$s को भुगतान</string>
+    <string name="distributor_pay_amount">रकम (₹)</string>
+    <string name="distributor_pay_note">नोट (ज़रूरी नहीं)</string>
+    <string name="distributor_pay_more_than_owed">यह बाकी से ज़्यादा है। बाकी रकम एडवांस में रहेगी।</string>
+    <string name="distributor_pay_save">भुगतान सेव करें</string>
+
     <!-- Receipt dialog -->
     <string name="receipt_banner_estimate">अनुमान / कोटेशन</string>
     <string name="receipt_banner_tax">टैक्स बिल / बिक्री रसीद</string>

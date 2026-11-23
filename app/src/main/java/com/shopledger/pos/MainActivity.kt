@@ -80,7 +80,7 @@ import com.shopledger.pos.ui.screens.items.ItemsHomeScreen
 import com.shopledger.pos.ui.screens.items.statusOf
 import com.shopledger.pos.ui.screens.items.variantStockText
 import com.shopledger.pos.ui.text.variantLabel
-import com.shopledger.pos.ui.screens.khata.PartiesKhataScreen
+import com.shopledger.pos.ui.screens.khata.KhataTab
 import com.shopledger.pos.ui.screens.more.MoreScreen
 import com.shopledger.pos.ui.screens.recovery.DatabaseRecoveryScreen
 import com.shopledger.pos.ui.screens.setup.SetupEvent
@@ -188,6 +188,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val parties by viewModel.partiesState.collectAsState()
     val invoiceHeaders by viewModel.invoiceHeadersState.collectAsState()
     val partyLedgerEntries by viewModel.partyLedgerEntriesState.collectAsState()
+    val purchaseBills by viewModel.purchaseBillsState.collectAsState()
     val availableCategories by viewModel.availableCategoriesState.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val topSoldOnly by viewModel.topSoldOnly.collectAsState()
@@ -239,7 +240,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
         }
     }
 
-    val duePartyCount = parties.count { it.currentBalancePaise > 0L }
+    val duePartyCount = parties.count { it.partyType != "SUPPLIER" && it.currentBalancePaise > 0L }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AppScaffold(
@@ -365,11 +366,17 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         invoiceHeaders = invoiceHeaders,
                         ledgerEntries = partyLedgerEntries,
                     )
-                    AppTab.KHATA -> PartiesKhataScreen(
+                    AppTab.KHATA -> KhataTab(
                         parties = parties,
+                        ledgerEntries = partyLedgerEntries,
+                        purchaseBills = purchaseBills,
+                        isSellerUnlocked = isSellerUnlocked,
+                        onRequestUnlock = requestToggleSeller,
                         onAddParty = viewModel::addOrUpdateParty,
                         onRecordPaymentReceived = viewModel::recordPartyPaymentReceived,
-                        ledgerEntries = partyLedgerEntries,
+                        onAddDistributor = viewModel::addDistributor,
+                        onPayDistributor = viewModel::recordPaymentToDistributor,
+                        onOpenDistributor = {},
                     )
                     AppTab.MORE -> MoreScreen(
                         isSellerUnlocked = isSellerUnlocked,

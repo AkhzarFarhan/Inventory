@@ -444,6 +444,37 @@
     <string name="khata_pay_note_hint">For example part payment</string>
     <string name="khata_pay_confirm">Save payment</string>
 
+    <!-- Distributors & Khata split -->
+    <string name="khata_side_customers">Customers</string>
+    <string name="khata_side_distributors">Distributors</string>
+    <string name="distributors_locked_title">Distributor accounts are locked</string>
+    <string name="distributors_locked_message">They show purchase prices. Unlock seller mode to see them.</string>
+    <string name="distributors_unlock">Unlock</string>
+    <string name="distributors_empty_title">No distributors yet</string>
+    <string name="distributors_empty_message">Add one here, or choose a distributor when you do Stock In.</string>
+    <string name="distributors_total_owe">You owe in total</string>
+    <plurals name="distributors_count">
+        <item quantity="one">%1$d distributor</item>
+        <item quantity="other">%1$d distributors</item>
+    </plurals>
+    <string name="distributor_add">Add distributor</string>
+    <string name="distributor_name">Distributor name</string>
+    <string name="distributor_phone">Phone (optional)</string>
+    <string name="distributor_gstin">GSTIN (optional)</string>
+    <string name="distributor_already_owe">Amount you already owe (₹)</string>
+    <string name="distributor_you_owe">You owe %1$s</string>
+    <string name="distributor_they_owe">Advance %1$s</string>
+    <string name="distributor_badge_owe">To pay</string>
+    <string name="distributor_last_bill">Last bill %1$s · %2$s</string>
+    <string name="distributor_no_bills">No bills yet</string>
+    <string name="distributor_no_phone">No phone</string>
+    <string name="distributor_pay">Pay</string>
+    <string name="distributor_pay_title">Pay %1$s</string>
+    <string name="distributor_pay_amount">Amount (₹)</string>
+    <string name="distributor_pay_note">Note (optional)</string>
+    <string name="distributor_pay_more_than_owed">This is more than you owe. The extra is kept as advance.</string>
+    <string name="distributor_pay_save">Save payment</string>
+
     <!-- Receipt dialog -->
     <string name="receipt_banner_estimate">Estimate / Quotation</string>
     <string name="receipt_banner_tax">Tax invoice / Sale receipt</string>
