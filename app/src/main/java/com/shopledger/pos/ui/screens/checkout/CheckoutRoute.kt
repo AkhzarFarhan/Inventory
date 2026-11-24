@@ -37,8 +37,11 @@ fun CheckoutRoute(
     val knownBuyers by viewModel.knownBuyersState.collectAsState()
     val parties by viewModel.partiesState.collectAsState()
     val carts by viewModel.cartsState.collectAsState()
-    val session by viewModel.activeCartSessionState.collectAsState()
-    val cartItems by viewModel.cartItems.collectAsState()
+    val activeCartId by viewModel.activeCartIdState.collectAsState()
+    val session = remember(carts, activeCartId) {
+        carts.firstOrNull { it.cartId == activeCartId } ?: carts.first()
+    }
+    val cartItems = session.items
 
     val appContext = LocalContext.current
     val cartId = session.cartId

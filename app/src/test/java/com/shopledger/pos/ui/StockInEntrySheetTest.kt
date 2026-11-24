@@ -97,8 +97,6 @@ class StockInEntrySheetTest {
                         items = emptyList(),
                         searchQuery = "",
                         onSearchQueryChange = {},
-                        lowStockOnly = false,
-                        onLowStockOnlyChange = {},
                         isSellerUnlocked = true,
                         onToggleSeller = {},
                         onSell = {},
@@ -152,7 +150,7 @@ class StockInEntrySheetTest {
             ShopLedgerTheme {
                 ItemsHomeScreen(
                     shopName = "Shop", items = emptyList(), searchQuery = "", onSearchQueryChange = {},
-                    lowStockOnly = false, onLowStockOnlyChange = {}, isSellerUnlocked = false, onToggleSeller = {},
+                    isSellerUnlocked = false, onToggleSeller = {},
                     onSell = {}, onOpenItem = { _, _, _ -> }, onEditItem = { _, _ -> },
                     onAddToCart = { _, _ -> },
                     resumeStockInRows = 3, onResumeStockIn = { unlockTaps++ },

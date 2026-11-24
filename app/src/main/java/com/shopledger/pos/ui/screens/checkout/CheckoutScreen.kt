@@ -181,7 +181,7 @@ fun CheckoutScreen(
     var renameText by rememberSaveable(state.activeCartId, state.cartLabel) { mutableStateOf(state.cartLabel) }
     val customerMissing = state.paymentMode == PayMode.CREDIT &&
         state.buyerName.isBlank() && state.buyerPhone.isBlank()
-    val canComplete = state.lines.isNotEmpty()
+    val canComplete = state.lines.isNotEmpty() && state.lines.all { it.customSellingPricePaise > 0L }
 
     Column(modifier.fillMaxSize().imePadding()) {
         CheckoutTopBar(
@@ -572,7 +572,6 @@ private fun CartLineCard(
 ) {
     val context = LocalContext.current
     var editQty by remember { mutableStateOf(false) }
-    var editPrice by remember { mutableStateOf(false) }
     SectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -612,26 +611,61 @@ private fun CartLineCard(
                 onPlus = { onEvent(CheckoutEvent.SetQty(line.variantId, line.quantity + 1.0)) },
                 onValueClick = { editQty = true },
             )
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                TextButton(
-                    onClick = { editPrice = true },
-                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
-                ) {
-                    Text(
-                        stringResource(
-                            R.string.checkout_price_per,
-                            IndianCurrencyFormatter.formatPaise(line.customSellingPricePaise),
-                            line.unit,
-                        ),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
+            Column(
+                Modifier.weight(1f),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
+            ) {
                 Text(
                     IndianCurrencyFormatter.formatPaise(line.lineRevenuePaise),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
                 )
+                if (isSellerUnlocked && line.customSellingPricePaise in 1L until line.unitPurchasePricePaise) {
+                    StatusChip(
+                        text = stringResource(R.string.checkout_line_below_cost),
+                        tone = ChipTone.DANGER,
+                    )
+                }
             }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+        ) {
+            MoneyField(
+                valuePaise = line.customSellingPricePaise.takeIf { it > 0L },
+                onValueChange = { paise -> onEvent(CheckoutEvent.SetPrice(line.variantId, paise ?: 0L)) },
+                label = stringResource(R.string.checkout_rate_per_unit, line.unit),
+                modifier = Modifier.weight(1f),
+            )
+            if (line.defaultSellingPricePaise > 0L && line.customSellingPricePaise != line.defaultSellingPricePaise) {
+                TextButton(
+                    onClick = {
+                        HapticHelper.tick(context)
+                        onEvent(CheckoutEvent.SetPrice(line.variantId, line.defaultSellingPricePaise))
+                    },
+                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.checkout_reset_rate,
+                            IndianCurrencyFormatter.formatPaise(line.defaultSellingPricePaise),
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        if (line.customSellingPricePaise <= 0L) {
+            Text(
+                text = stringResource(R.string.checkout_rate_required),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         if (lastSoldPricePaise != null && lastSoldPricePaise > 0L) {
             val formattedLast = IndianCurrencyFormatter.formatPaise(lastSoldPricePaise)
@@ -668,17 +702,6 @@ private fun CartLineCard(
             onDismiss = { editQty = false },
         )
     }
-    if (editPrice) {
-        PriceDialog(
-            unit = line.unit,
-            initialPaise = line.customSellingPricePaise,
-            onConfirm = {
-                editPrice = false
-                onEvent(CheckoutEvent.SetPrice(line.variantId, it))
-            },
-            onDismiss = { editPrice = false },
-        )
-    }
 }
 
 /** Allows digits and one decimal point with up to three decimals (loose units sell by 0.25 kg etc.). */
@@ -711,35 +734,6 @@ private fun QuantityDialog(unit: String, initial: Double, onConfirm: (Double) ->
         confirmButton = {
             TextButton(
                 onClick = { parsed?.let(onConfirm) },
-                enabled = valid,
-                modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
-            ) { Text(stringResource(R.string.action_done), style = MaterialTheme.typography.labelLarge) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)) {
-                Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
-            }
-        },
-    )
-}
-
-@Composable
-private fun PriceDialog(unit: String, initialPaise: Long, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
-    var paise by remember { mutableStateOf<Long?>(initialPaise) }
-    val valid = (paise ?: 0L) > 0L
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.checkout_price_dialog_title, unit)) },
-        text = {
-            MoneyField(
-                valuePaise = paise,
-                onValueChange = { paise = it },
-                label = stringResource(R.string.checkout_price_label),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { paise?.let(onConfirm) },
                 enabled = valid,
                 modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
             ) { Text(stringResource(R.string.action_done), style = MaterialTheme.typography.labelLarge) }

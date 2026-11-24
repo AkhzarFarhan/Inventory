@@ -929,4 +929,9 @@
     <string name="item_form_more_details">Add sizes, unit or barcode</string>
     <string name="item_form_hide_more_details">Hide extra details</string>
     <string name="cd_quick_jump_letter">Jump to %1$s</string>
+    <string name="checkout_rate_per_unit">Sale rate (per %1$s)</string>
+    <string name="checkout_reset_rate">List %1$s</string>
+    <string name="checkout_rate_required">Enter a sale rate above ₹0</string>
+    <string name="checkout_line_below_cost">Rate below cost</string>
+    <string name="cd_edit_sale_rate">Change sale rate</string>
 </resources>

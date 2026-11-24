@@ -1,15 +1,26 @@
 package com.shopledger.pos.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.AnnotatedString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.shopledger.pos.ui.screens.items.AddToCartContent
 import com.shopledger.pos.ui.screens.items.AddToCartEvent
@@ -278,5 +289,67 @@ class AddToCartSheetTest {
         compose.onNodeWithText("Filter sizes or types").assertIsDisplayed().performTextInput("7")
         compose.onNodeWithText("Size 7 inch").assertIsDisplayed()
         compose.onNodeWithText("Size 1 inch").assertDoesNotExist()
+    }
+
+    @Test
+    fun inCartVariantShowsEditableSaleRateAndResetButton() {
+        val events = mutableListOf<AddToCartEvent>()
+        compose.setContent {
+            ShopLedgerTheme {
+                var rowState by remember { mutableStateOf(row(id = "v1", pricePaise = 5_000L, qtyInCart = 2.0)) }
+                AddToCartContent(
+                    state = AddToCartState(
+                        itemName = "Butt Hinge",
+                        cartLabel = "Cart 1",
+                        variants = listOf(rowState),
+                        cartLineCount = 1,
+                        cartTotalPaise = kotlin.math.round(rowState.pricePaise * rowState.qtyInCart).toLong(),
+                        isSellerUnlocked = false,
+                    ),
+                    onEvent = { e ->
+                        events += e
+                        if (e is AddToCartEvent.SetPrice && e.variantId == "v1") {
+                            rowState = rowState.copy(pricePaise = e.pricePaise)
+                        }
+                    },
+                )
+            }
+        }
+        compose.onNodeWithText("Sale rate (per pcs)").assertIsDisplayed().performTextClearance()
+        compose.onNodeWithText("Enter a sale rate above ₹0").assertIsDisplayed()
+        compose.onNodeWithText("Go to cart", substring = true).assertIsNotEnabled()
+
+        compose.onNodeWithText("Sale rate (per pcs)").performTextInput("45")
+        compose.onNodeWithText("List ₹50").assertIsDisplayed()
+        compose.onNodeWithText("Go to cart · 1 item · ₹90").assertIsEnabled()
+
+        compose.onNodeWithText("List ₹50").performClick()
+        compose.onNodeWithText("Go to cart · 1 item · ₹100").assertIsEnabled()
+        assertEquals(AddToCartEvent.SetPrice("v1", 5_000L), events.last())
+    }
+
+    @Config(qualifiers = "mdpi")
+    @Test
+    fun tappingRatePillBeforeAddingOpensRateDialogAndEmitsSetPrice() {
+        val events = mutableListOf<AddToCartEvent>()
+        show(
+            AddToCartState(
+                itemName = "Butt Hinge",
+                cartLabel = "Cart 1",
+                variants = listOf(row(id = "v1", pricePaise = 5_000L, qtyInCart = 0.0)),
+                cartLineCount = 0,
+                cartTotalPaise = 0L,
+                isSellerUnlocked = false,
+            ),
+            onEvent = { events += it },
+        )
+        compose.onNodeWithContentDescription("Change sale rate").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Price per pcs").assertIsDisplayed()
+        compose.onNodeWithText("Price").performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("48"))
+        }
+        compose.onNode(hasAnyAncestor(isDialog()) and hasText("Done"))
+            .performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(listOf(AddToCartEvent.SetPrice("v1", 4_800L)), events)
     }
 }

@@ -6,17 +6,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
@@ -27,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
@@ -56,6 +60,7 @@ import com.shopledger.pos.core.cipher.CodedPurchasePriceBadge
 import com.shopledger.pos.core.cipher.CostCipherEngine
 import com.shopledger.pos.core.format.IndianCurrencyFormatter
 import com.shopledger.pos.ui.theme.HapticHelper
+import com.shopledger.pos.ui.theme.MoneyField
 import com.shopledger.pos.ui.theme.PrimaryActionButton
 import com.shopledger.pos.ui.theme.QtyStepper
 import com.shopledger.pos.ui.theme.SecondaryActionButton
@@ -72,6 +77,7 @@ data class AddToCartVariantRow(
     val status: StockStatus,
     val qtyInCart: Double,
     val unit: String = "pcs",
+    val defaultPricePaise: Long = pricePaise,
 )
 
 data class AddToCartState(
@@ -86,6 +92,7 @@ data class AddToCartState(
 sealed interface AddToCartEvent {
     data class Add(val variantId: String) : AddToCartEvent
     data class SetQty(val variantId: String, val qty: Double) : AddToCartEvent
+    data class SetPrice(val variantId: String, val pricePaise: Long) : AddToCartEvent
     data object GoToCart : AddToCartEvent
     data object Done : AddToCartEvent
 }
@@ -99,6 +106,7 @@ fun AddToCartContent(
     val context = LocalContext.current
     val cipherMode by CostCipherEngine.activeModeFlow.collectAsState()
     var editingRow by remember { mutableStateOf<AddToCartVariantRow?>(null) }
+    var editingPriceRow by remember { mutableStateOf<AddToCartVariantRow?>(null) }
     var variantFilter by remember { mutableStateOf("") }
     val visibleVariants = remember(state.variants, variantFilter) {
         val needle = variantFilter.trim()
@@ -212,13 +220,29 @@ fun AddToCartContent(
                                 }
                             }
 
-                            Text(
-                                text = priceText,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-
                             if (!inCart) {
+                                OutlinedButton(
+                                    onClick = { editingPriceRow = row },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                ) {
+                                    Text(
+                                        text = priceText,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = stringResource(R.string.cd_edit_sale_rate),
+                                        modifier = Modifier
+                                            .padding(start = ShopLedgerTokens.spacingXs)
+                                            .size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+
                                 FilledTonalButton(
                                     onClick = {
                                         HapticHelper.tick(context)
@@ -250,6 +274,45 @@ fun AddToCartContent(
                         }
 
                         if (inCart) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
+                            ) {
+                                MoneyField(
+                                    valuePaise = row.pricePaise.takeIf { it > 0L },
+                                    onValueChange = { paise ->
+                                        onEvent(AddToCartEvent.SetPrice(row.variantId, paise ?: 0L))
+                                    },
+                                    label = stringResource(R.string.checkout_rate_per_unit, row.unit),
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (row.defaultPricePaise > 0L && row.pricePaise != row.defaultPricePaise) {
+                                    TextButton(
+                                        onClick = {
+                                            HapticHelper.tick(context)
+                                            onEvent(AddToCartEvent.SetPrice(row.variantId, row.defaultPricePaise))
+                                        },
+                                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+                                    ) {
+                                        Text(
+                                            text = stringResource(
+                                                R.string.checkout_reset_rate,
+                                                IndianCurrencyFormatter.formatPaise(row.defaultPricePaise),
+                                            ),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
+                            }
+                            if (row.pricePaise <= 0L) {
+                                Text(
+                                    text = stringResource(R.string.checkout_rate_required),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
                             val presets = remember(row.unit) { quantityPresetsForUnit(row.unit) }
                             @OptIn(ExperimentalLayoutApi::class)
                             FlowRow(
@@ -300,7 +363,7 @@ fun AddToCartContent(
                     )
                 },
                 icon = Icons.Filled.ShoppingCart,
-                enabled = state.cartLineCount > 0,
+                enabled = state.cartLineCount > 0 && state.variants.none { it.qtyInCart > 0.0 && it.pricePaise <= 0L },
                 onClick = { onEvent(AddToCartEvent.GoToCart) },
             )
             SecondaryActionButton(
@@ -320,6 +383,18 @@ fun AddToCartContent(
                 onEvent(AddToCartEvent.SetQty(target.variantId, newQty))
             },
             onDismiss = { editingRow = null },
+        )
+    }
+
+    editingPriceRow?.let { target ->
+        SaleRateDialog(
+            initialPaise = target.pricePaise,
+            unit = target.unit,
+            onConfirm = { newPaise ->
+                editingPriceRow = null
+                onEvent(AddToCartEvent.SetPrice(target.variantId, newPaise))
+            },
+            onDismiss = { editingPriceRow = null },
         )
     }
 }
@@ -408,6 +483,41 @@ private fun QuantityDialog(
             ) {
                 Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge)
             }
+        },
+    )
+}
+
+@Composable
+private fun SaleRateDialog(
+    initialPaise: Long,
+    unit: String,
+    onConfirm: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var paise by remember { mutableStateOf<Long?>(initialPaise.takeIf { it > 0L }) }
+    val valid = (paise ?: 0L) > 0L
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.checkout_price_dialog_title, unit)) },
+        text = {
+            MoneyField(
+                valuePaise = paise,
+                onValueChange = { paise = it },
+                label = stringResource(R.string.checkout_price_label),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { paise?.let(onConfirm) },
+                enabled = valid,
+                modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+            ) { Text(stringResource(R.string.action_done), style = MaterialTheme.typography.labelLarge) }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
+            ) { Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.labelLarge) }
         },
     )
 }

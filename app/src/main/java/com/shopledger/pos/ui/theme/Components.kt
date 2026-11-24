@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -42,11 +43,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -207,25 +210,39 @@ fun MoneyField(
     label: String,
     modifier: Modifier = Modifier,
 ) {
+    val focusManager = LocalFocusManager.current
     var text by remember { mutableStateOf(editable(valuePaise)) }
-    // Re-sync when the value is changed from outside (e.g. a form reset) and no longer matches the text.
-    // A text such as "0" or "5." parses to a value the formatter renders differently, so only compare parsed values.
-    val parsed = parse(text)
-    if (parsed != valuePaise && !(parsed == 0L && valuePaise == null)) {
-        text = editable(valuePaise)
+    var prevProp by remember { mutableStateOf(valuePaise) }
+    var lastEmitted by remember { mutableStateOf(valuePaise) }
+    // Re-sync only when the external value changes independently of our own emissions (e.g., reset / preset / cart switch).
+    if (valuePaise != prevProp) {
+        prevProp = valuePaise
+        if (valuePaise != lastEmitted) {
+            val parsed = parse(text)
+            if (parsed != valuePaise && !(parsed == 0L && valuePaise == null)) {
+                text = editable(valuePaise)
+            }
+            lastEmitted = valuePaise
+        }
     }
     OutlinedTextField(
         value = text,
         onValueChange = { input ->
             sanitiseMoneyInput(input)?.let { filtered ->
+                val next = parse(filtered)
                 text = filtered
-                onValueChange(parse(filtered))
+                lastEmitted = next
+                onValueChange(next)
             }
         },
-        label = { Text(label) },
+        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         prefix = { Text("₹") },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Decimal,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
     )

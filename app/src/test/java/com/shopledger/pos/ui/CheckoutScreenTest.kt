@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -69,6 +70,11 @@ class CheckoutScreenTest {
                         when (e) {
                             is CheckoutEvent.SetQty -> state = state.copy(
                                 lines = state.lines.map { if (it.variantId == e.variantId) it.copy(quantity = e.qty) else it },
+                            )
+                            is CheckoutEvent.SetPrice -> state = state.copy(
+                                lines = state.lines.map {
+                                    if (it.variantId == e.variantId) it.copy(customSellingPricePaise = e.pricePaise) else it
+                                },
                             )
                             is CheckoutEvent.SelectMode -> state = state.copy(paymentMode = e.mode)
                             is CheckoutEvent.BuyerNameChanged -> state = state.copy(buyerName = e.name)
@@ -413,5 +419,49 @@ class CheckoutScreenTest {
             .assertIsDisplayed()
             .performClick()
         assertEquals(listOf(CheckoutEvent.SetPrice("v1", 4_800L)), events)
+    }
+
+    @Test
+    fun editingInlineSaleRateUpdatesLineTotalAndGrandTotal() {
+        show(CheckoutState(lines = listOf(hinge(2.0))))
+        compose.onNodeWithText(str(R.string.checkout_complete, rupees(10_000L))).assertIsDisplayed()
+
+        val rateLabel = str(R.string.checkout_rate_per_unit, "pc")
+        compose.onNodeWithText(rateLabel).performTextClearance()
+        compose.onNodeWithText(rateLabel).performTextInput("45")
+
+        compose.onNodeWithText(str(R.string.checkout_complete, rupees(9_000L))).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.checkout_reset_rate, rupees(5_000L)))
+            .assertIsDisplayed()
+            .performClick()
+        compose.onNodeWithText(str(R.string.checkout_complete, rupees(10_000L))).assertIsDisplayed()
+    }
+
+    @Test
+    fun zeroOrBlankSaleRateDisablesCompleteAndShowsPrompt() {
+        show(CheckoutState(lines = listOf(hinge(2.0))))
+        compose.onNodeWithText(str(R.string.checkout_rate_per_unit, "pc")).performTextClearance()
+
+        compose.onNodeWithText(str(R.string.checkout_rate_required)).assertIsDisplayed()
+        compose.onNodeWithText(str(R.string.checkout_complete, rupees(0L))).assertIsNotEnabled()
+    }
+
+    @Test
+    fun lineBelowCostChipRespectsSellerLock() {
+        val discounted = hinge(1.0).copy(customSellingPricePaise = 3_500L)
+        var unlocked by mutableStateOf(false)
+        compose.setContent {
+            ShopLedgerTheme {
+                CheckoutScreen(
+                    state = CheckoutState(lines = listOf(discounted), isSellerUnlocked = unlocked),
+                    onEvent = {},
+                )
+            }
+        }
+        compose.onAllNodesWithText(str(R.string.checkout_line_below_cost)).assertCountEquals(0)
+
+        compose.runOnUiThread { unlocked = true }
+        compose.waitForIdle()
+        compose.onNodeWithText(str(R.string.checkout_line_below_cost)).assertIsDisplayed()
     }
 }

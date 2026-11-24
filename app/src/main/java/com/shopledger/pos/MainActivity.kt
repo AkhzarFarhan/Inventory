@@ -32,7 +32,6 @@ import com.shopledger.pos.ui.screens.stockin.StockInEntrySheet
 import com.shopledger.pos.ui.screens.stockin.StockInEvent
 import com.shopledger.pos.ui.screens.stockin.StockInReviewScreen
 import com.shopledger.pos.ui.screens.stockin.StockInViewModel
-import com.shopledger.pos.ui.text.orStandard
 import com.shopledger.pos.ui.theme.ConfirmDialog
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -64,7 +63,6 @@ import com.shopledger.pos.core.sync.SyncManager
 import com.shopledger.pos.data.local.DatabaseHealth
 import com.shopledger.pos.data.local.LpsDatabase
 import com.shopledger.pos.data.local.PendingRestore
-import com.shopledger.pos.ui.InventoryFilterMode
 import com.shopledger.pos.ui.MainViewModel
 import com.shopledger.pos.ui.displayLabel
 import com.shopledger.pos.ui.i18n.AppLanguage
@@ -184,13 +182,14 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val filteredInventory by viewModel.filteredInventoryState.collectAsState()
     val allInventory by viewModel.allInventoryState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val filterMode by viewModel.filterMode.collectAsState()
     val isSellerUnlocked by viewModel.isSellerUnlocked.collectAsState()
     val recentSearches by viewModel.recentSearchesState.collectAsState()
     val salesHistory by viewModel.salesHistoryState.collectAsState()
     val carts by viewModel.cartsState.collectAsState()
     val activeCartId by viewModel.activeCartIdState.collectAsState()
-    val activeCartSession by viewModel.activeCartSessionState.collectAsState()
+    val activeCartSession = remember(carts, activeCartId) {
+        carts.firstOrNull { it.cartId == activeCartId } ?: carts.first()
+    }
     val activeReceipt by viewModel.activeReceiptForSharing.collectAsState()
     val pendingSyncCount by viewModel.pendingSyncCountState.collectAsState()
     val activeSellerName by SyncManager.sellerNameFlow.collectAsState()
@@ -199,14 +198,13 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
     val invoiceHeaders by viewModel.invoiceHeadersState.collectAsState()
     val partyLedgerEntries by viewModel.partyLedgerEntriesState.collectAsState()
     val purchaseBills by viewModel.purchaseBillsState.collectAsState()
-    val availableCategories by viewModel.availableCategoriesState.collectAsState()
-    val selectedCategory by viewModel.selectedCategory.collectAsState()
-    val topSoldOnly by viewModel.topSoldOnly.collectAsState()
-    val topSoldItemIds by viewModel.topSoldItemIdsState.collectAsState()
     val context = LocalContext.current
     val activeCartLabel = activeCartSession.displayLabel(context)
     val activeCartQtyByVariant = remember(activeCartSession.items) {
         activeCartSession.items.associate { it.variantId to it.quantity }
+    }
+    val activeCartPriceByVariant = remember(activeCartSession.items) {
+        activeCartSession.items.associate { it.variantId to it.customSellingPricePaise }
     }
     val stockInViewModel: StockInViewModel = viewModel(factory = StockInViewModel.Factory(app.repository))
     val stockInReview by stockInViewModel.state.collectAsState()
@@ -275,12 +273,6 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         items = filteredInventory,
                         searchQuery = searchQuery,
                         onSearchQueryChange = viewModel::updateSearchQuery,
-                        lowStockOnly = filterMode == InventoryFilterMode.LOW_STOCK_ONLY,
-                        onLowStockOnlyChange = { low ->
-                            viewModel.setFilterMode(
-                                if (low) InventoryFilterMode.LOW_STOCK_ONLY else InventoryFilterMode.ALL_ALPHABETICAL
-                            )
-                        },
                         isSellerUnlocked = isSellerUnlocked,
                         onToggleSeller = requestToggleSeller,
                         carts = carts.map {
@@ -299,12 +291,6 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                 UiText.Res(R.string.cart_limit_message, listOf(com.shopledger.pos.ui.MAX_OPEN_CARTS)),
                             )
                         },
-                        categories = availableCategories,
-                        selectedCategory = selectedCategory,
-                        onSelectCategory = viewModel::setSelectedCategory,
-                        topSoldOnly = topSoldOnly,
-                        onTopSoldOnlyChange = viewModel::setTopSoldOnly,
-                        hasTopSold = topSoldItemIds.isNotEmpty(),
                         onRenameCart = viewModel::renameCart,
                         onCloseCart = viewModel::closeCart,
                         onSell = { showCheckout = true },
@@ -321,6 +307,7 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                             )
                         },
                         activeCartQtyByVariant = activeCartQtyByVariant,
+                        activeCartPriceByVariant = activeCartPriceByVariant,
                         onUpdateCartQty = { item, variant, newQty ->
                             val existing = activeCartSession.items.firstOrNull { it.variantId == variant.id }
                             when {
@@ -347,35 +334,6 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                         // A review kept while seller mode is locked must stay findable: tap to unlock and continue.
                         resumeStockInRows = stockInReview?.rows?.size?.takeIf { !isSellerUnlocked },
                         onResumeStockIn = requestToggleSeller,
-                        onShareLowStock = {
-                            val orderText = buildString {
-                                append(
-                                    context.getString(
-                                        R.string.reorder_list_title,
-                                        activeSellerName.ifBlank { context.getString(R.string.app_name) },
-                                    )
-                                )
-                                append("\n\n")
-                                var count = 1
-                                filteredInventory.forEach { group ->
-                                    group.variants
-                                        .filter { it.isLowStock || it.isOutOfStock }
-                                        .forEach { v ->
-                                            append(
-                                                context.getString(
-                                                    R.string.reorder_list_line,
-                                                    count++,
-                                                    group.item.displayName,
-                                                    v.buildVariantSummary().orStandard(context.getString(R.string.item_form_standard)),
-                                                    IndianCurrencyFormatter.formatQuantity(v.stockQuantity),
-                                                    v.unit,
-                                                ) + "\n"
-                                            )
-                                        }
-                                }
-                            }
-                            ReceiptShareManager.shareTextToWhatsApp(context, orderText)
-                        },
                     )
                     AppTab.BILLS -> BillsTab(
                         sales = salesHistory,
@@ -640,15 +598,17 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                 itemName = group.item.displayName,
                 cartLabel = session.displayLabel(context),
                 variants = group.variants.map { v ->
+                    val cartLine = session.items.firstOrNull { it.variantId == v.id }
                     AddToCartVariantRow(
                         variantId = v.id,
                         label = v.buildVariantSummary().variantLabel(),
-                        pricePaise = v.sellingPricePaise,
+                        pricePaise = cartLine?.customSellingPricePaise ?: v.sellingPricePaise,
                         purchasePricePaise = v.purchasePricePaise,
                         stockText = variantStockText(v),
                         status = statusOf(v),
-                        qtyInCart = session.items.firstOrNull { it.variantId == v.id }?.quantity ?: 0.0,
+                        qtyInCart = cartLine?.quantity ?: 0.0,
                         unit = v.unit,
+                        defaultPricePaise = v.sellingPricePaise,
                     )
                 },
                 cartLineCount = session.items.size,
@@ -673,6 +633,16 @@ fun LpsHardwareMainApp(viewModel: MainViewModel) {
                                 )
                                 else -> group.variants.firstOrNull { it.id == e.variantId }
                                     ?.let { viewModel.addOrUpdateCartItem(group.item, it, e.qty) }
+                            }
+                        }
+                        is AddToCartEvent.SetPrice -> {
+                            val line = session.items.firstOrNull { it.variantId == e.variantId }
+                            if (line != null) {
+                                viewModel.updateCartLineQuantityAndPrice(e.variantId, line.quantity, e.pricePaise)
+                            } else {
+                                group.variants.firstOrNull { it.id == e.variantId }?.let { variant ->
+                                    viewModel.addOrUpdateCartItem(group.item, variant, 1.0, customSellingPricePaise = e.pricePaise)
+                                }
                             }
                         }
                         AddToCartEvent.GoToCart -> {

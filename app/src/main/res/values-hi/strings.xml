@@ -929,4 +929,9 @@
     <string name="item_form_more_details">साइज़, इकाई या बारकोड जोड़ें</string>
     <string name="item_form_hide_more_details">अतिरिक्त जानकारी छिपाएँ</string>
     <string name="cd_quick_jump_letter">%1$s पर जाएँ</string>
+    <string name="checkout_rate_per_unit">बिक्री भाव (प्रति %1$s)</string>
+    <string name="checkout_reset_rate">तय %1$s</string>
+    <string name="checkout_rate_required">₹0 से ज़्यादा बिक्री भाव लिखें</string>
+    <string name="checkout_line_below_cost">भाव लागत से कम</string>
+    <string name="cd_edit_sale_rate">बिक्री भाव बदलें</string>
 </resources>

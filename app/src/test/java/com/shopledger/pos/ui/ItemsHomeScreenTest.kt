@@ -38,9 +38,9 @@ class ItemsHomeScreenTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun item(id: String, name: String, stockMilli: Long): InventoryItemWithVariants =
+    private fun item(id: String, name: String, stockMilli: Long, category: String = ""): InventoryItemWithVariants =
         InventoryItemWithVariants(
-            item = InventoryItemEntity(id = id, displayName = name, sortKey = name.uppercase()),
+            item = InventoryItemEntity(id = id, displayName = name, sortKey = name.uppercase(), category = category),
             allVariants = listOf(
                 ItemVariantEntity(
                     id = "$id-v", itemId = id, purchasePricePaise = 4_000L, sellingPricePaise = 5_000L,
@@ -65,28 +65,20 @@ class ItemsHomeScreenTest {
         onSwitchCart: (String) -> Unit = {},
         onNewCart: () -> Unit = {},
         activeCartQtyByVariant: Map<String, Double> = emptyMap(),
+        activeCartPriceByVariant: Map<String, Long> = emptyMap(),
         onUpdateCartQty: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit = { _, _, _ -> },
-        categories: List<String> = emptyList(),
-        selectedCategory: String? = null,
-        onSelectCategory: (String?) -> Unit = {},
-        topSoldOnly: Boolean = false,
-        onTopSoldOnlyChange: (Boolean) -> Unit = {},
-        hasTopSold: Boolean = false,
         onRenameCart: ((String, String) -> Unit)? = null,
         onCloseCart: ((String) -> Unit)? = null,
     ) {
         compose.setContent {
             ShopLedgerTheme {
                 var query by remember { mutableStateOf("") }
-                var low by remember { mutableStateOf(false) }
                 val shown = items.filter { it.item.displayName.contains(query, ignoreCase = true) }
                 ItemsHomeScreen(
                     shopName = "Test Shop",
                     items = shown,
                     searchQuery = query,
                     onSearchQueryChange = { query = it },
-                    lowStockOnly = low,
-                    onLowStockOnlyChange = { low = it },
                     isSellerUnlocked = unlocked,
                     onToggleSeller = {},
                     carts = carts,
@@ -101,13 +93,8 @@ class ItemsHomeScreenTest {
                     recentSearches = recent,
                     onDeleteRecentSearch = onDeleteRecent,
                     activeCartQtyByVariant = activeCartQtyByVariant,
+                    activeCartPriceByVariant = activeCartPriceByVariant,
                     onUpdateCartQty = onUpdateCartQty,
-                    categories = categories,
-                    selectedCategory = selectedCategory,
-                    onSelectCategory = onSelectCategory,
-                    topSoldOnly = topSoldOnly,
-                    onTopSoldOnlyChange = onTopSoldOnlyChange,
-                    hasTopSold = hasTopSold,
                     onRenameCart = onRenameCart,
                     onCloseCart = onCloseCart,
                 )
@@ -320,21 +307,26 @@ class ItemsHomeScreenTest {
     }
 
     @Test
-    fun topSoldAndCategoryChipsRenderAndFireCallbacks() {
-        val pickedCats = mutableListOf<String?>()
-        val topToggles = mutableListOf<Boolean>()
+    fun searchHeaderShowsOnlyCleanSearchBarWithoutFilterChips() {
+        val doorHinge = item("d1", "Brass Hinge", 2_000L, category = "Door & windows")
+        show(items = listOf(doorHinge))
+        compose.onNodeWithText("Search items or scan a barcode").assertIsDisplayed()
+        compose.onNodeWithText("Low stock").assertDoesNotExist()
+        compose.onNodeWithText("Top sold").assertDoesNotExist()
+        compose.onNodeWithText("Door & windows").assertDoesNotExist()
+        compose.onNodeWithText("Share low-stock list on WhatsApp").assertDoesNotExist()
+        compose.onNodeWithText("Brass Hinge").assertIsDisplayed()
+    }
+
+    @Test
+    fun singleVariantInCartDisplaysCustomCartRateWhenOverridden() {
         show(
-            categories = listOf("Fasteners", "Cement"),
-            selectedCategory = "Fasteners",
-            onSelectCategory = { pickedCats += it },
-            topSoldOnly = false,
-            onTopSoldOnlyChange = { topToggles += it },
-            hasTopSold = true,
+            items = listOf(item("i1", "Hinge", 20_000L)),
+            activeCartQtyByVariant = mapOf("i1-v" to 2.0),
+            activeCartPriceByVariant = mapOf("i1-v" to 4_500L),
         )
-        compose.onNodeWithText("Top sold").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Cement").assertIsDisplayed().performClick()
-        assertEquals(listOf(true), topToggles)
-        assertEquals(listOf("Cement"), pickedCats)
+        compose.onNodeWithText("₹45").assertIsDisplayed()
+        compose.onNodeWithText("₹50").assertDoesNotExist()
     }
 
     @Config(qualifiers = "mdpi")

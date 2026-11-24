@@ -10,8 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,7 +25,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -38,14 +35,12 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -111,8 +106,6 @@ fun ItemsHomeScreen(
     items: List<InventoryItemWithVariants>,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    lowStockOnly: Boolean,
-    onLowStockOnlyChange: (Boolean) -> Unit,
     isSellerUnlocked: Boolean,
     onToggleSeller: () -> Unit,
     carts: List<CartChip> = emptyList(),
@@ -131,21 +124,15 @@ fun ItemsHomeScreen(
     draftName: String? = null,
     onResumeDraft: () -> Unit = {},
     onDiscardDraft: () -> Unit = {},
-    onShareLowStock: (() -> Unit)? = null,
     /** Opens the Stock In sheet. The sheet itself lives in the app shell so it survives tab changes and rotation. */
     onStockIn: () -> Unit = {},
     /** Rows in a stock-in review that is waiting behind the seller lock (null = none). Tapping the card calls [onResumeStockIn]. */
     resumeStockInRows: Int? = null,
     onResumeStockIn: () -> Unit = {},
     activeCartQtyByVariant: Map<String, Double> = emptyMap(),
+    activeCartPriceByVariant: Map<String, Long> = emptyMap(),
     onUpdateCartQty: (InventoryItemEntity, ItemVariantEntity, Double) -> Unit = { _, _, _ -> },
     onVoiceSearchResult: ((String) -> Unit)? = null,
-    categories: List<String> = emptyList(),
-    selectedCategory: String? = null,
-    onSelectCategory: (String?) -> Unit = {},
-    topSoldOnly: Boolean = false,
-    onTopSoldOnlyChange: (Boolean) -> Unit = {},
-    hasTopSold: Boolean = false,
     onRenameCart: ((cartId: String, newLabel: String) -> Unit)? = null,
     onCloseCart: ((cartId: String) -> Unit)? = null,
 ) {
@@ -268,60 +255,6 @@ fun ItemsHomeScreen(
                 ),
                 modifier = Modifier.fillMaxWidth().onFocusChanged { searchFocused = it.isFocused },
             )
-            @OptIn(ExperimentalLayoutApi::class)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingS),
-                verticalArrangement = Arrangement.spacedBy(ShopLedgerTokens.spacingXs),
-            ) {
-                FilterChip(
-                    selected = lowStockOnly,
-                    onClick = { onLowStockOnlyChange(!lowStockOnly) },
-                    label = { Text(stringResource(R.string.filter_low_stock), style = MaterialTheme.typography.labelLarge) },
-                    modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
-                )
-                if (hasTopSold) {
-                    FilterChip(
-                        selected = topSoldOnly,
-                        onClick = { onTopSoldOnlyChange(!topSoldOnly) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.Bolt,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                        label = { Text(stringResource(R.string.filter_top_sold), style = MaterialTheme.typography.labelLarge) },
-                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
-                    )
-                }
-                categories.take(5).forEach { cat ->
-                    val catSelected = selectedCategory.equals(cat, ignoreCase = true)
-                    FilterChip(
-                        selected = catSelected,
-                        onClick = { onSelectCategory(if (catSelected) null else cat) },
-                        label = {
-                            Text(
-                                text = cat,
-                                style = MaterialTheme.typography.labelLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch),
-                    )
-                }
-                if (lowStockOnly && items.isNotEmpty() && onShareLowStock != null) {
-                    TextButton(onClick = onShareLowStock, modifier = Modifier.heightIn(min = ShopLedgerTokens.minTouch)) {
-                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(
-                            stringResource(R.string.share_low_stock),
-                            modifier = Modifier.padding(start = ShopLedgerTokens.spacingS),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
             if (resumeStockInRows != null) {
                 ResumeStockInCard(resumeStockInRows, onResumeStockIn)
             }
@@ -345,13 +278,10 @@ fun ItemsHomeScreen(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (items.isEmpty()) {
-                val (title, message) = when {
-                    searchQuery.isNotBlank() ->
-                        stringResource(R.string.items_no_match_title) to stringResource(R.string.items_no_match_message)
-                    lowStockOnly ->
-                        stringResource(R.string.items_low_empty_title) to stringResource(R.string.items_low_empty_message)
-                    else ->
-                        stringResource(R.string.items_empty_title) to stringResource(R.string.items_empty_message)
+                val (title, message) = if (searchQuery.isNotBlank()) {
+                    stringResource(R.string.items_no_match_title) to stringResource(R.string.items_no_match_message)
+                } else {
+                    stringResource(R.string.items_empty_title) to stringResource(R.string.items_empty_message)
                 }
                 EmptyState(title = title, message = message, modifier = Modifier.align(Alignment.Center))
             } else {
@@ -370,6 +300,7 @@ fun ItemsHomeScreen(
                                 cipherMode = cipherMode,
                                 digitMap = digitMap,
                                 activeCartQtyByVariant = activeCartQtyByVariant,
+                                activeCartPriceByVariant = activeCartPriceByVariant,
                                 onOpen = {
                                     if (searchQuery.isNotBlank()) onCommitSearch(searchQuery)
                                     onOpenItem(group.item, variants.first(), variants)
@@ -389,7 +320,7 @@ fun ItemsHomeScreen(
                         }
                     }
                 }
-                val showAlphaJump = items.size >= 25 && searchQuery.isBlank() && !topSoldOnly
+                val showAlphaJump = items.size >= 25 && searchQuery.isBlank()
                 val letterIndexMap = remember(items, showAlphaJump) {
                     if (!showAlphaJump) emptyMap()
                     else buildMap {
@@ -571,6 +502,7 @@ private fun GroupRow(
     cipherMode: CipherMode,
     digitMap: Map<Char, String>,
     activeCartQtyByVariant: Map<String, Double>,
+    activeCartPriceByVariant: Map<String, Long>,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onAddToCart: () -> Unit,
@@ -612,10 +544,11 @@ private fun GroupRow(
 
     val minPrice = variants.minOf { it.sellingPricePaise }
     val formattedMin = IndianCurrencyFormatter.formatPaise(minPrice)
-    val priceText = if (variants.any { it.sellingPricePaise != minPrice }) {
-        stringResource(R.string.items_price_from, formattedMin)
-    } else {
-        formattedMin
+    val singleCartPrice = if (singleInCart) activeCartPriceByVariant[variants.first().id] else null
+    val priceText = when {
+        singleCartPrice != null && singleCartPrice > 0L -> IndianCurrencyFormatter.formatPaise(singleCartPrice)
+        variants.any { it.sellingPricePaise != minPrice } -> stringResource(R.string.items_price_from, formattedMin)
+        else -> formattedMin
     }
     val costVariant = variants.minBy { it.sellingPricePaise }
     val cost = costVariant.purchasePricePaise
